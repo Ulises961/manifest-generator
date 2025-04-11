@@ -1,0 +1,390 @@
+{
+    "services": [
+      {
+        "name": "Kafka",
+        "keywords": ["message queue", "event streaming", "kafka"],
+        "ports": [9092],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: message-broker"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "RabbitMQ",
+        "keywords": ["message broker", "rabbitmq", "queue"],
+        "ports": [5672],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: message-broker"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "Redis",
+        "keywords": ["cache", "key-value", "redis"],
+        "ports": [6379],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: cache"],
+        "persistence": "optional"
+      },
+      {
+        "name": "PostgreSQL",
+        "keywords": ["database", "postgres", "sql"],
+        "ports": [5432],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: database", "storage: persistent"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "MySQL",
+        "keywords": ["database", "mysql", "mariadb"],
+        "ports": [3306],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: database", "storage: persistent"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "MongoDB",
+        "keywords": ["database", "mongodb", "nosql"],
+        "ports": [27017],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: database", "storage: persistent"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "Zookeeper",
+        "keywords": ["coordination", "zookeeper", "distributed"],
+        "ports": [2181],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: message-broker"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "Jenkins",
+        "keywords": ["ci/cd", "automation", "jenkins"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: cicd"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "GitLab Runner",
+        "keywords": ["ci/cd", "runner", "gitlab"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: cicd"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Prometheus",
+        "keywords": ["monitoring", "metrics", "prometheus"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: monitoring"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Grafana",
+        "keywords": ["monitoring", "visualization", "grafana"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: monitoring"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Nginx",
+        "keywords": ["web", "nginx", "frontend", "server"],
+        "ports": [80, 443],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "LoadBalancer",
+        "labels": ["role: frontend", "exposure: public"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Apache",
+        "keywords": ["web", "apache", "server"],
+        "ports": [80, 443],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "LoadBalancer",
+        "labels": ["role: frontend", "exposure: public"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "React",
+        "keywords": ["frontend", "react", "javascript"],
+        "ports": [3000],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "LoadBalancer",
+        "labels": ["role: frontend", "exposure: public"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Vue",
+        "keywords": ["frontend", "vue", "javascript"],
+        "ports": [3000],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "LoadBalancer",
+        "labels": ["role: frontend", "exposure: public"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Angular",
+        "keywords": ["frontend", "angular", "javascript"],
+        "ports": [3000],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "LoadBalancer",
+        "labels": ["role: frontend", "exposure: public"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Flask",
+        "keywords": ["backend", "flask", "python"],
+        "ports": [5000],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: backend"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Django",
+        "keywords": ["backend", "django", "python"],
+        "ports": [5000],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: backend"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Spring",
+        "keywords": ["backend", "spring", "java"],
+        "ports": [8080],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: backend"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Node.js",
+        "keywords": ["backend", "node", "javascript"],
+        "ports": [3000],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: backend"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Argo",
+        "keywords": ["ci/cd", "workflows", "argo"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: cicd"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Tekton",
+        "keywords": ["ci/cd", "pipelines", "tekton"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: cicd"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Loki",
+        "keywords": ["monitoring", "logging", "loki"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: monitoring"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Celery",
+        "keywords": ["worker", "task queue", "celery"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: worker"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Sidekiq",
+        "keywords": ["worker", "task queue", "sidekiq"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: worker"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "RQ",
+        "keywords": ["worker", "task queue", "rq"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: worker"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Huey",
+        "keywords": ["worker", "task queue", "huey"],
+        "ports": [],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": null,
+        "labels": ["role: worker"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "NATS",
+        "keywords": ["message queue", "event streaming", "nats"],
+        "ports": [4222],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: message-broker"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Express",
+        "keywords": ["backend", "express", "node.js"],
+        "ports": [3000],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: backend"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Elasticsearch",
+        "keywords": ["search", "logs", "elk", "opensearch"],
+        "ports": [9200],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: search", "storage: persistent"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "MQTT",
+        "keywords": ["iot", "mqtt", "message queue"],
+        "ports": [1883],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: message-broker"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "SNMP",
+        "keywords": ["monitoring", "snmp", "network"],
+        "ports": [161],
+        "protocol": "UDP",
+        "workload": "DaemonSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: monitoring"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Consul",
+        "keywords": ["service-mesh", "discovery", "hashicorp"],
+        "ports": [8500, 8600],
+        "protocol": "TCP/UDP",
+        "workload": "Deployment", 
+        "serviceType": "ClusterIP",
+        "labels": ["role: service-mesh"],
+        "persistence": "ephemeral"
+      },
+      {
+        "name": "Ceph",
+        "keywords": ["storage", "distributed", "object-store"],
+        "ports": [6789, 6800, 7300],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: storage", "app.kubernetes.io/part-of: ceph-cluster"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "Memcached",
+        "keywords": ["cache", "key-value", "high-performance"],
+        "ports": [11211],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: cache"],
+        "persistence": "ephemeral"  
+      },
+      {
+        "name": "Cassandra",
+        "keywords": ["database", "nosql", "wide-column"],
+        "ports": [7000, 7001, 9042],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: database", "storage: persistent"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "CockroachDB",
+        "keywords": ["database", "sql", "distributed"],
+        "ports": [26257, 8080],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: database", "storage: persistent"],
+        "persistence": "persistent"
+      },
+      {
+        "name": "MinIO",
+        "keywords": ["storage", "s3", "object-storage"],
+        "ports": [9000, 9001],
+        "protocol": "TCP",
+        "workload": "StatefulSet",
+        "serviceType": "ClusterIP",
+        "labels": ["role: storage", "app.kubernetes.io/part-of: object-storage"],
+        "persistence": "persistent"
+      }
+    ],
+    "metadata": {
+      "version": "1.0",
+      "description": "List of common services with their configurations for Kubernetes deployments.",
+      "author": "Ulises E. Sosa",
+      "github": "ulyses961"
+    }
+  }
