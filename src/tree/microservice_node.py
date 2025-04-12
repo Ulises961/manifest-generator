@@ -2,8 +2,8 @@ from tree.node import Node
 
 
 class Microservice(Node):
-    def __init__(self, name, type):
-        super().__init__(name, type)
+    def __init__(self, name, type, metadata):
+        super().__init__(name, type, None, metadata)
         self.children: list[Node] = []
 
     def add_child(self, child: Node) -> None:

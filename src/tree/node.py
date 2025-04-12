@@ -5,11 +5,20 @@ from tree.node_types import NodeType
 
 
 class Node:
-    def __init__(self, name: str, type: NodeType, parent: Optional['Node']=None):
+    def __init__(self, name: str, type: NodeType, parent: Optional['Node']=None, metadata: Optional[dict]=None):
+        """
+        Initialize a Node instance.
+        Args:
+            name (str): The name of the node.
+            type (NodeType): The type of the node.
+            parent (Optional[Node]): The parent node. Default is None.
+            metadata (Optional[dict]): Additional metadata. Default is None.
+        """
         self.name: str = name
         self.type: NodeType = type
         self.parent: Optional['Node'] = parent
         self.children: List[Node] = []
+        self.medatada: Optional[dict] = metadata
     
     def add_child(self, child: 'Node') -> None:  # Add this missing method
         self.children.append(child)

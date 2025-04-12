@@ -2,6 +2,7 @@ from enum import Enum
 import json
 import os
 from typing import List, Optional
+from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper
 from embeddings.embeddings_engine import EmbeddingsEngine
 
@@ -31,7 +32,8 @@ class MicroservicesTree:
         self.secret_classifier = secret_classifier
         self.service_classifier = service_classifier
         self.command_parser: CommandMapper = CommandMapper(label_classifier)
-        self.bash_parser: BashScriptParser = BashScriptParser(secret_classifier)
+        self.env_parser: EnvParser = EnvParser(secret_classifier)
+        self.bash_parser: BashScriptParser = BashScriptParser(secret_classifier, self.env_parser)
 
     def build(self) -> Node:
         # Placeholder for scanning logic
@@ -83,25 +85,19 @@ class MicroservicesTree:
 
             # Only parse the directory if it is a microservice
             if is_microservice and microservice_node is not None:
+                # Parse the directory for .env files
                 for file in files:
                     # Skip hidden files except .env
                     if str(file).startswith("."):
                         if file == ".env":
                             # Parse env file and add vars as children to root node
-                            self._parse_env_file(
+                            self.env_parser.parse(
                                 os.path.join(root, file), microservice_node
                             )
                             continue
+                        
+                # Parse bash script if present in EntryPoint or CMD
+                self.bash_parser.determine_startup_command(root, files, microservice_node)
 
-            # Parse bash scripts if present in EntryPoint or CMD
-            self._find_and_parse_startup_script(root, files, microservice_node)
 
 
-
-    def _find_and_parse_startup_script(self, root: str, files: List[str], parent: Node) -> None:
-        """Find and parse potential startup scripts."""
-        script_path = self.bash_parser.find_startup_script(root, files)
-        if script_path:
-            nodes = self.bash_parser.parse_script(script_path)
-            for node in nodes:
-                parent.add_child(node)
