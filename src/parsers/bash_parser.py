@@ -1,7 +1,9 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import re
 import os
 import shlex
+from embeddings.embeddings_engine import EmbeddingsEngine
+from parsers.env_parser import EnvParser
 from tree.node import Node
 from tree.node_types import NodeType
 from tree.env_node import EnvNode
@@ -9,108 +11,30 @@ from tree.command_node import CommandNode
 from tree.docker_instruction_node import DockerInstruction
 from embeddings.secret_classifier import SecretClassifier
 
+
 class BashScriptParser:
     """Parser for bash scripts that modify container runtime environment."""
-    
-    def __init__(self, secret_classifier: SecretClassifier):
+
+    def __init__(
+        self,
+        secret_classifier: SecretClassifier,
+        env_parser: EnvParser,
+        embeddings_engine: EmbeddingsEngine,
+    ):
+        self.embeddings_engine = embeddings_engine
         self.secret_classifier = secret_classifier
         self.startup_script_names = ["start.sh", "entrypoint.sh", "run.sh", "serve.sh"]
-        self.startup_keywords = ["start", "run", "serve", "launch", "init"]
+        self.env_parser = env_parser
 
-    def find_startup_script(self, root: str, files: List[str]) -> Optional[str]:
-        """Find an appropriate startup script in the given files."""
-        # First try exact matches
-        for script in self.startup_script_names:
-            if script in files:
-                return os.path.join(root, script)
+        self.patterns = {
+            "mount": r"mount\s+(-t\s+\w+\s+)?([^#\n]+)",
+            "kubectl": r"kubectl\s+([^#\n]+)",
+            "docker": r"docker\s+run\s+([^#\n]+)",
+            "source": r"(source|\.)\s+([^\s#\n]+)",
+            "exec": r"exec\s+([^#\n]+)",
+        }
 
-        # Then try semantic matching
-        for file in files:
-            if file.endswith(".sh"):
-                if self.service_classifier.is_startup_script(file, self.startup_keywords):
-                    return os.path.join(root, file)
-        
-        return None
-
-    def parse_script(self, path: str) -> List[Node]:
-        """Parse a bash script and return its nodes."""
-        with open(path, "r") as f:
-            content = f.read()
-            
-        return self._parse_script_content(content)
-
-    def _parse_script_content(self, content: str) -> List[Node]:
-        """Parse bash script content and return nodes."""
-        nodes: List[Node] = []
-        lines = content.split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-                
-            if env_node := self._parse_env_var(line):
-                nodes.append(env_node)
-                
-            # Check for volume mounts
-            elif mount_node := self._parse_mount(line):
-                nodes.append(mount_node)
-                
-            # Check for command overrides
-            elif cmd_node := self._parse_command(line):
-                nodes.append(cmd_node)
-                
-        return nodes
-
-    def _parse_env_var(self, line: str) -> Optional[EnvNode]:
-        """Parse environment variable declarations."""
-        if line.startswith('export'):
-            parts = line.split('=', 1)
-            if len(parts) == 2:
-                name = parts[0].replace('export', '').strip()
-                value = parts[1].strip().strip('"\'')
-                
-                is_secret = self.secret_classifier.decide_secret(f"{name}={value}")
-                node_type = NodeType.SECRET if is_secret else NodeType.ENV
-                
-                if is_secret:
-                    value = str.encode(value, encoding="base64")
-                    
-                return EnvNode(name=name, type=node_type, value=value)
-        return None
-
-    def _parse_command(self, line: str) -> Optional[CommandNode]:
-        """Parse command declarations."""
-        normalized = self._normalize_command(line)
-        if normalized:
-            return CommandNode(
-                name="script_command",
-                type=NodeType.COMMAND,
-                command=normalized,
-                args=[]
-            )
-        return None
-    
-    def _parse_mount(self, line: str) -> Optional[Node]:
-        """Parse mount commands and volume definitions."""
-        match = re.match(self.patterns['mount'], line)
-        if match:
-            _, mount_path = match.groups()
-            return Node(
-                name=f"mount_{mount_path.split('/')[-1]}",
-                type=NodeType.VOLUME,
-                value=mount_path
-            )
-        return None
-
-    def _normalize_command(self, cmd: str) -> List[str]:
-        """Convert shell form command to exec form."""
-        try:
-            return shlex.split(cmd)
-        except ValueError:
-            return []
-        
-    def _determine_startup_command(
+    def determine_startup_command(
         self, root: str, files: List[str], microservice_node: Node
     ) -> None:
         """Determine and parse the appropriate startup command."""
@@ -140,31 +64,229 @@ class BashScriptParser:
         else:
             self._find_and_parse_startup_script(root, files, microservice_node)
 
+    def _find_and_parse_startup_script(
+        self, root: str, files: List[str], parent: Node
+    ) -> None:
+        """Find and parse potential startup scripts."""
+        # Determine the startup script based on the dockerfile instructions
+        # (ENTRYPOINT, CMD) and parse it
+        # Check for ENTRYPOINT or CMD in the dockerfile
+        script_path = self._find_startup_script(root, files)
+        if script_path:
+            nodes = self.parse_script(script_path, parent)
+            for node in nodes:
+                parent.add_child(node)
+
+    def _find_startup_script(self, root: str, files: List[str]) -> Optional[str]:
+        """Find an appropriate startup script in the given files."""
+
+        # First try exact matches
+        for script in self.startup_script_names:
+            if script in files:
+                return os.path.join(root, script)
+
+        # Then try semantic matching
+        for file in files:
+            if file.endswith(".sh"):
+                file_name = self.embeddings_engine.encode_word(file)
+                for script in self.startup_script_names:
+                    script_name = self.embeddings_engine.encode_word(script)
+                    similarity = self.embeddings_engine.compute_similarity(
+                        file_name, script_name
+                    )
+                    if similarity > 0.8:
+                        # Assuming the script is a potential startup script
+                        return os.path.join(root, file)
+        return None
+
+    def parse_script(self, path: str, parent: Node) -> List[Node]:
+        """Parse a bash script and return its nodes."""
+        with open(path, "r") as f:
+            content = f.read()
+
+        return self._parse_script_content(path, content, parent)
+
+    def _parse_script_content(self, path: str, content: str, parent: Node) -> List[Node]:
+        """Parse bash script content and return nodes."""
+        nodes: List[Node] = []
+        lines = content.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            # Early exit if the script contains orchestration logic
+            if self._is_orchestrator_line(line):
+                parent.metadata["review"] = "Script contains orchestration logic (kubectl/docker). Manual inspection required."
+                parent.metadata["offending_line"] = line
+                parent.metadata["parser_hint"] = "Skipped deeper parsing to avoid incorrect assumptions."
+                parent.metadata["status"] = "skipped"
+                return nodes  # Return early without parsing the rest
+
+            # Check for secret detection
+            if env_node := self._parse_env_var(line):
+                nodes.append(env_node)
+
+            # Check for mount commands   
+            elif mount_node := self._parse_mount(line):
+                nodes.append(mount_node)
+
+            # Check for command or entrypoint
+            elif cmd_nodes := self._parse_command(line, parent):
+                entry, args = cmd_nodes
+
+                # Check if $@ is *not* in args → means it's not forwarding the original CMD
+                if not any(flag in args.command for flag in ["$@", '"$@"', "'$@'", "${@}"]):
+                    for node in parent.children:
+                        if node.type == NodeType.CMD:
+                            node.metadata["review"] = "Overridden by bash script. Manual inspection might be required."
+                            node.metadata["parser_hint"] = "Script entrypoint detected. Original CMD marked for review."
+                            node.metadata["status"] = "overridden"
+
+                # Mark the original ENTRYPOINT for later inspection
+                for node in parent.children:
+                    if node.type == NodeType.ENTRYPOINT:
+                        node.metadata["review"] = "Overridden by bash script. Manual inspection might be required."
+                        node.metadata["original_entrypoint"] = entry.command
+                        node.metadata["parser_hint"] = "Script entrypoint detected. Original entrypoint marked for review."
+                        node.metadata["status"] = "overridden"
+                        break
+                nodes.extend([entry, args])
+
+            elif sourced_nodes := self._parse_source(path, line):
+                nodes.extend(sourced_nodes)
+
+        return nodes
+
+
+
+    def _parse_env_var(self, line: str) -> Optional[EnvNode]:
+        """Parse environment variable declarations."""
+        if line.startswith("export"):
+            parts = line.split("=", 1)
+            if len(parts) == 2:
+                name = parts[0].replace("export", "").strip()
+                value = parts[1].strip().strip("\"'")
+                return self.env_parser.create_env_node(name, value)
+        return None
+
+    def _parse_mount(self, line: str) -> Optional[Node]:
+        """Parse mount commands and volume definitions."""
+        match = re.match(self.patterns["mount"], line)
+        if match:
+            _, mount_path = match.groups()
+            return Node(
+                name=f"mount_{mount_path.split('/')[-1]}",
+                type=NodeType.VOLUME,
+                value=mount_path,
+            )
+        return None
+
+    def _parse_command(
+        self, line: str, parent: Node
+    ) -> Tuple[Optional[DockerInstruction], Optional[DockerInstruction]]:
+        """Parse command declarations."""
+        normalized = self._normalize_command_field(line)
+        if not normalized:
+            return None, None
+
+        command, args = self._split_command_and_args(normalized)
+
+        forwards_args = any(token in ["$@", '"$@"', "'$@'", "${@}"] for token in args)
+
+        entrypoint_node = DockerInstruction(
+            name="script_command",
+            type=NodeType.ENTRYPOINT,
+            command=command,
+            parent=parent,
+            metadata={
+                "review": "Generated from bash script",
+                "source": "script",
+                "full_command": normalized,
+                "status": "active"
+            },
+        )
+
+        cmd_node = None
+        if not forwards_args and args:
+            cmd_node = DockerInstruction(
+                name="script_command",
+                type=NodeType.CMD,
+                command=args,
+                parent=parent,
+                metadata={
+                    "review": "Generated from bash script",
+                    "source": "script",
+                    "full_command": normalized,
+                    "status": "active"
+                },
+            )
+
+        return entrypoint_node, cmd_node
+
+    def _parse_source(self, dockerfile_path: str, line: str) -> Optional[List[Node]]:
+        match = re.match(self.patterns["source"], line)
+
+        if not match:
+            return None
+
+        _, path = match.groups()
+        full_path = os.path.join(os.path.basename(dockerfile_path), path)
+
+        return self.parse_script(file_path=full_path)
+
     def _parse_command_pair(
-        self, root: str, entrypoint: Node, cmd: Node, parent: Node
+        self,
+        root: str,
+        entrypoint: DockerInstruction,
+        cmd: DockerInstruction,
+        parent: Node,
     ) -> None:
         """Parse ENTRYPOINT + CMD combination."""
-        if entrypoint.value.endswith(".sh"):
-            self._parse_bash_script(os.path.join(root, entrypoint.value), parent)
-        else:
-            # Create command node with entrypoint as command and cmd as args
-            command_node = CommandNode(
-                name="startup",
-                type=NodeType.COMMAND,
-                command=self._normalize_command(entrypoint.value),
-                args=self._normalize_command(cmd.value),
-            )
-            parent.add_child(command_node)
+        if entrypoint.command.endswith(".sh"):
+            self.parse_script(os.path.join(root, entrypoint.command), parent)
 
-    def _parse_command_as_entrypoint(self, root: str, cmd: Node, parent: Node) -> None:
+    def _parse_command_as_entrypoint(
+        self, root: str, cmd: DockerInstruction, parent: Node
+    ) -> None:
         """Parse single command as entrypoint."""
-        if cmd.value.endswith(".sh"):
-            self._parse_bash_script(os.path.join(root, cmd.value), parent)
-        else:
-            command_node = CommandNode(
-                name="startup",
-                type=NodeType.COMMAND,
-                command=self._normalize_command(cmd.value),
-                args=[],
-            )
-            parent.add_child(command_node)
+        if cmd.command.endswith(".sh"):
+            self.parse_script(os.path.join(root, cmd.command), parent)
+
+    def _normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
+        """Normalize Docker CMD/ENTRYPOINT field into list."""
+        if not field:
+            return []
+        if isinstance(field, list):
+            return field
+        return shlex.split(field)
+
+    def _split_command_and_args(normalized: List[str]) -> tuple[List[str], List[str]]:
+        """
+        Splits a normalized command line into base command and its arguments.
+
+        Example:
+            ['gunicorn', 'app:main', '--bind', '0.0.0.0:8000']
+            -> (['gunicorn', 'app:main'], ['--bind', '0.0.0.0:8000'])
+
+        Heuristic: Base command ends where flags begin (starting with - or --),
+        or at first "$@" which means pass-through.
+
+        Returns:
+            Tuple (command_base, arguments)
+        """
+        if not normalized:
+            return [], []
+
+        for i, token in enumerate(normalized):
+            if token.startswith("-") or token in ["$@", '"$@"', "'$@'", "${@}"]:
+                return normalized[:i], normalized[i:]
+
+        return normalized, []
+
+    def _is_orchestrator_line(self, line: str) -> bool:
+        return any(
+            re.match(self.patterns[pattern], line)
+            for pattern in ["kubectl", "docker"]
+        )
