@@ -13,6 +13,8 @@ setup(
         'PyYAML',
         'docker',
         'checkov',
+        'pytest',
+        'pytest-cov',
         'dotenv'],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",
