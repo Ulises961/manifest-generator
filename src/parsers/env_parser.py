@@ -1,5 +1,4 @@
 from embeddings.secret_classifier import SecretClassifier
-from tree.env_node import EnvNode
 from tree.node import Node
 from tree.node_types import NodeType
 
@@ -8,15 +7,9 @@ class EnvParser:
     def __init__(self, secret_classifier: SecretClassifier):
         self.secret_classifier = secret_classifier
 
-    def parse(self):
-        with open(self.env_file, 'r') as file:
-            for line in file:
-                if line.strip() and not line.startswith('#'):
-                    key, value = line.strip().split('=', 1)
-                    self.env_vars[key] = value
-
     def get_env_vars(self):
         return self.env_vars
+    
     def get_env_var(self, key):
         return self.env_vars.get(key)
     
@@ -38,7 +31,7 @@ class EnvParser:
                 except ValueError:
                     continue
                 
-    def create_env_node(self, key: str, value: str) -> EnvNode:
-        """Create an EnvNode from a key-value pair."""
+    def create_env_node(self, key: str, value: str) -> Node:
+        """Create an Node from a key-value pair."""
         is_secret = self.secret_classifier.decide_secret(value)
-        return EnvNode(name=key, type=NodeType.SECRET if is_secret else NodeType.ENV, value=value)
+        return Node(name=key, type=NodeType.SECRET if is_secret else NodeType.ENV, value=value)

@@ -10,17 +10,19 @@ from utils.file_utils import load_file
 class SecretClassifier:
     def __init__(self, embeddings_engine: EmbeddingsEngine) -> None:
         self._engine: EmbeddingsEngine = embeddings_engine
-        self._secret_embeddings: Dict[str, Dict[str, ndarray]] = self._encode_secrets()
         
+        secrets_path: str = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), os.getenv("SECRETS_PATH", "resources/knowledge_base/secrets.json")
+        )
         # Load secret embeddingss
         self._secrets: Dict[str, List[ndarray]] = self._load_secrets(
-            os.environ.get("SECRETS_FILE_NAME", "")
+          secrets_path
         )
 
         # Calculate the threshold for the secrets embeddings
         """Adjusted Threshold=Base Threshold-(log(KB Size)/Max KB Size) x Adjustment Factor"""
         self._secrets_threshold: float = 0.8 - (
-            (log(len(self._secrets["embeddings"])) / len(self._secrets["embeddings"]))
+            (log(len(self.secrets["embeddings"]) + 1 )  / (len(self.secrets["embeddings"]) + 1))
             * 0.01
         )
         
@@ -44,10 +46,10 @@ class SecretClassifier:
             if key == "miscellaneous":
                 # Compute embedding for each individual value in the array
                 for value in values:
-                    embedding = self._engine.encode_word(value)
+                    embedding = self._engine.encode(value)
                     embeddings_list.extend(embedding)
 
-                secrets["embeddings"] = embeddings_list
+        secrets["embeddings"] = embeddings_list
 
         return secrets
     
@@ -57,16 +59,19 @@ class SecretClassifier:
         * Regex match
         * Embeddings simmilarity: The decision threshold is calculated in relation to the size of the knowledge base dynamically learnt during the usage of the tool
         """
+        print(f"Query: {query}")
         # Find an exact match among the possible values
-        for key, values in self._secrets_direct_matching.items():
-            if key == "miscellaneous" or key == "regex":
+        for key, values in self._secrets.items():
+            print(f"Key: {key}")
+            if key == "regex" or key == "embeddings":
                 continue
             for value in values:
+                print(f"Comparing {query} with {value}")
                 if query == value:
                     return True
 
         # Check if the query matches any regex
-        for regex in self._secrets_direct_matching["regex"]:
+        for regex in self._secrets["regex"]:
             # Compile regex pattern
             regex = re.compile(regex)
 
@@ -77,7 +82,7 @@ class SecretClassifier:
                 return True
 
         # Compute the embedding for the query
-        query_embedding: ndarray = self._model.encode(query)
+        query_embedding: ndarray = self._engine.encode(query)
 
         for token in self._secrets["embeddings"]:
             # Compute the cosine similarity

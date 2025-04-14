@@ -14,20 +14,25 @@ class ServiceClassifier:
 
         # Load the services knowledge base
         self._services = self._load_services(
-            os.environ.get("MICROSERVICES_FILE_NAME", "")
+            os.environ.get(
+                "MICROSERVICES_PATH",
+                "src/resources/knowledge_base/microservices.json",
+            )
         )
-
+    
+    @property
+    def services(self) -> List[Dict[str, Any]]:
+        """Get the services knowledge base."""
+        return self._services
+    
+    def calculate_threshold(self, embeddings_size) -> None:
         # Calculate the threshold for the microservices embeddings
         self._microservices_threshold: float = 0.8 - (
-            (
-                log(len(self._microservices_embeddings["embeddings"]))
-                / len(self._microservices_embeddings["embeddings"])
-            )
-            * 0.01
+            (log(embeddings_size) / embeddings_size) * 0.01
         )
 
         # Ensure threshold is between 0.1 and 0.9
-        self._microservices_threshold = max(
+        return max(
             0.1, min(self._microservices_threshold, 0.9)
         )
 
@@ -37,6 +42,7 @@ class ServiceClassifier:
         embeddings_list: List[ndarray] = []
 
         for service in services["services"]:
+   
             # Add the microservice label to the keywords list
             if service["name"] not in service["keywords"]:
                 service["keywords"] = service["keywords"] + [service["name"]]
@@ -53,8 +59,9 @@ class ServiceClassifier:
 
     def decide_service(self, query: str) -> Optional[Dict[str, Any]]:
         """Decide the service based on the query and a given threshold."""
+
         # Compute the embedding for the query
-        query_embedding: ndarray = self._engine.encode_word(query)
+        query_embedding: ndarray = self._engine.encode(query)
 
         most_similar: Optional[Dict[str, Any]] = None
         max_similarity: float = -1.0
@@ -66,9 +73,9 @@ class ServiceClassifier:
             )
 
             # Check if the similarity is greater than the threshold
-            if similarity > max_similarity:
+            if similarity > max_similarity and similarity >= self.calculate_threshold(len(service["embeddings"])):
                 most_similar = service
                 max_similarity = similarity
 
         # Check if the most similar service is above the threshold
-        return most_similar if max_similarity >= self._microservices_threshold else None
+        return most_similar

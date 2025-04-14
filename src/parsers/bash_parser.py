@@ -6,8 +6,6 @@ from embeddings.embeddings_engine import EmbeddingsEngine
 from parsers.env_parser import EnvParser
 from tree.node import Node
 from tree.node_types import NodeType
-from tree.env_node import EnvNode
-from tree.command_node import CommandNode
 from tree.docker_instruction_node import DockerInstruction
 from embeddings.secret_classifier import SecretClassifier
 
@@ -21,7 +19,7 @@ class BashScriptParser:
         env_parser: EnvParser,
         embeddings_engine: EmbeddingsEngine,
     ):
-        self.embeddings_engine = embeddings_engine
+        self._engine = embeddings_engine
         self.secret_classifier = secret_classifier
         self.startup_script_names = ["start.sh", "entrypoint.sh", "run.sh", "serve.sh"]
         self.env_parser = env_parser
@@ -88,12 +86,10 @@ class BashScriptParser:
         # Then try semantic matching
         for file in files:
             if file.endswith(".sh"):
-                file_name = self.embeddings_engine.encode_word(file)
+                file_name = self._engine.encode(file)
                 for script in self.startup_script_names:
-                    script_name = self.embeddings_engine.encode_word(script)
-                    similarity = self.embeddings_engine.compute_similarity(
-                        file_name, script_name
-                    )
+                    script_name = self._engine.encode(script)
+                    similarity = self._engine.compute_similarity(file_name, script_name)
                     if similarity > 0.8:
                         # Assuming the script is a potential startup script
                         return os.path.join(root, file)
@@ -106,7 +102,9 @@ class BashScriptParser:
 
         return self._parse_script_content(path, content, parent)
 
-    def _parse_script_content(self, path: str, content: str, parent: Node) -> List[Node]:
+    def _parse_script_content(
+        self, path: str, content: str, parent: Node
+    ) -> List[Node]:
         """Parse bash script content and return nodes."""
         nodes: List[Node] = []
         lines = content.split("\n")
@@ -118,9 +116,13 @@ class BashScriptParser:
 
             # Early exit if the script contains orchestration logic
             if self._is_orchestrator_line(line):
-                parent.metadata["review"] = "Script contains orchestration logic (kubectl/docker). Manual inspection required."
+                parent.metadata["review"] = (
+                    "Script contains orchestration logic (kubectl/docker). Manual inspection required."
+                )
                 parent.metadata["offending_line"] = line
-                parent.metadata["parser_hint"] = "Skipped deeper parsing to avoid incorrect assumptions."
+                parent.metadata["parser_hint"] = (
+                    "Skipped deeper parsing to avoid incorrect assumptions."
+                )
                 parent.metadata["status"] = "skipped"
                 return nodes  # Return early without parsing the rest
 
@@ -128,40 +130,48 @@ class BashScriptParser:
             if env_node := self._parse_env_var(line):
                 nodes.append(env_node)
 
-            # Check for mount commands   
+            # Check for mount commands
             elif mount_node := self._parse_mount(line):
                 nodes.append(mount_node)
 
             # Check for command or entrypoint
             elif cmd_nodes := self._parse_command(line, parent):
                 entry, args = cmd_nodes
-
+                print(f"Parsed command: {entry} with args: {args}")
                 # Check if $@ is *not* in args → means it's not forwarding the original CMD
-                if not any(flag in args.command for flag in ["$@", '"$@"', "'$@'", "${@}"]):
+                if args:
                     for node in parent.children:
                         if node.type == NodeType.CMD:
-                            node.metadata["review"] = "Overridden by bash script. Manual inspection might be required."
-                            node.metadata["parser_hint"] = "Script entrypoint detected. Original CMD marked for review."
+                            node.metadata["review"] = (
+                                "Overridden by bash script. Manual inspection might be required."
+                            )
+                            node.metadata["parser_hint"] = (
+                                "Script entrypoint detected. Original CMD marked for review."
+                            )
                             node.metadata["status"] = "overridden"
+
+                    nodes.extend([args])
 
                 # Mark the original ENTRYPOINT for later inspection
                 for node in parent.children:
                     if node.type == NodeType.ENTRYPOINT:
-                        node.metadata["review"] = "Overridden by bash script. Manual inspection might be required."
-                        node.metadata["original_entrypoint"] = entry.command
-                        node.metadata["parser_hint"] = "Script entrypoint detected. Original entrypoint marked for review."
+                        node.metadata["review"] = (
+                            "Overridden by bash script. Manual inspection might be required."
+                        )
+                        node.metadata["original_entrypoint"] = entry.value
+                        node.metadata["parser_hint"] = (
+                            "Script entrypoint detected. Original entrypoint marked for review."
+                        )
                         node.metadata["status"] = "overridden"
                         break
-                nodes.extend([entry, args])
+                nodes.extend([entry])
 
             elif sourced_nodes := self._parse_source(path, line):
                 nodes.extend(sourced_nodes)
 
         return nodes
 
-
-
-    def _parse_env_var(self, line: str) -> Optional[EnvNode]:
+    def _parse_env_var(self, line: str) -> Optional[Node]:
         """Parse environment variable declarations."""
         if line.startswith("export"):
             parts = line.split("=", 1)
@@ -196,30 +206,30 @@ class BashScriptParser:
         forwards_args = any(token in ["$@", '"$@"', "'$@'", "${@}"] for token in args)
 
         entrypoint_node = DockerInstruction(
-            name="script_command",
+            name=parent.name,
             type=NodeType.ENTRYPOINT,
-            command=command,
+            value=command,
             parent=parent,
             metadata={
                 "review": "Generated from bash script",
                 "source": "script",
                 "full_command": normalized,
-                "status": "active"
+                "status": "active",
             },
         )
 
         cmd_node = None
         if not forwards_args and args:
             cmd_node = DockerInstruction(
-                name="script_command",
+                name=parent.name,
                 type=NodeType.CMD,
-                command=args,
+                value=args,
                 parent=parent,
                 metadata={
                     "review": "Generated from bash script",
                     "source": "script",
                     "full_command": normalized,
-                    "status": "active"
+                    "status": "active",
                 },
             )
 
@@ -244,17 +254,17 @@ class BashScriptParser:
         parent: Node,
     ) -> None:
         """Parse ENTRYPOINT + CMD combination."""
-        if entrypoint.command.endswith(".sh"):
-            self.parse_script(os.path.join(root, entrypoint.command), parent)
+        if entrypoint.value.endswith(".sh"):
+            self.parse_script(os.path.join(root, entrypoint.value), parent)
 
     def _parse_command_as_entrypoint(
         self, root: str, cmd: DockerInstruction, parent: Node
     ) -> None:
         """Parse single command as entrypoint."""
-        if cmd.command.endswith(".sh"):
-            self.parse_script(os.path.join(root, cmd.command), parent)
+        if cmd.value.endswith(".sh"):
+            self.parse_script(os.path.join(root, cmd.value), parent)
 
-    def _normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
+    def _normalize_command_field(self, field: Optional[str | List[str]]) -> List[str]:
         """Normalize Docker CMD/ENTRYPOINT field into list."""
         if not field:
             return []
@@ -262,7 +272,9 @@ class BashScriptParser:
             return field
         return shlex.split(field)
 
-    def _split_command_and_args(normalized: List[str]) -> tuple[List[str], List[str]]:
+    def _split_command_and_args(
+        self, normalized: List[str]
+    ) -> tuple[List[str], List[str]]:
         """
         Splits a normalized command line into base command and its arguments.
 
@@ -287,6 +299,5 @@ class BashScriptParser:
 
     def _is_orchestrator_line(self, line: str) -> bool:
         return any(
-            re.match(self.patterns[pattern], line)
-            for pattern in ["kubectl", "docker"]
+            re.match(self.patterns[pattern], line) for pattern in ["kubectl", "docker"]
         )

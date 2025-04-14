@@ -1,15 +1,14 @@
 import os
-from utils import load_file, remove_none_values
+from utils.file_utils import load_file, remove_none_values
 from caseutil import to_kebab
-import yaml  # Make sure to import the PyYAML library for YAML handling
-
+import yaml
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
     def __init__(self):
         """Initialize the tree builder with the manifest templates."""
-        self._config_map_tremplate = self._get_config_map_template()
+        self._config_map_template = self._get_config_map_template()
         self.deployment_template = self._get_deployment_template()
         self._service_template = self._get_service_template()
         self._stateful_set_template = self._get_stateful_set_template()
@@ -49,14 +48,14 @@ class ManifestBuilder:
     def _get_service_template(self) -> dict:
         """Get the service template."""
         return self._load_template(
-            os.path.join(os.path.dirname(__file__), os.getenv("SERVICE_TEMPLATE_PATH"))
+            os.path.join(os.path.dirname(__file__), os.getenv("SERVICES_TEMPLATE_PATH"))
         )
 
     def _get_stateful_set_template(self) -> dict:
         """Get the stateful set template."""
         return self._load_template(
             os.path.join(
-                os.path.dirname(__file__), os.getenv("STATEFUL_SET_TEMPLATE_PATH")
+                os.path.dirname(__file__), os.getenv("STATEFULSET_TEMPLATE_PATH")
             )
         )
 
