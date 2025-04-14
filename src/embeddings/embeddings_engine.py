@@ -1,11 +1,7 @@
-import re
-from typing import Dict, List, Optional, Union, Any
-import os
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from numpy import ndarray
-from numpy import log
-from utils import load_file
+
 
 
 class EmbeddingsEngine:
@@ -19,13 +15,13 @@ class EmbeddingsEngine:
         """Get the model."""
         return self._model
 
-    def encode_word(self, text: str) -> ndarray:
-        """Encode the text using the model."""
-        return self.model.encode(text, output_value="token_embeddings")
 
     def encode(self, text: str) -> ndarray:
         """Encode the text using the model."""
-        return self.model.encode(text, output_value="sentence_embeddings")
+        tensor_output = self.model.encode(text)
+
+            
+        return tensor_output
 
     def compute_similarity(self, embedding_1: ndarray, embedding_2: ndarray) -> float:
         """Compute cosine similarity between embeddings.
@@ -52,3 +48,19 @@ class EmbeddingsEngine:
         base_embedding: ndarray = self.model.encode(base)
 
         return self.compute_similarity(query_embedding, base_embedding)
+
+    def compare_words(self, word1: str, word2: str) -> float:
+        """Compare two words using their embeddings.
+        
+        Args:
+            word1: First word to compare
+            word2: Second word to compare
+            
+        Returns:
+            float: Similarity score between 0 and 1
+        """
+        # Use sentence embeddings for single words
+        emb1 = self.model.encode(word1, convert_to_numpy=True)
+        emb2 = self.model.encode(word2, convert_to_numpy=True)
+        
+        return float(cosine_similarity([emb1], [emb2])[0][0])
