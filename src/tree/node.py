@@ -5,7 +5,14 @@ from tree.node_types import NodeType
 
 
 class Node:
-    def __init__(self, name: str, type: NodeType, parent: Optional['Node']=None, metadata: Optional[dict]=None):
+    def __init__(
+        self,
+        name: str,
+        type: NodeType,
+        value: Optional[str],
+        parent: Optional["Node"] = None,
+        metadata: Optional[dict] = None,
+    ):
         """
         Initialize a Node instance.
         Args:
@@ -16,32 +23,53 @@ class Node:
         """
         self.name: str = name
         self.type: NodeType = type
-        self.parent: Optional['Node'] = parent
+        self.value: Optional[str] | Optional[List[str]] = value
+        self.parent: Optional["Node"] = parent
         self.children: List[Node] = []
-        self.medatada: Optional[dict] = metadata
-    
-    def add_child(self, child: 'Node') -> None:  # Add this missing method
+        self.metadata: Optional[dict] = metadata
+
+    def add_child(self, child: "Node") -> None:
         self.children.append(child)
         child.parent = self
 
-    def add_children(self, children: List['Node']) -> None:
+    def add_children(self, children: List["Node"]) -> None:
         self.children.extend(children)
         for child in children:
             child.parent = self
-    
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        if isinstance(value, str):
+            self._value = value
+        elif isinstance(value, list):
+            self._value = value
+        elif value is None:
+            self._value = None
+        else:
+            raise ValueError("Value must be a string or a list of strings.")
+
     def __repr__(self):
-        return f"Node(name={self.name}, type={self.type}, parent={self.parent})"
+        return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent})"
 
     def __str__(self):
-        return f"Node(name={self.name}, type={self.type}, parent={self.parent})"
+        return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent})"
 
     def __eq__(self, other):
         if not isinstance(other, Node):
             return False
-        return self.name == other.name and self.type == other.type and self.parent == other.parent
+        return (
+            self.name == other.name
+            and self.type == other.type
+            and self._value == other.value
+            and self.parent == other.parent
+        )
 
     def __hash__(self):
-        return hash((self.name, self.type, self.parent))
+        return hash((self.name, self.type, self._value, self.parent))
 
     def to_dict(self):
         return {
@@ -53,10 +81,3 @@ class Node:
     def from_dict(data):
         node = Node(data["name"], data["type"])
         return node
-
-    def to_json(self):
-        return json.dumps(self.to_dict(), indent=4)
-
-    def from_json(json_str):
-        data = json.loads(json_str)
-        return Node.from_dict(data)

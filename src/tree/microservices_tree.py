@@ -1,7 +1,5 @@
-from enum import Enum
-import json
 import os
-from typing import List, Optional
+from typing import Optional
 from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper
 from embeddings.embeddings_engine import EmbeddingsEngine
@@ -9,11 +7,8 @@ from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
-from tree.command_node import CommandNode
 from tree.node_types import NodeType
 from tree.node import Node
-from tree.env_node import EnvNode
-from tree.microservice_node import Microservice
 from parsers.bash_parser import BashScriptParser
 
 
@@ -64,7 +59,7 @@ class MicroservicesTree:
                 if file.endswith(".dockerfile") or file == "Dockerfile":
 
                     # Generate a new node parent
-                    microservice_node = Microservice(
+                    microservice_node = Node(
                         name=dir_name, type=NodeType.MICROSERVICE
                     )
 
@@ -76,7 +71,7 @@ class MicroservicesTree:
                         os.path.join(root, file)
                     )
                     command_nodes = [
-                        self.command_parser.generate_node_from_command(command)
+                        self.command_parser.generate_node_from_command(command, microservice_node)
                         for command in commands
                     ]
                     microservice_node.add_children(command_nodes)
