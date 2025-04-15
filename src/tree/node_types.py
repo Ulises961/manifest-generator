@@ -22,9 +22,11 @@ class NodeType(Enum):
     def __str__(self):
         return self.value
         
-    def to_json(self):
+    def __repr__(self):
         return self.value
-        
-    @classmethod
-    def from_json(cls, value):
-        return cls(value)
+    
+    def to_dict(self):
+        """Convert the NodeType to a dictionary."""
+        return {
+            "type": self.value
+        }
