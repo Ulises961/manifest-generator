@@ -10,41 +10,41 @@ from embeddings.service_classifier import ServiceClassifier
 from tree.node_types import NodeType
 from tree.node import Node
 from parsers.bash_parser import BashScriptParser
+import logging
 
 
 class MicroservicesTree:
     def __init__(
         self,
         root_path: str,
-        emeddings_engine: EmbeddingsEngine,
+        embeddings_engine: EmbeddingsEngine,
         secret_classifier: SecretClassifier,
         service_classifier: ServiceClassifier,
         label_classifier: LabelClassifier,
     ):
         self.root_path = root_path
-        self.root: Node = None
-        self.embeddings_engine: EmbeddingsEngine = emeddings_engine
+        self.root: Optional[Node] = None
+        self.embeddings_engine: EmbeddingsEngine = embeddings_engine
         self.secret_classifier = secret_classifier
         self.service_classifier = service_classifier
         self.command_parser: CommandMapper = CommandMapper(label_classifier)
         self.env_parser: EnvParser = EnvParser(secret_classifier)
-        self.bash_parser: BashScriptParser = BashScriptParser(secret_classifier, self.env_parser)
+        self.bash_parser: BashScriptParser = BashScriptParser(
+            secret_classifier, self.env_parser, embeddings_engine
+        )
+
+        self.logger = logging.getLogger(__name__)
 
     def build(self) -> Node:
-        # Placeholder for scanning logic
-        print(f"Scanning repository at {self.root_path}...")
+        self.root = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
 
         for root, dirs, _ in os.walk(self.root_path, topdown=True):
-            # Generate root node
-            curr_dir = os.path.basename(root)
-            self.root_node = Node(name=curr_dir, type=NodeType.ROOT)
-
             for dir in dirs:
                 if str(dir).startswith("."):
                     continue
                 else:
-                    self._scan_helper(os.path.join(root, dir), self.root_node, dir)
-        return self.root_node
+                    self._scan_helper(os.path.join(root, dir), self.root, dir)
+        return self.root
 
     def _scan_helper(self, path: str, parent: Node, dir_name: str) -> None:
         """Recursively scan the directory for microservices and their dependencies."""
@@ -57,10 +57,10 @@ class MicroservicesTree:
 
             for file in files:
                 if file.endswith(".dockerfile") or file == "Dockerfile":
-
+                    logging.info(f"Found Dockerfile in {os.path.join(root, file)}")
                     # Generate a new node parent
                     microservice_node = Node(
-                        name=dir_name, type=NodeType.MICROSERVICE
+                        name=dir_name, type=NodeType.MICROSERVICE, parent=parent
                     )
 
                     # Add the microservice node to the parent node
@@ -70,10 +70,14 @@ class MicroservicesTree:
                     commands = self.command_parser.parse_dockerfile(
                         os.path.join(root, file)
                     )
-                    command_nodes = [
-                        self.command_parser.generate_node_from_command(command, microservice_node)
-                        for command in commands
-                    ]
+
+                    command_nodes = {
+                        self.command_parser.generate_node_from_command(
+                            command, microservice_node
+                        )
+                        for command in commands 
+                    }
+
                     microservice_node.add_children(command_nodes)
                     is_microservice = True
                     break
@@ -90,9 +94,23 @@ class MicroservicesTree:
                                 os.path.join(root, file), microservice_node
                             )
                             continue
-                        
+
                 # Parse bash script if present in EntryPoint or CMD
-                self.bash_parser.determine_startup_command(root, files, microservice_node)
+                self.bash_parser.determine_startup_command(
+                    root, files, microservice_node
+                )
 
+    def print_tree(self, node: Node, level: int = 0) -> None:
+        """Recursively print the tree structure."""
+        if level == 0:
+            indent = ""
+            print(f"{indent}{node.name} ({node.type})")
+        else:
+            indent = ""
+            for i in range(level - 1):
+                indent = " " * ((i+1) * 4) + "|"
+            indent = indent + " " * (level * 4) + "|"
+            print(f"{indent}-- {node.name} ({node.value if node.value else ''})")
 
-
+        for child in node.children:
+            self.print_tree(child, level + 1)

@@ -86,13 +86,11 @@ class CommandMapper:
     def _generate_label_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a LABEL command."""
         is_label = self.decide_label(command["value"])
-
         return self._create_docker_node(command, NodeType.LABEL if is_label else NodeType.ANNOTATION, parent)
       
-
     def _generate_expose_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from an EXPOSE command."""
-        return {"type": "PORTS", "command": command["value"]}
+        return self._create_docker_node(command, NodeType.PORT, parent) 
     
     def _generate_entrypoint_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from an ENTRYPOINT command."""
