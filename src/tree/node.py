@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from tree.node_types import NodeType
 
@@ -9,7 +9,7 @@ class Node:
         self,
         name: str,
         type: NodeType,
-        value: Optional[str],
+        value: Optional[str] | Optional[List[str]] = None,
         parent: Optional["Node"] = None,
         metadata: Optional[dict] = None,
     ):
@@ -32,7 +32,7 @@ class Node:
         self.children.append(child)
         child.parent = self
 
-    def add_children(self, children: List["Node"]) -> None:
+    def add_children(self, children: Sequence["Node"]) -> None:
         self.children.extend(children)
         for child in children:
             child.parent = self
@@ -53,10 +53,10 @@ class Node:
             raise ValueError("Value must be a string or a list of strings.")
 
     def __repr__(self):
-        return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent})"
+        return f"Node(name={self.name}, type={self.type}, value={self._value}, parent={self.parent} ,children={self.children})"
 
     def __str__(self):
-        return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent})"
+        return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent}, children={self.children})"
 
     def __eq__(self, other):
         if not isinstance(other, Node):

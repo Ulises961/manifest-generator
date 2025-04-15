@@ -52,11 +52,11 @@ def setup_sentence_transformer(force_cpu: bool = False) -> SentenceTransformer:
     
     # First try loading from local path
     if os.path.exists(model_path):
-        return SentenceTransformer(model_path, device=device)
+        return SentenceTransformer(model_name_or_path=model_path, device=device)
     
     # Download and save if not found locally
     os.makedirs(model_path, exist_ok=True)
-    model = SentenceTransformer(model_name, device=device)
+    model = SentenceTransformer(model_name_or_path=model_name, device=device)
     model.save(model_path)
     
     return model

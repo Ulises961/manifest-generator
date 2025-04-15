@@ -1,12 +1,13 @@
 from typing import List, Optional
 from tree.node import Node
+from tree.node_types import NodeType
 
 
 class DockerInstruction(Node):
     def __init__(
         self,
         name: str,
-        type: str,
+        type: NodeType,
         value: str| List[str],
         parent: Optional["Node"] = None,
         is_persistent: bool = False,
@@ -17,10 +18,10 @@ class DockerInstruction(Node):
         self.is_persistent = is_persistent
 
     def __repr__(self):
-        return f"DockerInstruction(name={self.name}, type={self.type}, value={self.value} metadata={self.metadata})"
+        return f"DockerInstruction(name={self.name}, type={self.type}, value={self.value}, parent={self.parent}, metadata={self.metadata})"
 
     def __str__(self):
-        return f"DockerInstruction(name={self.name}, type={self.type}, value={self.value} metadata={self.metadata})"
+        return f"DockerInstruction(name={self.name}, type={self.type}, value={self.value}, parent={self.parent} metadata={self.metadata})"
 
     def __eq__(self, other):
         if not isinstance(other, DockerInstruction):

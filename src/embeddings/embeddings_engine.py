@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from numpy import ndarray
+from torch import Tensor
 
 
 
@@ -16,14 +17,12 @@ class EmbeddingsEngine:
         return self._model
 
 
-    def encode(self, text: str) -> ndarray:
+    def encode(self, text: str) -> Tensor:
         """Encode the text using the model."""
-        tensor_output = self.model.encode(text)
-
-            
+        tensor_output = self.model.encode(text)            
         return tensor_output
 
-    def compute_similarity(self, embedding_1: ndarray, embedding_2: ndarray) -> float:
+    def compute_similarity(self, embedding_1: Tensor, embedding_2: Tensor) -> float:
         """Compute cosine similarity between embeddings.
 
         Args:
@@ -44,8 +43,8 @@ class EmbeddingsEngine:
 
     def compare_manifests(self, query: str, base: str) -> float:
         """Compare two sentences using cosine similarity."""
-        query_embedding: ndarray = self.model.encode(query)
-        base_embedding: ndarray = self.model.encode(base)
+        query_embedding: Tensor = self.model.encode(query)
+        base_embedding: Tensor = self.model.encode(base)
 
         return self.compute_similarity(query_embedding, base_embedding)
 

@@ -195,7 +195,7 @@ class BashScriptParser:
 
     def _parse_command(
         self, line: str, parent: Node
-    ) -> Tuple[Optional[DockerInstruction], Optional[DockerInstruction]]:
+    ) -> Tuple[DockerInstruction, Optional[DockerInstruction]]:
         """Parse command declarations."""
         normalized = self._normalize_command_field(line)
         if not normalized:
@@ -249,8 +249,8 @@ class BashScriptParser:
     def _parse_command_pair(
         self,
         root: str,
-        entrypoint: DockerInstruction,
-        cmd: DockerInstruction,
+        entrypoint: Node,
+        cmd: Node,
         parent: Node,
     ) -> None:
         """Parse ENTRYPOINT + CMD combination."""
@@ -258,7 +258,7 @@ class BashScriptParser:
             self.parse_script(os.path.join(root, entrypoint.value), parent)
 
     def _parse_command_as_entrypoint(
-        self, root: str, cmd: DockerInstruction, parent: Node
+        self, root: str, cmd: Node, parent: Node
     ) -> None:
         """Parse single command as entrypoint."""
         if cmd.value.endswith(".sh"):

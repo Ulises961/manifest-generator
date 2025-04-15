@@ -1,4 +1,5 @@
 import base64
+from typing_extensions import Buffer
 from embeddings.secret_classifier import SecretClassifier
 from tree.node import Node
 from tree.node_types import NodeType
@@ -36,5 +37,6 @@ class EnvParser:
         """Create an Node from a key-value pair."""
         is_secret = self.secret_classifier.decide_secret(value)
         if is_secret:
+            value = value.encode("utf-8")
             value = base64.b64encode(value)
         return Node(name=key, type=NodeType.SECRET if is_secret else NodeType.ENV, value=value)
