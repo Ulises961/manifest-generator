@@ -3,6 +3,7 @@ from utils.file_utils import load_file, remove_none_values
 from caseutil import to_kebab
 import yaml
 
+
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
@@ -68,47 +69,51 @@ class ManifestBuilder:
     def build_secrets_yaml(self, secret: dict) -> str:
         """Build a YAML file from the template and data."""
         # Check if the values.yaml file exists
-        values_file_path = os.getenv("VALUES_FILE_PATH")
-        service_name = to_kebab(secret["service"])
+        values_file_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            os.getenv("TARGET_PATH"),
+            os.getenv("MANUAL_MANIFESTS_PATH"),
+            os.getenv("VALUES_FILE_PATH"),
+        )
         secret_name = to_kebab(secret["name"])
 
         # Prepare the secret entry
         secret_entry = {
-            f"secret-{secret_name}": {
+            f"{secret_name}": {
                 "name": secret_name,
-                "password": secret["password"],
+                "password": secret["value"],
             }
         }
 
         if not os.path.exists(values_file_path):
             # Create the values.yaml file if it doesn't exist
+            os.makedirs(os.path.dirname(values_file_path), exist_ok=True)
 
             with open(values_file_path, "w") as file:
-                yaml.dump({f"secrets": secret_entry}, file)
+                yaml.dump({"secrets": secret_entry}, file)
         else:
             # Load existing values.yaml content
             with open(values_file_path, "r") as file:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the secret entry
-            existing_data["secrets"][f"secret-{secret_name}"] = existing_data.get(
-                f"secret-{secret_name}", {}
-            )
-            existing_data["secrets"][f"secret-{secret_name}"].update(secret_entry)
+            if "secrets" not in existing_data:
+                existing_data["secrets"] = {}
+            existing_data["secrets"].update(secret_entry)
 
             # Write the updated content back to the values.yaml file
             with open(values_file_path, "w") as file:
                 yaml.dump(existing_data, file)
 
         # Prepare the Kubernetes Secret template
-        secret_values = f"Values.secrets.secret-{secret_name}"
         template = self.get_template("config_map")
         template["kind"] = "Secret"
-        template["metadata"]["name"] = f"{{{secret_values}.name}}"
+        template["metadata"]["name"] = "{{ .Values.secrets." + secret_name + ".name }}"
         template["type"] = "Opaque"
         template["data"] = {
-            f"password: {{{secret_values}.password}}"
-        }  # Store as a dictionary
+            "password": "{{ .Values.secrets." + secret_name + ".password }}"
+        }
 
         # Remove all None values from the template
         template = remove_none_values(template)
@@ -116,6 +121,7 @@ class ManifestBuilder:
         # Convert the template to YAML string
         secrets_path = os.path.join(
             os.path.dirname(__file__),
+            "..",
             os.getenv("TARGET_PATH"),
             os.getenv("MANUAL_MANIFESTS_PATH"),
             "secrets",
@@ -200,7 +206,7 @@ class ManifestBuilder:
         # Prepare the deployment entry
         deployment_entry = {
             "name": service_name,
-            "labels": {deployment["labels"]},
+            "labels": deployment["labels"],
             "command": deployment["command"],
             "args": deployment["args"],
             "env": deployment["env"],
@@ -312,7 +318,7 @@ class ManifestBuilder:
         # Prepare the service entry
         service_entry = {
             "name": service_name,
-            "labels": {service["labels"]},
+            "labels": service["labels"],
             "port": service["port"],
             "target_port": service["target_port"],
             "protocol": service["protocol"],
@@ -341,16 +347,18 @@ class ManifestBuilder:
         # Prepare the Kubernetes Service template
         service_values = f"Values.service.{service_name}"
         template = self.get_template("service")
-        template["metadata"]["name"] = f"{{ {service_values}.name }}"
-        template["metadata"]["labels"] = f"{{{service_values}.labels }}"
-        template["spec"]["selector"] = f"{{ {service_values}.labels }}"
-        template["spec"]["ports"][0]["port"] = f"{{ {service_values}.port }}"
-        template["spec"]["ports"][0][
-            "targetPort"
-        ] = f"{{ {service_values}.target_port }}"
-        template["spec"]["ports"][0]["protocol"] = f"{{ {service_values}.protocol }}"
-        template["spec"]["ports"][0]["name"] = f"{{ {service_values}.name }}"
-        template["spec"]["type"] = f"{{ {service_values}.type }}"
+        template["metadata"]["name"] = "{{" + service_values + ".name }}"
+        template["metadata"]["labels"] = "{{" + service_values + ".labels }}"
+        template["spec"]["selector"] = "{{" + service_values + ".labels }}"
+        template["spec"]["ports"][0]["port"] = "{{" + service_values + ".port }}"
+        template["spec"]["ports"][0]["targetPort"] = (
+            "{{" + service_values + ".target_port }}"
+        )
+        template["spec"]["ports"][0]["protocol"] = (
+            "{{" + service_values + ".protocol }}"
+        )
+        template["spec"]["ports"][0]["name"] = "{{" + service_values + ".name }}"
+        template["spec"]["type"] = "{{" + service_values + ".type }}"
         # Remove all None values from the template
         template = remove_none_values(template)
 
@@ -377,7 +385,7 @@ class ManifestBuilder:
         # Prepare the stateful set entry
         stateful_set_entry = {
             "name": stateful_set_name,
-            "labels": {stateful_set["labels"]},
+            "labels": stateful_set["labels"],
             "command": stateful_set["command"],
             "args": stateful_set["args"],
             "env": stateful_set["env"],
@@ -416,58 +424,58 @@ class ManifestBuilder:
         # Prepare the Kubernetes StatefulSet template
         stateful_set_values = f"Values.stateful-set.{stateful_set_name}"
         template = self.get_template("statefullset")
-        template["metadata"]["name"] = f"{{ {stateful_set_values}.name }}"
-        template["metadata"]["labels"] = f"{{{stateful_set_values}.labels }}"
-        template["spec"]["selector"][
-            "matchLabels"
-        ] = f"{{ {stateful_set_values}.labels }}"
+        template["metadata"]["name"] = "{{" + stateful_set_values + ".name }}"
+        template["metadata"]["labels"] = "{{" + stateful_set_values + ".labels }}"
+        template["spec"]["selector"]["matchLabels"] = (
+            "{{" + stateful_set_values + ".labels }}"
+        )
 
-        template["spec"]["template"]["metadata"][
-            "labels"
-        ] = f"{{ {stateful_set_values}.labels }}"
+        template["spec"]["template"]["metadata"]["labels"] = (
+            "{{" + stateful_set_values + ".labels }}"
+        )
 
-        template["spec"]["template"]["spec"]["containers"][0][
-            "name"
-        ] = f"{{ {stateful_set_values}.name }}"
+        template["spec"]["template"]["spec"]["containers"][0]["name"] = (
+            "{{" + stateful_set_values + ".name }}"
+        )
 
-        template["spec"]["template"]["spec"]["containers"][0][
-            "command"
-        ] = f"{{ {stateful_set_values}.command }}"
+        template["spec"]["template"]["spec"]["containers"][0]["command"] = (
+            "{{" + stateful_set_values + ".command }}"
+        )
 
-        template["spec"]["template"]["spec"]["containers"][0][
-            "args"
-        ] = f"{{ {stateful_set_values}.args }}"
+        template["spec"]["template"]["spec"]["containers"][0]["args"] = (
+            "{{" + stateful_set_values + ".args }}"
+        )
 
         if stateful_set["user"] is not None:
             template["spec"]["template"]["spec"]["containers"][0]["securityContext"] = {
-                "runAsUser": f"{{ {stateful_set_values}.user }}"
+                "runAsUser": "{{" + stateful_set_values + ".user }}"
             }
-        template["spec"]["template"]["spec"]["containers"][0][
-            "env"
-        ] = f"{{ {stateful_set_values}.env }}"
+        template["spec"]["template"]["spec"]["containers"][0]["env"] = (
+            "{{" + stateful_set_values + ".env }}"
+        )
 
         if stateful_set["volumes"] is not None:
-            template["spec"]["template"]["spec"]["containers"][0][
-                "volumeMounts"
-            ] = f"{{ {stateful_set_values}.volume_mounts }}"
+            template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = (
+                "{{" + stateful_set_values + ".volume_mounts }}"
+            )
 
-            template["spec"]["template"]["spec"][
-                "volumes"
-            ] = f"{{ {stateful_set_values}.volumes }}"
+            template["spec"]["template"]["spec"]["volumes"] = (
+                "{{" + stateful_set_values + ".volumes }}"
+            )
 
         if stateful_set["ports"] is not None:
-            template["spec"]["template"]["spec"]["containers"][0][
-                "ports"
-            ] = f"{{ {stateful_set_values}.ports }}"
-            
+            template["spec"]["template"]["spec"]["containers"][0]["ports"] = (
+                "{{" + stateful_set_values + ".ports }}"
+            )
+
         if stateful_set["workdir"] is not None:
-            template["spec"]["template"]["spec"]["containers"][0][
-                "workingDir"
-            ] = f"{{ {stateful_set_values}.workdir }}"
+            template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
+                "{{" + stateful_set_values + ".workdir }}"
+            )
         if stateful_set["liveness_probe"] is not None:
-            template["spec"]["template"]["spec"]["containers"][0][
-                "livenessProbe"
-            ] = f"{{ {stateful_set_values}.liveness_probe }}"
+            template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = (
+                "{{" + stateful_set_values + ".liveness_probe }}"
+            )
         # Remove all None values from the template
         template = remove_none_values(template)
         # Convert the template to YAML string
@@ -497,7 +505,7 @@ class ManifestBuilder:
         # Prepare the PVC entry
         pvc_entry = {
             "name": pvc_name,
-            "labels": {pvc["labels"]},
+            "labels": pvc["labels"],
             "storage_class": pvc["storage_class"],
             "access_modes": pvc["access_modes"],
             "resources": pvc["resources"],
@@ -523,13 +531,13 @@ class ManifestBuilder:
         # Prepare the Kubernetes PVC template
         pvc_values = f"Values.pvc.{pvc_name}"
         template = self.get_template("pvc")
-        template["metadata"]["name"] = f"{{ {pvc_values}.name }}"
-        template["metadata"]["labels"] = f"{{{pvc_values}.labels }}"
-        template["spec"]["storageClassName"] = f"{{ {pvc_values}.storage_class }}"
-        template["spec"]["accessModes"] = f"{{ {pvc_values}.access_modes }}"
-        template["spec"]["resources"]["requests"][
-            "storage"
-        ] = f"{{ {pvc_values}.resources }}"
+        template["metadata"]["name"] = "{{" + pvc_values + ".name }}"
+        template["metadata"]["labels"] = "{{" + pvc_values + ".labels }}"
+        template["spec"]["storageClassName"] = "{{" + pvc_values + ".storage_class }}"
+        template["spec"]["accessModes"] = "{{" + pvc_values + ".access_modes }}"
+        template["spec"]["resources"]["requests"]["storage"] = (
+            "{{" + pvc_values + ".resources }}"
+        )
 
         # Remove all None values from the template
         template = remove_none_values(template)
