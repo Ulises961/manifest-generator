@@ -12,7 +12,7 @@ from utils.file_utils import load_environment, setup_sentence_transformer
 
 @pytest.fixture
 def command_mapper():
-    model: SentenceTransformer = setup_sentence_transformer()
+    model = setup_sentence_transformer()
     embeddings_engine = EmbeddingsEngine(model)
     label_classifier = LabelClassifier(embeddings_engine)
     return CommandMapper(label_classifier)

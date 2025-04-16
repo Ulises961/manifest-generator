@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from tree.node_types import NodeType
 
@@ -9,9 +9,9 @@ class Node:
         self,
         name: str,
         type: NodeType,
-        value: Optional[str] | Optional[List[str]] = None,
+        value: Optional[str] | Optional[List[str]] | Optional[bytes]= None,
         parent: Optional["Node"] = None,
-        metadata: Optional[dict] = None,
+        metadata: Dict[str, Any] = {},
     ):
         """
         Initialize a Node instance.
@@ -51,7 +51,21 @@ class Node:
             self._value = None
         else:
             raise ValueError("Value must be a string or a list of strings.")
+    
+    @property
+    def metadata(self):
+        return self._metadata
+        
+    @metadata.setter
+    def metadata(self, metadata):
+        if isinstance(metadata, dict):
+            self._metadata = metadata
+        elif metadata is None:
+            self._metadata = None
+        else:
+            raise ValueError("Metadata must be a dictionary or None.")
 
+    
     def __repr__(self):
         return f"Node(name={self.name}, type={self.type}, value={self._value}, parent={self.parent} ,children={self.children})"
 

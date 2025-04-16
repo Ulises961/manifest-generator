@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, List, cast
 from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper
 from embeddings.embeddings_engine import EmbeddingsEngine
@@ -71,14 +71,12 @@ class MicroservicesTree:
                         os.path.join(root, file)
                     )
 
-                    command_nodes = {
-                        self.command_parser.generate_node_from_command(
-                            command, microservice_node
-                        )
+                    command_nodes = [
+                        self.command_parser.generate_node_from_command(command, microservice_node)
                         for command in commands 
-                    }
+                    ]
 
-                    microservice_node.add_children(command_nodes)
+                    microservice_node.add_children(cast(List[Node], command_nodes))
                     is_microservice = True
                     break
 

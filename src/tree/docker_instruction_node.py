@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from tree.node import Node
 from tree.node_types import NodeType
 
@@ -11,7 +11,7 @@ class DockerInstruction(Node):
         value: str| List[str],
         parent: Optional["Node"] = None,
         is_persistent: bool = False,
-        metadata: Optional[dict] = None,
+        metadata: Dict[str,Any] = {},
     ):
 
         super().__init__(name, type, value, parent, metadata)

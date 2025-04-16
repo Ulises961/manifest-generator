@@ -1,4 +1,5 @@
 import os
+from typing import Any, Dict, cast
 from utils.file_utils import load_file, remove_none_values
 from caseutil import to_kebab
 import yaml
@@ -6,8 +7,11 @@ import yaml
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
+    target_path = os.getenv("TARGET_PATH", "target/charts")
+    manifests_path = os.getenv("MANUAL_MANIFESTS_PATH", "manual_manifests")
+    values_file_path = os.getenv("VALUES_FILE_PATH", "values.yaml")
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the tree builder with the manifest templates."""
         self._config_map_template = self._get_config_map_template()
         self.deployment_template = self._get_deployment_template()
@@ -15,7 +19,7 @@ class ManifestBuilder:
         self._stateful_set_template = self._get_stateful_set_template()
         self._pvc_template = self._get_pvc_template()
 
-    def get_template(self, template_name: str) -> dict:
+    def get_template(self, template_name: str) -> Dict[str, Any]:
         """Get the template by name."""
         templates = {
             "config_map": self._config_map_template,
@@ -24,17 +28,20 @@ class ManifestBuilder:
             "stateful_set": self._stateful_set_template,
             "pvc": self._pvc_template,
         }
-        return templates.get(template_name)
+
+        assert template_name in templates, f"Template {template_name} not found"
+        return templates[template_name]
 
     def _load_template(self, path: str) -> dict:
         """Load a template from the given path."""
-        return load_file(path)
-
+        template = load_file(path)
+        return cast(dict, template)
+    
     def _get_config_map_template(self) -> dict:
         """Get the config map template."""
         return self._load_template(
             os.path.join(
-                os.path.dirname(__file__), os.getenv("CONFIG_MAP_TEMPLATE_PATH")
+                os.path.dirname(__file__), os.getenv("CONFIG_MAP_TEMPLATE_PATH", "resources/k8s_templates/configmap.json")
             )
         )
 
@@ -42,39 +49,39 @@ class ManifestBuilder:
         """Get the deployment template."""
         return self._load_template(
             os.path.join(
-                os.path.dirname(__file__), os.getenv("DEPLOYMENT_TEMPLATE_PATH")
+                os.path.dirname(__file__), os.getenv("DEPLOYMENT_TEMPLATE_PATH", "resources/k8s_templates/deployment.json")
             )
         )
 
     def _get_service_template(self) -> dict:
         """Get the service template."""
         return self._load_template(
-            os.path.join(os.path.dirname(__file__), os.getenv("SERVICES_TEMPLATE_PATH"))
+            os.path.join(os.path.dirname(__file__), os.getenv("SERVICES_TEMPLATE_PATH", "resources/k8s_templates/services.json"))
         )
 
     def _get_stateful_set_template(self) -> dict:
         """Get the stateful set template."""
         return self._load_template(
             os.path.join(
-                os.path.dirname(__file__), os.getenv("STATEFULSET_TEMPLATE_PATH")
+                os.path.dirname(__file__), os.getenv("STATEFULSET_TEMPLATE_PATH", "resources/k8s_templates/statefulset.json")
             )
         )
 
     def _get_pvc_template(self) -> dict:
         """Get the PVC template."""
         return self._load_template(
-            os.path.join(os.path.dirname(__file__), os.getenv("PVC_TEMPLATE_PATH"))
+            os.path.join(os.path.dirname(__file__), os.getenv("PVC_TEMPLATE_PATH", "resources/k8s_templates/pvc.json"))
         )
 
-    def build_secrets_yaml(self, secret: dict) -> str:
+    def build_secrets_yaml(self, secret: dict) -> None:
         """Build a YAML file from the template and data."""
         # Check if the values.yaml file exists
         values_file_path = os.path.join(
             os.path.dirname(__file__),
             "..",
-            os.getenv("TARGET_PATH"),
-            os.getenv("MANUAL_MANIFESTS_PATH"),
-            os.getenv("VALUES_FILE_PATH"),
+           self.target_path,
+            self.manifests_path,
+            self.values_file_path,
         )
         secret_name = to_kebab(secret["name"])
 
@@ -122,8 +129,8 @@ class ManifestBuilder:
         secrets_path = os.path.join(
             os.path.dirname(__file__),
             "..",
-            os.getenv("TARGET_PATH"),
-            os.getenv("MANUAL_MANIFESTS_PATH"),
+            self.target_path,
+            self.manifests_path,
             "secrets",
         )
         os.makedirs(secrets_path, exist_ok=True)
@@ -132,11 +139,8 @@ class ManifestBuilder:
             template, os.path.join(secrets_path, f"{secret_name}-secret.yaml")
         )
 
-    def build_config_map_yaml(self, config_map: dict) -> str:
+    def build_config_map_yaml(self, config_map: dict) -> None:
         """Build a YAML file from the template and data."""
-        # Check if the values.yaml file exists
-        values_file_path = os.getenv("VALUES_FILE_PATH")
-        service_name = to_kebab(config_map["service"])
         config_map_name = to_kebab(config_map["name"])
 
         # Prepare the config map entry
@@ -147,13 +151,13 @@ class ManifestBuilder:
             }
         }
 
-        if not os.path.exists(values_file_path):
+        if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump({f"configs": config_map_entry}, file)
         else:
             # Load existing values.yaml content
-            with open(values_file_path, "r") as file:
+            with open(self.values_file_path, "r") as file:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the config map entry
@@ -165,7 +169,7 @@ class ManifestBuilder:
             )
 
             # Write the updated content back to the values.yaml file
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump(existing_data, file)
 
         # Remove all None values from the config map entry
@@ -181,8 +185,8 @@ class ManifestBuilder:
         # Convert the template to YAML string
         config_map_path = os.path.join(
             os.path.dirname(__file__),
-            os.getenv("TARGET_PATH"),
-            os.getenv("MANUAL_MANIFESTS_PATH"),
+            self.target_path,
+            self.manifests_path,
             "config_maps",
         )
         os.makedirs(config_map_path, exist_ok=True)
@@ -195,7 +199,7 @@ class ManifestBuilder:
         print(f"ConfigMap YAML file saved to {config_map_path}")
         # return config_map_path
 
-    def build_deployment_yaml(self, deployment: dict) -> str:
+    def build_deployment_yaml(self, deployment: dict) -> None:
         """Build a YAML file from the template and data."""
 
         # Check if the values.yaml file exists
@@ -219,13 +223,13 @@ class ManifestBuilder:
         }
 
         # Prepare the deployment entry for values.yaml
-        if not os.path.exists(values_file_path):
+        if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump({f"deployment-{service_name}": deployment_entry}, file)
         else:
             # Load existing values.yaml content
-            with open(values_file_path, "r") as file:
+            with open(self.values_file_path, "r") as file:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the deployment entry
@@ -235,7 +239,7 @@ class ManifestBuilder:
             existing_data[f"deployment-{service_name}"].update(deployment_entry)
 
             # Write the updated content back to the values.yaml file
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump(existing_data, file)
 
         # Prepare the Kubernetes Deployment template
@@ -298,8 +302,8 @@ class ManifestBuilder:
         # Convert the template to YAML string
         deployment_path = os.path.join(
             os.path.dirname(__file__),
-            os.getenv("TARGET_PATH"),
-            os.getenv("MANUAL_MANIFESTS_PATH"),
+            self.target_path,
+            self.manifests_path,
             "deployments",
         )
         os.makedirs(deployment_path, exist_ok=True)
@@ -309,11 +313,10 @@ class ManifestBuilder:
             os.path.join(deployment_path, f"{deployment['name']}-deployment.yaml"),
         )
 
-    def build_service_yaml(self, service: dict) -> str:
+    def build_service_yaml(self, service: dict) -> None:
         """Build a YAML file from the template and data."""
 
         # Check if the values.yaml file exists
-        values_file_path = os.getenv("VALUES_FILE_PATH")
         service_name = to_kebab(service["name"])
         # Prepare the service entry
         service_entry = {
@@ -325,13 +328,13 @@ class ManifestBuilder:
             "type": service["type"],
         }
         # Prepare the service entry for values.yaml
-        if not os.path.exists(values_file_path):
+        if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump({f"service-{service_name}": service_entry}, file)
         else:
             # Load existing values.yaml content
-            with open(values_file_path, "r") as file:
+            with open(self.values_file_path, "r") as file:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the service entry
@@ -341,7 +344,7 @@ class ManifestBuilder:
             existing_data[f"service-{service_name}"].update(service_entry)
 
             # Write the updated content back to the values.yaml file
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump(existing_data, file)
 
         # Prepare the Kubernetes Service template
@@ -365,8 +368,8 @@ class ManifestBuilder:
         # Convert the template to YAML string
         service_path = os.path.join(
             os.path.dirname(__file__),
-            os.getenv("TARGET_PATH"),
-            os.getenv("MANUAL_MANIFESTS_PATH"),
+            self.target_path,
+            self.manifests_path,
             "services",
         )
         os.makedirs(service_path, exist_ok=True)
@@ -375,11 +378,9 @@ class ManifestBuilder:
             template, os.path.join(service_path, f"{service['name']}-service.yaml")
         )
 
-    def build_stateful_set_yaml(self, stateful_set: dict) -> str:
+    def build_stateful_set_yaml(self, stateful_set: dict) -> None:
         """Build a YAML file from the template and data."""
 
-        # Check if the values.yaml file exists
-        values_file_path = os.getenv("VALUES_FILE_PATH")
         stateful_set_name = to_kebab(stateful_set["name"])
 
         # Prepare the stateful set entry
@@ -398,15 +399,15 @@ class ManifestBuilder:
         }
 
         # Prepare the stateful set entry for values.yaml
-        if not os.path.exists(values_file_path):
+        if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump(
                     {f"stateful-set-{stateful_set_name}": stateful_set_entry}, file
                 )
         else:
             # Load existing values.yaml content
-            with open(values_file_path, "r") as file:
+            with open(self.values_file_path, "r") as file:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the stateful set entry
@@ -418,7 +419,7 @@ class ManifestBuilder:
             )
 
             # Write the updated content back to the values.yaml file
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump(existing_data, file)
 
         # Prepare the Kubernetes StatefulSet template
@@ -481,8 +482,8 @@ class ManifestBuilder:
         # Convert the template to YAML string
         stateful_set_path = os.path.join(
             os.path.dirname(__file__),
-            os.getenv("TARGET_PATH"),
-            os.getenv("MANUAL_MANIFESTS_PATH"),
+            self.target_path,
+            self.manifests_path,
             "stateful_sets",
         )
         os.makedirs(stateful_set_path, exist_ok=True)
@@ -496,11 +497,8 @@ class ManifestBuilder:
         # Save the YAML file
         print(f"StatefulSet YAML file saved to {stateful_set_path}")
 
-    def build_pvc_yaml(self, pvc: dict) -> str:
+    def build_pvc_yaml(self, pvc: dict) -> None:
         """Build a YAML file from the template and data."""
-
-        # Check if the values.yaml file exists
-        values_file_path = os.getenv("VALUES_FILE_PATH")
         pvc_name = to_kebab(pvc["name"])
         # Prepare the PVC entry
         pvc_entry = {
@@ -511,13 +509,13 @@ class ManifestBuilder:
             "resources": pvc["resources"],
         }
         # Prepare the PVC entry for values.yaml
-        if not os.path.exists(values_file_path):
+        if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump({f"pvc-{pvc_name}": pvc_entry}, file)
         else:
             # Load existing values.yaml content
-            with open(values_file_path, "r") as file:
+            with open(self.values_file_path, "r") as file:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the PVC entry
@@ -525,7 +523,7 @@ class ManifestBuilder:
             existing_data[f"pvc-{pvc_name}"].update(pvc_entry)
 
             # Write the updated content back to the values.yaml file
-            with open(values_file_path, "w") as file:
+            with open(self.values_file_path, "w") as file:
                 yaml.dump(existing_data, file)
 
         # Prepare the Kubernetes PVC template
@@ -545,8 +543,8 @@ class ManifestBuilder:
         # Convert the template to YAML string
         pvc_path = os.path.join(
             os.path.dirname(__file__),
-            os.getenv("TARGET_PATH"),
-            os.getenv("MANUAL_MANIFESTS_PATH"),
+            self.target_path,
+            self.manifests_path,
             "pvcs",
         )
         os.makedirs(pvc_path, exist_ok=True)

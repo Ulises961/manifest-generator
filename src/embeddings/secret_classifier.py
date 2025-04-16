@@ -1,8 +1,9 @@
 import os
 import re
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from numpy import log, ndarray
+from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file
 
@@ -15,7 +16,7 @@ class SecretClassifier:
             os.path.dirname(os.path.dirname(__file__)), os.getenv("SECRETS_PATH", "resources/knowledge_base/secrets.json")
         )
         # Load secret embeddingss
-        self._secrets: Dict[str, List[ndarray]] = self._load_secrets(
+        self._secrets: Dict[str, List[Any]] = self._load_secrets(
           secrets_path
         )
 
@@ -37,7 +38,7 @@ class SecretClassifier:
 
     def _load_secrets(self, path: str) -> Dict[str, List[ndarray]]:
         """Load secrets from a file."""
-        secrets: Dict[str, List[str]] = load_file(path)
+        secrets: Dict[str, List[Any]] = load_file(path)
 
         embeddings_list: List[ndarray] = []
 
@@ -82,7 +83,7 @@ class SecretClassifier:
                 return True
 
         # Compute the embedding for the query
-        query_embedding: ndarray = self._engine.encode(query)
+        query_embedding: Tensor = self._engine.encode(query)
 
         for token in self._secrets["embeddings"]:
             # Compute the cosine similarity

@@ -2,6 +2,7 @@ import os
 from typing import Dict
 
 from numpy import ndarray
+from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file
 
@@ -9,7 +10,7 @@ from utils.file_utils import load_file
 class LabelClassifier:
     def __init__(self, embeddings_engine: EmbeddingsEngine) -> None:
         self._engine: EmbeddingsEngine = embeddings_engine
-        self._label_embeddings: Dict[str, Dict[str, ndarray]] = self._encode_labels()
+        self._label_embeddings: Dict[str, Dict[str, Tensor]] = self._encode_labels()
 
     def classify_label(self, label_key, threshold=0.8) -> str | None:
         key_embedding = self._engine.encode(label_key)
@@ -36,15 +37,15 @@ class LabelClassifier:
             return None
         elif len(label_similarities) == 0:
             best_label = None
-            best_annotation = max(annotation_similarities, key=annotation_similarities.get)
+            best_annotation = max(annotation_similarities.items(), key=lambda x: x[1])[0]
             return "annotation" if annotation_similarities[best_annotation] >= threshold else None
         else:
             best_annotation = None
-            best_label = max(label_similarities, key=label_similarities.get)
+            best_label = max(label_similarities.items(), key=lambda x: x[1])[0]
             return "label" if label_similarities[best_label] >= threshold else None
       
     
-    def _encode_labels(self) -> Dict[str, Dict[str, ndarray]]:
+    def _encode_labels(self) -> Dict[str, Dict[str, Tensor]]:
         """Encode labels using the SentenceTransformer model."""
 
         labels_path = os.path.join(

@@ -1,11 +1,13 @@
 import json
 import os
+from typing import Any, List, Optional
 import torch
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
+import shlex
 
 
-def load_file(path: str) -> dict:
+def load_file(path: str) -> Any:
     """Load a JSON file."""
     with open(path, "r") as file:
         return json.load(file)
@@ -36,7 +38,7 @@ def load_environment():
     env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
     load_dotenv(env_path)
 
-def setup_sentence_transformer(force_cpu: bool = False) -> SentenceTransformer:
+def setup_sentence_transformer(force_cpu: bool = False) -> Any:
     """Setup and return a SentenceTransformer model."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     models_dir = os.path.realpath(os.path.join(current_dir, "..", "resources", "models"))
@@ -52,11 +54,19 @@ def setup_sentence_transformer(force_cpu: bool = False) -> SentenceTransformer:
     
     # First try loading from local path
     if os.path.exists(model_path):
-        return SentenceTransformer(model_name_or_path=model_path, device=device)
+        return SentenceTransformer(model_name_or_path=model_path, device=device)  # type: ignore
     
     # Download and save if not found locally
     os.makedirs(model_path, exist_ok=True)
-    model = SentenceTransformer(model_name_or_path=model_name, device=device)
+    model = SentenceTransformer(model_name_or_path=model_name, device=device) # type: ignore
     model.save(model_path)
     
     return model
+
+def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
+    """Normalize Docker CMD/ENTRYPOINT field into list."""
+    if not field:
+        return []
+    if isinstance(field, list):
+        return field
+    return shlex.split(field)

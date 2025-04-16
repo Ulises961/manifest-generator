@@ -3,6 +3,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from numpy import log, ndarray
+from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file
 
@@ -25,7 +26,7 @@ class ServiceClassifier:
         """Get the services knowledge base."""
         return self._services
     
-    def calculate_threshold(self, embeddings_size) -> None:
+    def calculate_threshold(self, embeddings_size) -> float:
         # Calculate the threshold for the microservices embeddings
         self._microservices_threshold: float = 0.8 - (
             (log(embeddings_size) / embeddings_size) * 0.01
@@ -36,9 +37,9 @@ class ServiceClassifier:
             0.1, min(self._microservices_threshold, 0.9)
         )
 
-    def _load_services(self, path: str) -> Dict[str, Any]:
+    def _load_services(self, path: str) -> List[Dict[str, Any]]:
         """Push embeddings to services knowledge base."""
-        services: Dict[str, Any] = load_file(path)
+        services: Dict[str, List[Dict[str, Any]]] = load_file(path)
         embeddings_list: List[ndarray] = []
 
         for service in services["services"]:
@@ -61,7 +62,7 @@ class ServiceClassifier:
         """Decide the service based on the query and a given threshold."""
 
         # Compute the embedding for the query
-        query_embedding: ndarray = self._engine.encode(query)
+        query_embedding: Tensor = self._engine.encode(query)
 
         most_similar: Optional[Dict[str, Any]] = None
         max_similarity: float = -1.0

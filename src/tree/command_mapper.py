@@ -1,11 +1,12 @@
 import json
 import os
-from typing import  List
+from typing import List, Optional
 from dockerfile_parse import DockerfileParser
 from embeddings.label_classifier import LabelClassifier
 from tree.docker_instruction_node import DockerInstruction
 from tree.node import Node
 from tree.node_types import NodeType
+from utils.file_utils import normalize_command_field
 
 
 class CommandMapper:
@@ -36,26 +37,31 @@ class CommandMapper:
         # Create a DockerfileParser object
         parser: DockerfileParser = DockerfileParser(path=file_name)
         dockerfile: List[dict] = [
-            command
+            dict(command)
             for command in parser.structure
             if command["instruction"] in self.DOCKER_COMMANDS
         ]
+        
         return dockerfile
 
-    def get_commands(self, parsed_dockerfile: List[dict], parent: Node) -> List[DockerInstruction]:
+    def get_commands(
+        self, parsed_dockerfile: List[dict], parent: Node
+    ) -> List[Optional[DockerInstruction]]:
         """Get the list of commands from a parsed Dockerfile.
         Args:
             parsed_dockerfile (list[dict]): Parsed Dockerfile.
         Returns:
             list[dict]: List of commands from the Dockerfile.
         """
-         
+
         return [
             self.generate_node_from_command(command, parent)
             for command in parsed_dockerfile
         ]
 
-    def generate_node_from_command(self, command: dict, parent: Node) -> DockerInstruction:
+    def generate_node_from_command(
+        self, command: dict, parent: Node
+    ) -> DockerInstruction:
         """Generate a node from a Dockerfile command.
         Args:
             command (dict): Dockerfile command.
@@ -77,8 +83,8 @@ class CommandMapper:
         }
 
         # Only filtered commands are passed as argument so the lambda is never executed
-        return switch.get(instruction, lambda x: None)(command, parent)
-
+        assert instruction in switch, f"Unexpected instruction: {instruction}"
+        return switch[instruction](command, parent)
     def _generate_cmd_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a CMD command."""
         return self._create_docker_node(command, NodeType.CMD, parent)
@@ -86,49 +92,81 @@ class CommandMapper:
     def _generate_label_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a LABEL command."""
         is_label = self.decide_label(command["value"])
-        return self._create_docker_node(command, NodeType.LABEL if is_label else NodeType.ANNOTATION, parent)
-      
+        return self._create_docker_node(
+            command, NodeType.LABEL if is_label else NodeType.ANNOTATION, parent
+        )
+
     def _generate_expose_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from an EXPOSE command."""
-        return self._create_docker_node(command, NodeType.PORT, parent) 
-    
-    def _generate_entrypoint_node(self, command: dict, parent: Node) -> DockerInstruction:
+        return self._create_docker_node(command, NodeType.PORT, parent)
+
+    def _generate_entrypoint_node(
+        self, command: dict, parent: Node
+    ) -> DockerInstruction:
         """Generate a node from an ENTRYPOINT command."""
+        # Check if the entrypoint has flags that would require a supporting CMD node
+        value = normalize_command_field(command["value"])
+        if len(value) > 1:
+            # If the entrypoint has flags, create a CMD node
+            cmd_node = DockerInstruction(
+            name="CMD",
+            type=NodeType.CMD,
+            value=value[1:],
+            parent=parent,
+            is_persistent= False,
+            metadata={
+                "status": "active",
+                "parser_hint": "CMD node created to support ENTRYPOINT flags",
+                "offending_line": command["value"],
+                "description": "CMD node created to support ENTRYPOINT flags",
+            }
+        )
+            parent.add_child(cmd_node)
+            # Set the entrypoint to the first element
+            command["value"] = value[0]
         return self._create_docker_node(command, NodeType.ENTRYPOINT, parent)
-    
+
     def _generate_volume_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a VOLUME command."""
         # Check if the volume is persistent
-        volumes_path = os.path.join(os.path.dirname(__file__),"..", os.getenv("VOLUMES_PATH"))
+        volumes_path = os.path.join(
+            os.path.dirname(__file__), "..", os.getenv("VOLUMES_PATH", "resources/knowledge_base/volumes.json")
+        )
         with open(volumes_path, "r") as f:
             volumes = json.load(f)
 
-        is_persistent = command["value"] in volumes 
-        return self._create_docker_node(command, NodeType.VOLUME, parent, is_persistent=is_persistent)
-    
+        is_persistent = command["value"] in volumes
+        return self._create_docker_node(
+            command, NodeType.VOLUME, parent, is_persistent=is_persistent
+        )
+
     def _generate_user_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a USER command."""
         return self._create_docker_node(command, NodeType.USER, parent)
-    
+
     def _generate_workdir_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a WORKDIR command."""
         return self._create_docker_node(command, NodeType.WORKDIR, parent)
-    
-    def _generate_healthcheck_node(self, command: dict, parent: Node) -> DockerInstruction:
+
+    def _generate_healthcheck_node(
+        self, command: dict, parent: Node
+    ) -> DockerInstruction:
         """Generate a node from a HEALTHCHECK command."""
         return self._create_docker_node(command, NodeType.HEALTHCHECK, parent)
-    
-    def _generate_stopsignal_node(self, command: dict, parent: Node) -> DockerInstruction:
+
+    def _generate_stopsignal_node(
+        self, command: dict, parent: Node
+    ) -> DockerInstruction:
         """Generate a node from a STOPSIGNAL command."""
         return self._create_docker_node(command, NodeType.STOPSIGNAL, parent)
-    
-    
+
     def decide_label(self, label_key: str) -> bool:
         classified_label = self._label_classifier.classify_label(label_key)
         return classified_label == "label"
-    
 
-    def _create_docker_node(self, command: dict, type: NodeType, parent:  Node, is_persistent: bool = False) -> DockerInstruction:
+    def _create_docker_node(
+        self, command: dict, type: NodeType, parent: Node, is_persistent: bool = False
+    ) -> DockerInstruction:
         """Create a DockerInstruction from a command."""
         return DockerInstruction(
             name=command["instruction"],
