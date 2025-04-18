@@ -1,12 +1,13 @@
 import json
 import os
+import shlex
 from typing import List, Optional
 from dockerfile_parse import DockerfileParser
 from embeddings.label_classifier import LabelClassifier
 from tree.docker_instruction_node import DockerInstruction
 from tree.node import Node
 from tree.node_types import NodeType
-from utils.file_utils import normalize_command_field
+from utils.file_utils import check_shell_in_commands, normalize_command_field
 
 
 class CommandMapper:
@@ -41,7 +42,7 @@ class CommandMapper:
             for command in parser.structure
             if command["instruction"] in self.DOCKER_COMMANDS
         ]
-        
+
         return dockerfile
 
     def get_commands(
@@ -85,9 +86,10 @@ class CommandMapper:
         # Only filtered commands are passed as argument so the lambda is never executed
         assert instruction in switch, f"Unexpected instruction: {instruction}"
         return switch[instruction](command, parent)
+
     def _generate_cmd_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a CMD command."""
-        return self._create_docker_node(command, NodeType.CMD, parent)
+        return self._generate_command_node(command, NodeType.CMD, parent)
 
     def _generate_label_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a LABEL command."""
@@ -100,37 +102,32 @@ class CommandMapper:
         """Generate a node from an EXPOSE command."""
         return self._create_docker_node(command, NodeType.PORT, parent)
 
+    def _generate_command_node(
+        self,
+        command: dict,
+        node_type: NodeType,
+        parent: Node,
+    ) -> DockerInstruction:
+        """Generalized generator for CMD or ENTRYPOINT."""
+        value = normalize_command_field(command["value"])
+
+        command["value"] = value
+
+        return self._create_docker_node(command, node_type, parent)
+
     def _generate_entrypoint_node(
         self, command: dict, parent: Node
     ) -> DockerInstruction:
         """Generate a node from an ENTRYPOINT command."""
-        # Check if the entrypoint has flags that would require a supporting CMD node
-        value = normalize_command_field(command["value"])
-        if len(value) > 1:
-            # If the entrypoint has flags, create a CMD node
-            cmd_node = DockerInstruction(
-            name="CMD",
-            type=NodeType.CMD,
-            value=value[1:],
-            parent=parent,
-            is_persistent= False,
-            metadata={
-                "status": "active",
-                "parser_hint": "CMD node created to support ENTRYPOINT flags",
-                "offending_line": command["value"],
-                "description": "CMD node created to support ENTRYPOINT flags",
-            }
-        )
-            parent.add_child(cmd_node)
-            # Set the entrypoint to the first element
-            command["value"] = value[0]
-        return self._create_docker_node(command, NodeType.ENTRYPOINT, parent)
+        return self._generate_command_node(command, NodeType.ENTRYPOINT, parent)
 
     def _generate_volume_node(self, command: dict, parent: Node) -> DockerInstruction:
         """Generate a node from a VOLUME command."""
         # Check if the volume is persistent
         volumes_path = os.path.join(
-            os.path.dirname(__file__), "..", os.getenv("VOLUMES_PATH", "resources/knowledge_base/volumes.json")
+            os.path.dirname(__file__),
+            "..",
+            os.getenv("VOLUMES_PATH", "resources/knowledge_base/volumes.json"),
         )
         with open(volumes_path, "r") as f:
             volumes = json.load(f)

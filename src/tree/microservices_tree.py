@@ -7,6 +7,7 @@ from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
+from tree.docker_instruction_node import DockerInstruction
 from tree.node_types import NodeType
 from tree.node import Node
 from parsers.bash_parser import BashScriptParser
@@ -71,12 +72,24 @@ class MicroservicesTree:
                         os.path.join(root, file)
                     )
 
-                    command_nodes = [
-                        self.command_parser.generate_node_from_command(command, microservice_node)
-                        for command in commands 
-                    ]
+                    for command in commands:
+                        # Classify the command
+                        node:DockerInstruction = self.command_parser.generate_node_from_command(command, microservice_node)
+                        if node.type == NodeType.WORKDIR:
+                            # Keep the latest one
+                            for child in microservice_node.children:
+                                if child.type == NodeType.WORKDIR:
+                                    logging.info(
+                                        f"Removing old WORKDIR node: {child.name}"
+                                    )
+                                    microservice_node.children.remove(child)
 
-                    microservice_node.add_children(cast(List[Node], command_nodes))
+                        if node.metadata == {} or node.metadata["status"] == "active":
+                            logging.info(
+                                f"Adding command node: {node.name} with metadata: {node.metadata}"
+                            )
+                            microservice_node.add_child(node)
+                    
                     is_microservice = True
                     break
 
@@ -108,7 +121,7 @@ class MicroservicesTree:
             for i in range(level - 1):
                 indent = " " * ((i+1) * 4) + "|"
             indent = indent + " " * (level * 4) + "|"
-            print(f"{indent}-- {node.name} ({node.value if node.value else ''})")
+            print(f"{indent}-- {node.name} ({node.value})" if node.value is not None else f"{indent}-- {node.name}")
 
         for child in node.children:
             self.print_tree(child, level + 1)
