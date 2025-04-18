@@ -51,7 +51,7 @@ class BashScriptParser:
         # Case 2: Only CMD
         elif NodeType.CMD in entrypoint_nodes:
             cmd = entrypoint_nodes[NodeType.CMD]
-            self._parse_command_as_entrypoint(root, cmd, microservice_node)
+            self._parse_command_as_entrypoint(root, None, cmd, microservice_node)
 
         # Case 3: Only ENTRYPOINT
         elif NodeType.ENTRYPOINT in entrypoint_nodes:
