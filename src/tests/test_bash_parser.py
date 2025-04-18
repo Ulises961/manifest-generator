@@ -89,7 +89,7 @@ def test_parse_script(mock_open, parser):
     """
 
     parent = Node("test", NodeType.MICROSERVICE, "test")
-    nodes = parser.parse_script("/test/script.sh", parent)
+    nodes = parser.parse_script("/test/script.sh", None, None, parent)
 
     assert len(nodes) > 0
     assert any(isinstance(node, Node) for node in nodes)

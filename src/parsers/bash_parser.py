@@ -9,6 +9,7 @@ from tree.docker_instruction_node import DockerInstruction
 from embeddings.secret_classifier import SecretClassifier
 from utils.file_utils import normalize_command_field
 
+
 class BashScriptParser:
     """Parser for bash scripts that modify container runtime environment."""
 
@@ -55,7 +56,7 @@ class BashScriptParser:
         # Case 3: Only ENTRYPOINT
         elif NodeType.ENTRYPOINT in entrypoint_nodes:
             entrypoint = entrypoint_nodes[NodeType.ENTRYPOINT]
-            self._parse_command_as_entrypoint(root, entrypoint, microservice_node)
+            self._parse_command_as_entrypoint(root, entrypoint, None, microservice_node)
 
         # Case 4: Neither - look for startup scripts
         else:
@@ -70,7 +71,7 @@ class BashScriptParser:
         # Check for ENTRYPOINT or CMD in the dockerfile
         script_path = self._find_startup_script(root, files)
         if script_path:
-            nodes = self.parse_script(script_path, parent)
+            nodes = self.parse_script(script_path, None, None, parent)
             for node in nodes:
                 parent.add_child(node)
 
@@ -94,15 +95,28 @@ class BashScriptParser:
                         return os.path.join(root, file)
         return None
 
-    def parse_script(self, path: str, parent: Node) -> List[Node]:
+    def parse_script(
+        self,
+        path: str,
+        original_entrypoint: Optional[Node],
+        original_cmd: Optional[Node],
+        parent: Node,
+    ) -> List[Node]:
         """Parse a bash script and return its nodes."""
         with open(path, "r") as f:
             content = f.read()
 
-        return self._parse_script_content(path, content, parent)
+        return self._parse_script_content(
+            path, content, original_entrypoint, original_cmd, parent
+        )
 
     def _parse_script_content(
-        self, path: str, content: str, parent: Node
+        self,
+        path: str,
+        content: str,
+        original_entrypoint: Optional[Node],
+        original_cmd: Optional[Node],
+        parent: Node,
     ) -> List[Node]:
         """Parse bash script content and return nodes."""
         nodes: List[Node] = []
@@ -139,31 +153,33 @@ class BashScriptParser:
                 print(f"Parsed command: {entry} with args: {args}")
                 # Check if $@ is *not* in args → means it's not forwarding the original CMD
                 if args:
-                    for node in parent.children:
-                        if node.type == NodeType.CMD:
-                            node.metadata["review"] = "Overridden by bash script. Manual inspection might be required."
+                    if original_cmd:
+                        original_cmd.metadata["review"] = (
+                            "Overridden by bash script. Manual inspection might be required."
+                        )
 
-                            node.metadata["parser_hint"] = "Script entrypoint detected. Original CMD marked for review."
-                            
-                            node.metadata["status"] = "overridden"
+                        original_cmd.metadata["parser_hint"] = (
+                            "Script entrypoint detected. Original CMD marked for review."
+                        )
+
+                        original_cmd.metadata["status"] = "overridden"
 
                     nodes.extend([args])
 
                 # Mark the original ENTRYPOINT for later inspection
                 if entry:
-                    for node in parent.children:
-                        if node.type == NodeType.ENTRYPOINT:
-                            node.metadata["review"] = (
-                                "Overridden by bash script. Manual inspection might be required."
-                            )
-                            node.metadata["original_entrypoint"] = entry.value
-                            node.metadata["parser_hint"] = (
-                                "Script entrypoint detected. Original entrypoint marked for review."
-                            )
-                            node.metadata["status"] = "overridden"
-                            break
-                    nodes.extend([entry])
-
+                    if original_entrypoint:
+                        original_entrypoint.metadata["review"] = (
+                            "Overridden by bash script. Manual inspection might be required."
+                        )
+                        original_entrypoint.metadata["original_entrypoint"] = (
+                            entry.value
+                        )
+                        original_entrypoint.metadata["parser_hint"] = (
+                            "Script entrypoint detected. Original entrypoint marked for review."
+                        )
+                        original_entrypoint.metadata["status"] = "overridden"
+                    nodes.append(entry)
             elif sourced_nodes := self._parse_source(path, line, parent):
                 nodes.extend(sourced_nodes)
 
@@ -193,7 +209,7 @@ class BashScriptParser:
 
     def _parse_command(
         self, line: str, parent: Node
-    ) -> Tuple[Optional[DockerInstruction], Optional[DockerInstruction]]:
+    ) -> Tuple[Optional[Node], Optional[Node]]:
         """Parse command declarations."""
         normalized = normalize_command_field(line)
         if not normalized:
@@ -233,7 +249,9 @@ class BashScriptParser:
 
         return entrypoint_node, cmd_node
 
-    def _parse_source(self, dockerfile_path: str, line: str, parent: Node) -> Optional[List[Node]]:
+    def _parse_source(
+        self, dockerfile_path: str, line: str, parent: Node
+    ) -> Optional[List[Node]]:
         match = re.match(self.patterns["source"], line)
 
         if not match:
@@ -242,7 +260,8 @@ class BashScriptParser:
         _, path = match.groups()
         full_path = os.path.join(os.path.basename(dockerfile_path), path)
 
-        return self.parse_script(full_path, parent)
+        # The source command is a script and we have not found any entrypoint or cmd
+        return self.parse_script(full_path,None, None, parent)
 
     def _parse_command_pair(
         self,
@@ -252,17 +271,47 @@ class BashScriptParser:
         parent: Node,
     ) -> None:
         """Parse ENTRYPOINT + CMD combination."""
-        if entrypoint.value.endswith(".sh"):
-            self.parse_script(os.path.join(root, entrypoint.value), parent)
+        # Check if the entrypoint is a script
+        for command in entrypoint.value:
+            if command.endswith(".sh"):
+                self.parse_script(
+                    os.path.join(root, entrypoint.value), entrypoint, cmd, parent
+                )
+        # Other possible combination of commands are already handled by the mapper itself
 
     def _parse_command_as_entrypoint(
-        self, root: str, cmd: Node, parent: Node
+        self,
+        root: str,
+        original_entrypoint: Optional[Node],
+        original_cmd: Optional[Node],
+        parent: Node,
     ) -> None:
         """Parse single command as entrypoint."""
-        if cmd.value.endswith(".sh"):
-            self.parse_script(os.path.join(root, cmd.value), parent)
+        if original_cmd:
+            # The command needs to be run as an entrypoint
+            original_cmd.type = NodeType.ENTRYPOINT
+            original_cmd.metadata["status"] = "active"
+            original_cmd.metadata["parser_hint"] = (
+                "CMD detected. Converted to ENTRYPOINT."
+            )
 
+            # Reflect the upgrade in the references
+            original_entrypoint = original_cmd
+            original_cmd = None
 
+        if original_entrypoint:
+            for value in original_entrypoint.value:
+
+                if value.endswith(".sh"):
+                    original_entrypoint.metadata["parser_hint"] = (
+                        "Generated from bash script"
+                    )
+                    self.parse_script(
+                        os.path.join(root, value),
+                        original_entrypoint,
+                        original_cmd,
+                        parent,
+                    )
 
     def _split_command_and_args(
         self, normalized: List[str]

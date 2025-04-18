@@ -20,15 +20,18 @@ def test_get_template_valid_names():
 
 def test_get_template_invalid_name():
     builder = ManifestBuilder()
-    assert builder.get_template("invalid_name") is None
+    with pytest.raises(AssertionError):
+        builder.get_template("invalid_name")
 
 def test_get_template_empty_name():
     builder = ManifestBuilder()
-    assert builder.get_template("") is None
+    with pytest.raises(AssertionError):
+        builder.get_template("")
 
 def test_get_template_none_name():
     builder = ManifestBuilder()
-    assert builder.get_template(None) is None
+    with pytest.raises(AssertionError):
+        builder.get_template(None)
 
 def test_build_secrets_yaml():
     # Create a mock for ManifestBuilder with template methods pre-configured

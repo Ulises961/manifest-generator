@@ -54,8 +54,8 @@ def test_generate_label_node(mock_decide_label, command_mapper):
 def test_generate_expose_node(command_mapper):
     expose = {"instruction": "EXPOSE", "value": "80"}
     node = command_mapper._generate_expose_node(expose, None)
-    assert node["type"] == "PORTS"
-    assert node["command"] == "80"
+    assert node.type == NodeType.PORT
+    assert node.value == "80"
 
 def test_generate_volume_node(command_mapper):
     load_environment()
@@ -86,7 +86,7 @@ def test_get_commands(command_mapper):
     commands = command_mapper.get_commands(parsed_dockerfile, None)
     assert len(commands) == 2
     assert isinstance(commands[0], DockerInstruction)
-    assert isinstance(commands[1], dict)
+    assert isinstance(commands[1], DockerInstruction)
 
 def test_generate_entrypoint_node(command_mapper):
     entrypoint = {"instruction": "ENTRYPOINT", "value": ["python", "app.py"]}
