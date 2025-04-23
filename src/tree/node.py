@@ -67,10 +67,10 @@ class Node:
 
     
     def __repr__(self):
-        return f"Node(name={self.name}, type={self.type}, value={self._value}, parent={self.parent} ,children={self.children})"
+        return f"Node(name={self.name}, type={self.type}, value={self._value}, parent={self.parent.name} ,children={self.children})"
 
     def __str__(self):
-        return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent}, children={self.children})"
+        return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent.name if self.parent else None}, children={self.children})"
 
     def __eq__(self, other):
         if not isinstance(other, Node):
@@ -89,9 +89,22 @@ class Node:
         return {
             "name": self.name,
             "type": self.type,
-            "parent": self.parent,
+            "parent": self.parent.name if self.parent else None,
+            "value": self._value,
+            "metadata": self.metadata,
+            "children": [child.to_dict() for child in self.children],
         }
 
     def from_dict(data):
         node = Node(data["name"], data["type"])
         return node
+
+    def to_json(self):
+        return json.dumps(self.to_dict(), indent=4)
+    
+    def get_children_by_type(self, type: NodeType, must_be_active: Optional[bool] = False ) -> List["Node"]:
+        """Get a child node by name."""
+        return [
+            child for child in self.children if child.type == type and (not must_be_active or child.metadata["status"] == "active")
+        ]
+    
