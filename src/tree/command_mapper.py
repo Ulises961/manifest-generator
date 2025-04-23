@@ -79,8 +79,7 @@ class CommandMapper:
             "VOLUME": self._generate_volume_node,
             "USER": self._generate_user_node,
             "WORKDIR": self._generate_workdir_node,
-            "HEALTHCHECK": self._generate_healthcheck_node,
-            "STOPSIGNAL": self._generate_stopsignal_node,
+            "HEALTHCHECK": self._generate_healthcheck_node
         }
 
         # Only filtered commands are passed as argument so the lambda is never executed
@@ -99,7 +98,7 @@ class CommandMapper:
         )
 
     def _generate_expose_node(self, command: dict, parent: Node) -> DockerInstruction:
-        """Generate a node from an EXPOSE command."""
+        """Generate a node from an PORT command."""
         return self._create_docker_node(command, NodeType.PORT, parent)
 
     def _generate_command_node(
@@ -149,13 +148,8 @@ class CommandMapper:
         self, command: dict, parent: Node
     ) -> DockerInstruction:
         """Generate a node from a HEALTHCHECK command."""
+        # TODO: check if the health command is a shell command
         return self._create_docker_node(command, NodeType.HEALTHCHECK, parent)
-
-    def _generate_stopsignal_node(
-        self, command: dict, parent: Node
-    ) -> DockerInstruction:
-        """Generate a node from a STOPSIGNAL command."""
-        return self._create_docker_node(command, NodeType.STOPSIGNAL, parent)
 
     def decide_label(self, label_key: str) -> bool:
         classified_label = self._label_classifier.classify_label(label_key)
