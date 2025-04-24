@@ -2,7 +2,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from numpy import log, ndarray
+from numpy import log, ndarray, vstack
 from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file
@@ -40,25 +40,26 @@ class ServiceClassifier:
     def _load_services(self, path: str) -> List[Dict[str, Any]]:
         """Push embeddings to services knowledge base."""
         services: Dict[str, List[Dict[str, Any]]] = load_file(path)
-        embeddings_list: List[ndarray] = []
 
         for service in services["services"]:
    
             # Add the microservice label to the keywords list
             if service["name"] not in service["keywords"]:
                 service["keywords"] = service["keywords"] + [service["name"]]
+            
+            embeddings_list: List[Tensor] = []
 
             # Compute the embedding for the keywords
             for keyword in service["keywords"]:
                 # Compute embedding for each individual value in the array
                 embedding = self._engine.encode(keyword)
-                embeddings_list.extend(embedding)
+                embeddings_list.append(embedding)
 
-            service["embeddings"] = embeddings_list
+            service["embeddings"] = vstack(embeddings_list)  # Stack vertically into one array
 
         return services["services"]
 
-    def decide_service(self, query: str) -> Optional[Dict[str, Any]]:
+    def decide_service(self, query: str, ports: Optional[List[int]] = None) -> Optional[Dict[str, Any]]:
         """Decide the service based on the query and a given threshold."""
 
         # Compute the embedding for the query
@@ -72,7 +73,10 @@ class ServiceClassifier:
             similarity: float = self._engine.compute_similarity(
                 query_embedding, service["embeddings"]
             )
-
+            if ports and len(service["ports"]) > 0:
+                for port in ports:
+                    if port in service["ports"]:
+                        similarity += 0.1 
             # Check if the similarity is greater than the threshold
             if similarity > max_similarity and similarity >= self.calculate_threshold(len(service["embeddings"])):
                 most_similar = service

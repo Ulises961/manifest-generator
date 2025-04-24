@@ -40,7 +40,7 @@ class SecretClassifier:
         """Load secrets from a file."""
         secrets: Dict[str, List[Any]] = load_file(path)
 
-        embeddings_list: List[ndarray] = []
+        embeddings_list: List[Tensor] = []
 
         # Compute embeddings for known secrets
         for key, values in secrets.items():
@@ -48,7 +48,7 @@ class SecretClassifier:
                 # Compute embedding for each individual value in the array
                 for value in values:
                     embedding = self._engine.encode(value)
-                    embeddings_list.extend(embedding)
+                    embeddings_list.append(embedding)
 
         secrets["embeddings"] = embeddings_list
 

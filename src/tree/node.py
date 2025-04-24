@@ -105,6 +105,6 @@ class Node:
     def get_children_by_type(self, type: NodeType, must_be_active: Optional[bool] = False ) -> List["Node"]:
         """Get a child node by name."""
         return [
-            child for child in self.children if child.type == type and (not must_be_active or child.metadata["status"] == "active")
+            child for child in self.children if child.type == type and (not must_be_active or (child.metadata is not {} and child.metadata.setdefault("status","active") == "active"))
         ]
     
