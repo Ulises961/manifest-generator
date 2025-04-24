@@ -4,3 +4,9 @@ src/__pycache__/*
 */*.egg
 src/*/__pycache__/*
 src/resources/models/*
+target/*
+logs/
+*.log
+.vscode
+.coverage
+config_sentence_transformers.json
