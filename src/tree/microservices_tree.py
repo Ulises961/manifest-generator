@@ -40,89 +40,99 @@ class MicroservicesTree:
 
     def build(self) -> Node:
         root_node = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
-        logging.info(f"Scanning directory: {self.root_path}")
-        for root, dirs, _ in os.walk(self.root_path, topdown=True):
-            for dir in dirs:
-                if str(dir).startswith("."):
-                    logging.info(f"Skipping hidden directory: {dir}")
+        self.logger.info(f"Scanning directory: {self.root_path}")
+        # Only scan top-level directories
+        for item in os.listdir(self.root_path):
+            item_path = os.path.join(self.root_path, item)
+            if os.path.isdir(item_path):
+                if str(item).startswith("."):
+                    self.logger.info(f"Skipping hidden directory: {item}")
                     continue
                 else:
-                    logging.info(f"Scanning directory: {os.path.join(root, dir)}")
-                    self._scan_helper(os.path.join(root, dir), root_node, dir)
-        logging.info(
+                    self.logger.info(f"Scanning directory: {item_path}")
+                    self._scan_helper(item_path, root_node, item)
+        self.logger.info(
             f"Finished scanning directory: {self.root_path}, found {len(root_node.children)} microservices."
         )
         return root_node
 
     def _scan_helper(self, path: str, parent: Node, dir_name: str) -> None:
-        """Recursively scan the directory for microservices and their dependencies."""
+        """Scan the directory for microservices and find Dockerfile."""
+        # Only check files in the current directory, not recursively
+        files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+        
+        # Check if there's a Dockerfile in this directory
+        dockerfile_found = False
+        microservice_node = None
 
-        for root, _, files in os.walk(path):
-
-            # Scan the directory for dockerfiles, if present we assume a microservice
-            is_microservice = False
-            microservice_node: Optional[Node] = None
-
-            for file in files:
-                if file.endswith(".dockerfile") or file == "Dockerfile":
-                    logging.info(f"Found Dockerfile in {os.path.join(root, file)}")
-                    # Generate a new node parent
-                    microservice_node = Node(
-                        name=dir_name, type=NodeType.MICROSERVICE, parent=parent
-                    )
-
-                    # Add the microservice node to the parent node
-                    parent.add_child(microservice_node)
-                    logging.info(
-                        f"Adding microservice node: {microservice_node.name} to parent: {parent.name}"
-                    )
-                    # Parse Dockerfile and add commands as children to the microservice node
-                    commands = self.command_parser.parse_dockerfile(
-                        os.path.join(root, file)
-                    )
-
-                    for command in commands:
-                        # Classify the command
-                        node: DockerInstruction = (
-                            self.command_parser.generate_node_from_command(
-                                command, microservice_node
-                            )
-                        )
-                        if node.type == NodeType.WORKDIR:
-                            # Keep the latest one
-                            for child in microservice_node.children:
-                                if child.type == NodeType.WORKDIR:
-                                    logging.info(
-                                        f"Removing old WORKDIR node: {child.name}"
-                                    )
-                                    microservice_node.children.remove(child)
-
-                        if node.metadata == {} or node.metadata["status"] == "active":
-                            logging.info(
-                                f"Adding command node: {node.name} with metadata: {node.metadata}"
-                            )
-                            microservice_node.add_child(node)
-
-                    is_microservice = True
-                    break
-
-            # Only parse the directory if it is a microservice
-            if is_microservice and microservice_node is not None:
-                # Parse the directory for .env files
-                for file in files:
-                    # Skip hidden files except .env
-                    if str(file).startswith("."):
-                        if file == ".env":
-                            # Parse env file and add vars as children to root node
-                            env_nodes = self.env_parser.parse(os.path.join(root, file))
-                            # Add env node to microservice node
-                            microservice_node.add_children(env_nodes)
-                            continue
-
-                # Parse bash script if present in EntryPoint or CMD
-                self.bash_parser.determine_startup_command(
-                    root, files, microservice_node
+        for file in files:
+            if file.endswith(".dockerfile") or file == "Dockerfile":
+                dockerfile_found = True
+                self.logger.info(f"Found Dockerfile in {os.path.join(path, file)}")
+                # Generate a new node parent
+                microservice_node = Node(
+                    name=dir_name, type=NodeType.MICROSERVICE, parent=parent
                 )
+
+                # Add the microservice node to the parent node
+                parent.add_child(microservice_node)
+                self.logger.debug(
+                    f"Adding microservice node: {microservice_node.name} to parent: {parent.name}"
+                )
+                # Parse Dockerfile and add commands as children to the microservice node
+                commands = self.command_parser.parse_dockerfile(
+                    os.path.join(path, file)
+                )
+
+                for command in commands:
+                    # Classify the command
+                    node: DockerInstruction = (
+                        self.command_parser.generate_node_from_command(
+                            command, microservice_node
+                        )
+                    )
+                    if node.type == NodeType.WORKDIR:
+                        # Keep the latest one
+                        for child in microservice_node.children:
+                            if child.type == NodeType.WORKDIR:
+                                self.logger.debug(
+                                    f"Removing old WORKDIR node: {child.name}"
+                                )
+                                microservice_node.children.remove(child)
+
+                    if node.metadata == {} or node.metadata["status"] == "active":
+                        self.logger.debug(
+                            f"Adding command node: {node.name} with metadata: {node.metadata}"
+                        )
+                        microservice_node.add_child(node)
+                
+                break  # Stop looking for more Dockerfiles in this directory
+
+        # Only process environment files and scripts if a Dockerfile was found
+        if dockerfile_found and microservice_node is not None:
+            # Parse the directory for .env files (only in this directory)
+            for file in files:
+                # Skip hidden files except .env
+                if str(file).startswith("."):
+                    if file == ".env":
+                        # Parse env file and add vars as children to root node
+                        env_nodes = self.env_parser.parse(os.path.join(path, file))
+                        # Add env node to microservice node
+                        microservice_node.add_children(env_nodes)
+
+            # Parse bash script if present in EntryPoint or CMD
+            self.bash_parser.determine_startup_command(
+                path, files, microservice_node
+            )
+        
+        # If we didn't find a Dockerfile, check one level of subdirectories
+        if not dockerfile_found:
+            subdirs = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d)) and not d.startswith('.')]
+            for subdir in subdirs:
+                subdir_path = os.path.join(path, subdir)
+                self.logger.info(f"Scanning directory: {subdir_path}")
+                # Use a subdirectory name that combines parent and child for clarity
+                self._scan_helper(subdir_path, parent, subdir)
 
     def prepare_for_manifest(self, node: Node) -> None:
         """Generate manifests for the given node and its children."""
@@ -257,6 +267,8 @@ class MicroservicesTree:
         )
 
         # If the service is found these entries are overwritten with the ontology knowledge
+        # TODO: fix port for frontend service (port & service-port)
+        # TODO: fix port referenced in Values.ports 
         microservice["service-ports"] = container_ports
         microservice["protocol"] = None
         microservice["type"] = None
@@ -283,7 +295,7 @@ class MicroservicesTree:
             for label in service_extra_info["labels"]:
                 microservice["labels"].append(label)
 
-        logging.info(f"Microservice {microservice} prepared for manifest generation")
+        self.logger.info(f"Microservice {microservice} prepared for manifest generation")
 
         return microservice
 
