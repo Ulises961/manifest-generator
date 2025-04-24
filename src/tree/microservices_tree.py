@@ -28,8 +28,10 @@ class MicroservicesTree:
         self.embeddings_engine: EmbeddingsEngine = embeddings_engine
         self.secret_classifier = secret_classifier
         self.service_classifier = service_classifier
-        self.command_parser: CommandMapper = CommandMapper(label_classifier)
         self.env_parser: EnvParser = EnvParser(secret_classifier)
+        self.command_parser: CommandMapper = CommandMapper(
+            label_classifier, self.env_parser
+        )
         self.bash_parser: BashScriptParser = BashScriptParser(
             secret_classifier, self.env_parser, embeddings_engine
         )
@@ -112,9 +114,9 @@ class MicroservicesTree:
                     if str(file).startswith("."):
                         if file == ".env":
                             # Parse env file and add vars as children to root node
-                            self.env_parser.parse(
-                                os.path.join(root, file), microservice_node
-                            )
+                            env_nodes = self.env_parser.parse(os.path.join(root, file))
+                            # Add env node to microservice node
+                            microservice_node.add_children(env_nodes)
                             continue
 
                 # Parse bash script if present in EntryPoint or CMD
@@ -130,19 +132,18 @@ class MicroservicesTree:
             )
             self.prepare_microservice(node)
 
-    def prepare_microservice(self, node: Node) -> None:
+    def prepare_microservice(self, node: Node) -> Dict[str, Any]:
         """Generate manifests for the given microservice node."""
         # Generate manifests for the microservice
-        service_extra_info = self.service_classifier.decide_service(node.name)
         microservice: Dict[str, Any] = {"name": node.name}
+        microservice.setdefault("labels", ["app: " + node.name])
+
         if len(labels := node.get_children_by_type(NodeType.LABEL)) > 0:
-            if not "labels" in microservice:
-                microservice["labels"] = []
+
             for label in labels:
                 microservice["labels"].append(label.value)  # type: ignore
         if len(annotations := node.get_children_by_type(NodeType.ANNOTATION)) > 0:
-            if not "annotations" in microservice:
-                microservice["annotations"] = []
+            microservice.setdefault("annotations", [])
             for annotation in annotations:
                 microservice["annotations"].append(annotation.value)  # type: ignore
 
@@ -155,11 +156,13 @@ class MicroservicesTree:
             > 0
         ):
             # There's a unique entrypoint
-            microservice["entrypoint"] = entrypoint[0].value
+            microservice["command"] = entrypoint[0].value
 
         if len(cmd := node.get_children_by_type(NodeType.CMD, must_be_active=True)) > 0:
             # There's a unique command. Possibly none
-            microservice["command"] = cmd[0].value
+            microservice["args"] = cmd[0].value
+
+        microservice.setdefault("ports", set())
 
         if (
             len(ports := node.get_children_by_type(NodeType.PORT, must_be_active=True))
@@ -228,37 +231,61 @@ class MicroservicesTree:
                             "resources": None,
                         }
                     )  # type: ignore
-                if "volume_mounts" not in microservice:
-                    microservice["volume_mounts"] = []
+                microservice.setdefault("volume_mounts", [])
                 microservice["volume_mounts"].append(
                     {"name": f"volume-{index}", "mountPath": volume.value}
                 )
-                if "volumes" not in microservice:
-                    microservice["volumes"] = []
 
-                    volume_to_add: Dict[str, Any] = {"name": f"volume-{index}"}
-                    if volume.is_persistent:
-                        volume_to_add["persistentVolumeClaim"] = {
-                            "claimName": f"volume-{index}"
-                        }
-                    else:
-                        volume_to_add["emptyDir"] = {}
-                    microservice["volumes"].append(volume)
+                microservice.setdefault("volumes", [])
+                volume_to_add: Dict[str, Any] = {"name": f"volume-{index}"}
+                if volume.is_persistent:
+                    volume_to_add["persistentVolumeClaim"] = {
+                        "claimName": f"volume-{index}"
+                    }
+                else:
+                    volume_to_add["emptyDir"] = {}
+                microservice["volumes"].append(volume_to_add)
 
-        if len(ports := node.get_children_by_type(NodeType.PORT)) > 0:
-            if "ports" not in microservice:
-                microservice["ports"] = []
-            for port in ports:
-                microservice["ports"].append(port)
         if len(wordirs := node.get_children_by_type(NodeType.WORKDIR)) > 0:
             # There's a unique child working dir
             microservice["workingDir"] = wordirs[0].value
 
+        # Enrich microservice
+        container_ports = microservice.get("ports", [])
+        service_extra_info = self.service_classifier.decide_service(
+            node.name, container_ports
+        )
+
+        # If the service is found these entries are overwritten with the ontology knowledge
+        microservice["service-ports"] = container_ports
+        microservice["protocol"] = None
+        microservice["type"] = None
+
         if service_extra_info is not None:
             microservice["workload"] = service_extra_info["workload"]
-            microservice["service-ports"] = service_extra_info["ports"]
             microservice["protocol"] = service_extra_info["protocol"]
             microservice["type"] = service_extra_info["serviceType"]
+
+            if len(microservice["ports"]) == 0:
+                microservice["ports"] = service_extra_info["ports"]
+
+            microservice["service-ports"] = service_extra_info["ports"]
+
+            if len(service_extra_info["protocol"]) > 1:
+                for port in service_extra_info["ports"]:
+                    if port in [50051, 3550, 9555]:
+                        microservice["protocol"] = "gRPC"
+                    else: 
+                        microservice["protocol"] = "HTTP"
+            else:
+                microservice["protocol"] = service_extra_info["protocol"]
+
+            for label in service_extra_info["labels"]:
+                microservice["labels"].append(label)
+
+        logging.info(f"Microservice {microservice} prepared for manifest generation")
+
+        return microservice
 
     def print_tree(self, node: Node, level: int = 0) -> None:
         """Recursively print the tree structure."""

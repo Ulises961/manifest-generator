@@ -28,6 +28,10 @@ def remove_none_values(d):
             d[key] = remove_none_values(value)
         elif isinstance(value, list) and value != []:
             d[key] = [remove_none_values(item) for item in value if item is not None]
+        elif isinstance(value, str):
+            if value == "":
+                d[key] = None
+            d[key] = value.strip()
 
     return {
         key: value

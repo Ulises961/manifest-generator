@@ -379,7 +379,17 @@
         "serviceType": "ClusterIP",
         "labels": ["role: storage", "app.kubernetes.io/part-of: object-storage"],
         "persistence": "persistent"
-      }
+      },
+      {
+        "name": "Generic Microservice",
+        "keywords": ["service", "microservice", "internal", "backend"],
+        "ports": [8080, 50051, 7070, 5050, 7000, 3550, 9555],
+        "protocol": ["gRPC", "HTTP"],
+        "workload": "Deployment",
+        "serviceType": "ClusterIP",
+        "labels": ["role: microservice"],
+        "persistence": "ephemeral"
+      }          
     ],
     "metadata": {
       "version": "1.0",

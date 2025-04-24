@@ -4,6 +4,7 @@ from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
+from manifest_builder import ManifestBuilder
 from tree.microservices_tree import MicroservicesTree
 from utils.file_utils import load_environment, setup_sentence_transformer
 import logging
@@ -30,7 +31,7 @@ if __name__ == "__main__":
     # Load the label classifier
     label_classifier = LabelClassifier(embeddings_engine)
     # Generate a tree with the microservices detected in the repository
-    target_repository = "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/microservices-demo/src/"
+    target_repository = "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/microservices-demo/src"
     treebuilder = MicroservicesTree(
         target_repository,
         embeddings_engine,
@@ -40,4 +41,10 @@ if __name__ == "__main__":
     )
     
     repository_tree = treebuilder.build()
-    treebuilder.print_tree(repository_tree)
+
+    # Generate the manifests from the repository tree
+    manifest_builder = ManifestBuilder(embeddings_engine)
+    for child in repository_tree.children:
+        logging.info(f"Generating manifests for child... {child.name}")
+        microservice = treebuilder.prepare_microservice(child)
+        manifest_builder.generate_manifests(microservice)
