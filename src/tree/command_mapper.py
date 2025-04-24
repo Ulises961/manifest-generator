@@ -4,6 +4,7 @@ import shlex
 from typing import List, Optional
 from dockerfile_parse import DockerfileParser
 from embeddings.label_classifier import LabelClassifier
+from parsers.env_parser import EnvParser
 from tree.docker_instruction_node import DockerInstruction
 from tree.node import Node
 from tree.node_types import NodeType
@@ -13,8 +14,9 @@ from utils.file_utils import check_shell_in_commands, normalize_command_field
 class CommandMapper:
     """Class to classify Dockerfile commands."""
 
-    def __init__(self, label_classifier: LabelClassifier):
+    def __init__(self, label_classifier: LabelClassifier, env_parser: EnvParser):
         self._label_classifier = label_classifier
+        self._env_parser = env_parser
 
     DOCKER_COMMANDS: List[str] = [
         "CMD",
@@ -22,6 +24,7 @@ class CommandMapper:
         "EXPOSE",
         "ENTRYPOINT",
         "VOLUME",
+        "ENV",
         "USER",
         "WORKDIR",
         "HEALTHCHECK",
@@ -79,7 +82,8 @@ class CommandMapper:
             "VOLUME": self._generate_volume_node,
             "USER": self._generate_user_node,
             "WORKDIR": self._generate_workdir_node,
-            "HEALTHCHECK": self._generate_healthcheck_node
+            "HEALTHCHECK": self._generate_healthcheck_node,
+            "ENV": self._generate_env_node,
         }
 
         # Only filtered commands are passed as argument so the lambda is never executed
@@ -154,6 +158,16 @@ class CommandMapper:
     def decide_label(self, label_key: str) -> bool:
         classified_label = self._label_classifier.classify_label(label_key)
         return classified_label == "label"
+
+    def _generate_env_node(self, command: dict, parent: Node) -> DockerInstruction:
+        node = self._env_parser.parse_env_var(command["value"])
+        return DockerInstruction(
+            name=node.name if node else command["value"],
+            type=node.type if node else NodeType.ENV,
+            value=node.value if node else "",
+            parent=parent,
+            is_persistent=False,
+        )
 
     def _create_docker_node(
         self, command: dict, type: NodeType, parent: Node, is_persistent: bool = False
