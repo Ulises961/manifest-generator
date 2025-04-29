@@ -60,7 +60,7 @@ class MicroservicesTree:
         """Scan the directory for microservices and find Dockerfile."""
         # Only check files in the current directory, not recursively
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-        
+
         # Check if there's a Dockerfile in this directory
         dockerfile_found = False
         microservice_node = None
@@ -105,7 +105,7 @@ class MicroservicesTree:
                             f"Adding command node: {node.name} with metadata: {node.metadata}"
                         )
                         microservice_node.add_child(node)
-                
+
                 break  # Stop looking for more Dockerfiles in this directory
 
         # Only process environment files and scripts if a Dockerfile was found
@@ -121,13 +121,15 @@ class MicroservicesTree:
                         microservice_node.add_children(env_nodes)
 
             # Parse bash script if present in EntryPoint or CMD
-            self.bash_parser.determine_startup_command(
-                path, files, microservice_node
-            )
-        
+            self.bash_parser.determine_startup_command(path, files, microservice_node)
+
         # If we didn't find a Dockerfile, check one level of subdirectories
         if not dockerfile_found:
-            subdirs = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d)) and not d.startswith('.')]
+            subdirs = [
+                d
+                for d in os.listdir(path)
+                if os.path.isdir(os.path.join(path, d)) and not d.startswith(".")
+            ]
             for subdir in subdirs:
                 subdir_path = os.path.join(path, subdir)
                 self.logger.info(f"Scanning directory: {subdir_path}")
@@ -178,7 +180,11 @@ class MicroservicesTree:
             len(ports := node.get_children_by_type(NodeType.PORT, must_be_active=True))
             > 0
         ):
-            microservice["ports"] = [port.value for port in ports]
+            microservice["ports"] = [int(port.value) for port in ports]
+            microservice["service-ports"] = [int(port.value) for port in ports]
+            microservice["type"] = "ClusterIP"
+            microservice["protocol"] = "TCP"
+            microservice["workload"] = "Deployment"
 
         if (
             len(
@@ -266,36 +272,27 @@ class MicroservicesTree:
             node.name, container_ports
         )
 
-        # If the service is found these entries are overwritten with the ontology knowledge
-        # TODO: fix port for frontend service (port & service-port)
-        # TODO: fix port referenced in Values.ports 
-        microservice["service-ports"] = container_ports
-        microservice["protocol"] = None
-        microservice["type"] = None
-
         if service_extra_info is not None:
             microservice["workload"] = service_extra_info["workload"]
             microservice["protocol"] = service_extra_info["protocol"]
-            microservice["type"] = service_extra_info["serviceType"]
+            microservice["type"] = service_extra_info.get("serviceType", "ClusterIP")
+            
+            # Set ports
+            container_ports = [int(port) for port in service_extra_info["ports"]]
+            
+            # Set service ports fallback to the container ports
+            microservice["service-ports"] = service_extra_info.get("servicePorts", container_ports)           
 
+            # Only use ontology ports of not set in the container configuration
             if len(microservice["ports"]) == 0:
-                microservice["ports"] = service_extra_info["ports"]
-
-            microservice["service-ports"] = service_extra_info["ports"]
-
-            if len(service_extra_info["protocol"]) > 1:
-                for port in service_extra_info["ports"]:
-                    if port in [50051, 3550, 9555]:
-                        microservice["protocol"] = "gRPC"
-                    else: 
-                        microservice["protocol"] = "HTTP"
-            else:
-                microservice["protocol"] = service_extra_info["protocol"]
+                microservice["ports"] = container_ports
 
             for label in service_extra_info["labels"]:
                 microservice["labels"].append(label)
 
-        self.logger.info(f"Microservice {microservice} prepared for manifest generation")
+        self.logger.info(
+            f"Microservice {microservice} prepared for manifest generation"
+        )
 
         return microservice
 
