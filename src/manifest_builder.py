@@ -1,11 +1,11 @@
+import logging
 import os
-from typing import Any, Dict, cast
+from typing import Any, Dict, List, cast
 from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.service_classifier import ServiceClassifier
 from utils.file_utils import load_file, remove_none_values
 from caseutil import to_kebab
 import yaml
-
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
@@ -28,6 +28,7 @@ class ManifestBuilder:
         os.makedirs(os.path.dirname(self.manifests_path), exist_ok=True)
         os.makedirs(os.path.dirname(self.values_file_path), exist_ok=True)
 
+        self.logger = logging.getLogger(__name__)
 
     def get_template(self, template_name: str) -> Dict[str, Any]:
         """Get the template by name."""
@@ -131,9 +132,6 @@ class ManifestBuilder:
     def build_secrets_yaml(self, secret: dict) -> None:
         """Build a YAML file from the template and data."""
         # Check if the values.yaml file exists
-        values_file_path = os.path.join(
-            self.values_file_path,
-        )
         secret_name = to_kebab(secret["name"])
 
         # Prepare the secret entry
@@ -147,17 +145,17 @@ class ManifestBuilder:
         # Remove all None values from the secret entry
         secret_entry = remove_none_values(secret_entry)
 
-        if not os.path.exists(values_file_path):
-            self._save_yaml(secret_entry, self.values_file_path)
+        if not os.path.exists(self.values_file_path):
+            self._save_yaml({"secret":{secret_name:secret_entry}}, self.values_file_path)
 
         else:
             # Load existing values.yaml content
-            with open(values_file_path, "r") as file:
+            with open(self.values_file_path, "r") as file:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the secret entry
-            existing_data.setdefault("secrets", {})
-            existing_data["secrets"].update(secret_entry)
+            existing_data.setdefault("secret", {})
+            existing_data["secret"].update(secret_entry)
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
@@ -186,6 +184,7 @@ class ManifestBuilder:
             template, os.path.join(secrets_path, f"{secret_name}-secret.yaml")
         )
 
+    # TODO: check if necessary create a config map or use envs directly in the workload
     def build_config_map_yaml(self, config_map: dict) -> None:
         """Build a YAML file from the template and data."""
         config_map_name = to_kebab(config_map["name"])
@@ -202,7 +201,7 @@ class ManifestBuilder:
 
         if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            self._save_yaml(config_map_entry, self.values_file_path)
+            self._save_yaml({"config":config_map_entry}, self.values_file_path)
         else:
             # Load existing values.yaml content
             with open(self.values_file_path, "r") as file:
@@ -210,7 +209,7 @@ class ManifestBuilder:
 
             # Update or add the config map entry
             existing_data.setdefault("config", {})
-            existing_data["config"][f"config-{config_map_name}"] = config_map_entry
+            existing_data["config"][f"{config_map_name}"] = config_map_entry
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
@@ -221,7 +220,7 @@ class ManifestBuilder:
         # Prepare the Kubernetes ConfigMap template
         template = self.get_template("config_map")
         template["kind"] = "ConfigMap"
-        template["metadata"]["name"] = f"config-{config_map_name}"
+        template["metadata"]["name"] = f"{config_map_name}"
         template["data"] = {
             "config": f"{{{{ .Values.config.{config_map_name}.config }}}}"
         }
@@ -253,7 +252,7 @@ class ManifestBuilder:
             "volume_mounts": (
                 deployment["volume_mounts"] if "volume_mounts" in deployment else None
             ),
-            "ports": deployment["ports"] if "ports" in deployment else None,
+            "ports": [port for port in deployment["ports"]] if "ports" in deployment else None,
             "workdir": deployment["workdir"] if "workdir" in deployment else None,
             "liveness_probe": (
                 deployment["liveness_probe"] if "liveness_probe" in deployment else None
@@ -276,11 +275,11 @@ class ManifestBuilder:
                 )
 
         deployment_entry = remove_none_values(deployment_entry)
-
+                
         # Prepare the deployment entry for values.yaml
         if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            self._save_yaml(deployment_entry, self.values_file_path)
+            self._save_yaml({"deployment":{service_name:deployment_entry}}, self.values_file_path)
         else:
             # Load existing values.yaml content
             with open(self.values_file_path, "r") as file:
@@ -288,12 +287,12 @@ class ManifestBuilder:
 
             # Update or add the deployment entry
             existing_data.setdefault("deployment", {})
-            existing_data["deployment"][f"deployment-{service_name}"] = deployment
+            existing_data["deployment"][f"{service_name}"] = deployment_entry
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
 
         # Prepare the Kubernetes Deployment template
-        deployment_values = f"Values.deployment.{service_name}"
+        deployment_values = f".Values.deployment.{service_name}"
         template = self.get_template("deployment")
         template["metadata"]["name"] = "{{ " + deployment_values + ".name }}"
         template["metadata"]["labels"] = "{{ " + deployment_values + ".labels }}"
@@ -383,7 +382,7 @@ class ManifestBuilder:
                 if "volume_mounts" in stateful_set
                 else None
             ),
-            "ports": stateful_set["ports"] if "ports" in stateful_set else None,
+            "ports": [port for port in stateful_set["ports"]] if "ports" in stateful_set else None,
             "workdir": stateful_set["workdir"] if "workdir" in stateful_set else None,
             "liveness_probe": (
                 stateful_set["liveness_probe"]
@@ -412,7 +411,7 @@ class ManifestBuilder:
         # Prepare the stateful set entry for values.yaml
         if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            self._save_yaml(stateful_set_entry, self.values_file_path)
+            self._save_yaml({"stateful-set":{stateful_set_name:stateful_set_entry}}, self.values_file_path)
         else:
             # Load existing values.yaml content
             with open(self.values_file_path, "r") as file:
@@ -421,14 +420,14 @@ class ManifestBuilder:
             # Update or add the stateful set entry
             existing_data.setdefault("stateful-set", {})
             existing_data["stateful-set"][
-                f"stateful-set-{stateful_set_name}"
+                f"{stateful_set_name}"
             ] = stateful_set_entry
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
 
         # Prepare the Kubernetes StatefulSet template
-        stateful_set_values = f"Values.stateful-set.{stateful_set_name}"
+        stateful_set_values = f".Values.stateful-set.{stateful_set_name}"
         template = self.get_template("statefullset")
         template["metadata"]["name"] = "{{ " + stateful_set_values + ".name }}"
         template["metadata"]["labels"] = "{{ " + stateful_set_values + ".labels }}"
@@ -507,14 +506,16 @@ class ManifestBuilder:
 
         # Check if the values.yaml file exists
         service_name = to_kebab(service["name"])
+
+        port_mappings = self._get_port_mappings(service)
+
+
         # Prepare the service entry
         service_entry = {
             "name": service_name,
             "labels": service["labels"],
-            "ports": service["ports"],
-            "target_port": service["service-ports"],
-            "protocol": service["protocol"],
-            "type": service["type"],
+            "ports": port_mappings,  
+            "type": service.get("type","ClusterIP"),
         }
 
         service_entry = remove_none_values(service_entry)
@@ -522,7 +523,8 @@ class ManifestBuilder:
         # Prepare the service entry for values.yaml
         if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            self._save_yaml(service_entry, self.values_file_path)
+            
+            self._save_yaml({"service":{service_name:service_entry}}, self.values_file_path)
         else:
             # Load existing values.yaml content
             with open(self.values_file_path, "r") as file:
@@ -530,25 +532,18 @@ class ManifestBuilder:
 
             # Update or add the service entry
             existing_data.setdefault(f"service", {})
-            existing_data["service"][f"service-{service_name}"] = service_entry
+            existing_data["service"][service_name] = service_entry
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
 
         # Prepare the Kubernetes Service template
-        service_values = f"Values.service.{service_name}"
+        service_values = f".Values.service.{service_name}"
         template = self.get_template("service")
         template["metadata"]["name"] = "{{ " + service_values + ".name }}"
         template["metadata"]["labels"] = "{{ " + service_values + ".labels }}"
         template["spec"]["selector"] = "{{ " + service_values + ".labels }}"
-        template["spec"]["ports"][0]["port"] = "{{ " + service_values + ".port }}"
-        template["spec"]["ports"][0]["targetPort"] = (
-            "{{ " + service_values + ".target_port }}"
-        )
-        template["spec"]["ports"][0]["protocol"] = (
-            "{{ " + service_values + ".protocol }}"
-        )
-        template["spec"]["ports"][0]["name"] = "{{ " + service_values + ".name }}"
+        template["spec"]["ports"] = "{{ " + service_values + ".ports }}"
         template["spec"]["type"] = "{{ " + service_values + ".type }}"
         # Remove all None values from the template
         template = remove_none_values(template)
@@ -582,7 +577,7 @@ class ManifestBuilder:
         # Prepare the PVC entry for values.yaml
         if not os.path.exists(self.values_file_path):
             # Create the values.yaml file if it doesn't exist
-            self._save_yaml(pvc_entry, self.values_file_path)
+            self._save_yaml({"pvc":{pvc_name: pvc_entry}}, self.values_file_path)
         else:
             # Load existing values.yaml content
             with open(self.values_file_path, "r") as file:
@@ -590,13 +585,13 @@ class ManifestBuilder:
 
             # Update or add the PVC entry
             existing_data.setdefault("pvc", {})
-            existing_data["pvc"][f"pvc-{pvc_name}"] = pvc_entry
+            existing_data["pvc"][pvc_name] = pvc_entry
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
 
         # Prepare the Kubernetes PVC template
-        pvc_values = f"Values.pvc.{pvc_name}"
+        pvc_values = f".Values.pvc.{pvc_name}"
         template = self.get_template("pvc")
         template["metadata"]["name"] = "{{ " + pvc_values + ".name }}"
         template["metadata"]["labels"] = "{{ " + pvc_values + ".labels }}"
@@ -618,8 +613,91 @@ class ManifestBuilder:
         os.path.join(pvc_path, f"{pvc['name']}-pvc.yaml")
         self._save_yaml(template, os.path.join(pvc_path, f"{pvc['name']}-pvc.yaml"))
 
+    def _get_port_mappings(self, service_info: Dict[str, Any]) -> List[Dict[str,Any]]: 
+        """Generate port mappings between service ports and container ports.
+        
+        Args:
+            service_info: Service information from ontology
+            container_ports: Container ports detected from Dockerfile (optional)
+        
+        Returns:
+            List of port mapping dictionaries
+        """
+        
+        container_ports = service_info.get("ports", [])
+        service_ports = service_info.get("service-ports", [])
+        protocol = service_info.get("protocol", "TCP")
+        
+        # If we have different numbers of ports, we need to be careful
+        if len(service_ports) != len(container_ports):
+            # Special case: Service ports are a subset of container ports
+            if all(port in container_ports for port in service_ports):
+                return [
+                    {"port": sport, "targetPort": sport, "name": f"port-{sport}", "protocol": protocol }
+                    for sport in service_ports
+                ]
+            # For mismatched ports, use common port conventions
+            return self._map_ports_by_convention(service_ports, container_ports, protocol)
+        
+        # Simple 1:1 mapping when port counts match
+        return [
+            {"port": sport, "targetPort": cport, "name": self._get_port_name(sport), "protocol": protocol}
+            for sport, cport in zip(service_ports, container_ports)
+        ]
+
+    def _map_ports_by_convention(self, service_ports:List[int], container_ports: List[int], protocol:str) -> List[Dict[str, Any]]:
+        """Map ports using common conventions."""
+        mappings = []
+        
+        # Common port conventions
+        conventions = {
+            80: [8080, 3000, 4200, 5000, 8000],
+            443: [8443, 8080, 3000], 
+        }
+        
+        # Try to map each service port
+        for sport in service_ports:
+            # Direct match
+            if sport in container_ports:
+                mappings.append({"port": sport, "targetPort": sport, "name": self._get_port_name(sport), "protocol": protocol})
+                continue
+                
+            # Look for conventional mappings
+            mapped = False
+            for standard, alternatives in conventions.items():
+                if sport == standard and any(alternative in container_ports for alternative in alternatives):
+                    # Find the first matching alternative
+                    for alternative in alternatives:
+                        if alternative in container_ports:
+                            mappings.append({"port": sport, "targetPort": alternative, "name": self._get_port_name(sport), "protocol": protocol})
+                            mapped = True
+                            break
+                    if mapped:
+                        break
+                        
+            # No mapping found, use the service port directly
+            if not mapped:
+                mappings.append({"port": sport, "targetPort": sport, "name": f"port-{sport}", "protocol": protocol})
+        
+        return mappings
+
+    def _get_port_name(self, port):
+        """Get a canonical name for well-known ports."""
+        port_names = {
+            80: "http",
+            443: "https"
+        }
+        return port_names.get(port, f"port-{port}")
+
     def _save_yaml(self, template: dict, path: str) -> None:
+        """Save the template as a YAML file."""        
+        # Create a custom dumper that ignores aliases
+        class NoAliasDumper(yaml.SafeDumper):
+            def ignore_aliases(self, _):
+                return True
+        
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as file:
-            yaml.dump(template, file)
+            yaml.dump(template, file, Dumper=NoAliasDumper)
         print(f"YAML file saved to {path}")
+
