@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 from sentence_transformers import SentenceTransformer
 from embeddings.embeddings_engine import EmbeddingsEngine
+from embeddings.secret_classifier import SecretClassifier
+from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper
 from embeddings.label_classifier import LabelClassifier
 from tree.node_types import NodeType
@@ -15,7 +17,9 @@ def command_mapper():
     model = setup_sentence_transformer()
     embeddings_engine = EmbeddingsEngine(model)
     label_classifier = LabelClassifier(embeddings_engine)
-    return CommandMapper(label_classifier)
+    secret_classifier = SecretClassifier(embeddings_engine)
+    env_parser = EnvParser(secret_classifier)
+    return CommandMapper(label_classifier, env_parser)
 
 def test_parse_dockerfile(command_mapper):
     dockerfile_content = """
@@ -111,3 +115,35 @@ def test_generate_entrypoint_w_script_and_args(command_mapper):
     assert isinstance(node, DockerInstruction)
     assert node.type == NodeType.ENTRYPOINT
     assert node.value == ["./start.sh", "--arg1", "--arg2"]
+
+def test_parse_healthcheck_none(command_mapper):
+    command = "HEALTHCHECK NONE"
+    result = command_mapper._parse_healthcheck(command)
+    assert result == {"disabled": True}
+
+def test_parse_healthcheck_invalid_format(command_mapper):
+    command = "HEALTHCHECK INVALID"
+    with pytest.raises(ValueError, match="Invalid HEALTHCHECK command format"):
+        command_mapper._parse_healthcheck(command)
+
+def test_parse_healthcheck_exec_form(command_mapper):
+    command = 'HEALTHCHECK --interval=5s --timeout=3s CMD ["curl", "-f", "http://localhost/"]'
+    result = command_mapper._parse_healthcheck(command)
+    assert result["check"] == '/bin/sh -c "curl -f http://localhost/"'
+    assert result["flags"]["periodSeconds"] == 5
+    assert result["flags"]["timeoutSeconds"] == 3
+
+def test_parse_healthcheck_shell_form(command_mapper):
+    command = 'HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD curl -f http://localhost/'
+    result = command_mapper._parse_healthcheck(command)
+    assert result["check"] == 'curl -f http://localhost/'
+    assert result["flags"]["periodSeconds"] == 30
+    assert result["flags"]["timeoutSeconds"] == 30 
+    assert result["flags"]["initialDelaySeconds"] == 5
+    assert result["flags"]["failureThreshold"] == 3
+
+def test_parse_healthcheck_invalid_exec_form(command_mapper):
+    command = 'HEALTHCHECK CMD [invalid json]'
+    with pytest.raises(ValueError, match="Invalid exec form CMD array"):
+        command_mapper._parse_healthcheck(command)
+
