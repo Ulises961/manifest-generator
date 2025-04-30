@@ -11,5 +11,5 @@ torch>=2.0.0
 mypy
 types-PyYAML
 types-dockerfile-parse
-shlex
+caseutil
 dotenv
