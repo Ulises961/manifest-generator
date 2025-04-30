@@ -15,6 +15,11 @@ setup(
         'checkov',
         'pytest',
         'pytest-cov',
+        'torch>=2.0.0',
+        'mypy',
+        'types-PyYAML',
+        'types-dockerfile-parse'
+        'shlex'
         'dotenv'],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",
