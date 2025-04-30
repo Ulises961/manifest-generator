@@ -150,7 +150,6 @@ class BashScriptParser:
             # Check for command or entrypoint
             elif cmd_nodes := self._parse_command(line, parent):
                 entry, args = cmd_nodes
-                print(f"Parsed command: {entry} with args: {args}")
                 # Check if $@ is *not* in args → means it's not forwarding the original CMD
                 if args:
                     if original_cmd:
@@ -342,3 +341,4 @@ class BashScriptParser:
         return any(
             re.match(self.patterns[pattern], line) for pattern in ["kubectl", "docker"]
         )
+
