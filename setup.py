@@ -19,7 +19,7 @@ setup(
         'mypy',
         'types-PyYAML',
         'types-dockerfile-parse'
-        'shlex'
+        'caseutil',
         'dotenv'],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",
