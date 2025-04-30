@@ -1,9 +1,10 @@
 import base64
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from typing_extensions import Buffer
 from embeddings.secret_classifier import SecretClassifier
 from tree.node import Node
 from tree.node_types import NodeType
+from utils.docker_utils import parse_key_value_string
 
 
 class EnvParser:
@@ -28,34 +29,30 @@ class EnvParser:
 
                 # Split the line into key-value pairs
                 try:
-                    env_node = self.parse_env_var(line)
-                    if env_node:
-                        env_nodes.append(env_node)
-
+                    parsed_nodes = self.parse_env_var(line)
+                    if isinstance(parsed_nodes, list):
+                        env_nodes.extend(parsed_nodes)
+                    elif isinstance(parsed_nodes, Node):
+                        env_nodes.append(parsed_nodes)
                 except ValueError:
                     continue
         return env_nodes
     
-    def parse_env_var(self, line: str) -> Optional[Node]:
+    def parse_env_var(self, line: str) -> List[Node]:
+       
         # Docker variable declaration
         if line.strip().startswith("ENV "):
+            new_line = line.strip()[4:] 
+            return self.parse_env_var(new_line)
+        
+        # A single ENV declaration might export many variables in seceral lines
+        # ENV DB_HOST=localhost \
+        #     DB_PORT=5432 \
+        #     DB_USER=postgres ...
+        vars_dict = parse_key_value_string(line)
 
-            line = line.removeprefix("ENV ") 
-            return self.parse_env_var(line)
-        # Bash variable export 
-        if "=" in line:
-            key, value = line.strip().split("=", 1)
-            if key and value:  # Only create node if both key and value exist
-                return self.create_env_node(key, value)
-
-        # PORT "8080"
-        parts = line.strip().split(" ", 1)
-        if len(parts) == 2:  # Only process if we have all three parts
-            [key, value] = parts
-            if key and value:  # Only create node if both key and value exist
-                return self.create_env_node(key, value)
-                
-        return None
+        return [self.create_env_node(key, value) for key, value in vars_dict.items()]
+    
 
     def create_env_node(self, key: str, value: str) -> Node:
         """Create an Node from a key-value pair."""
@@ -64,3 +61,4 @@ class EnvParser:
             encoded = value.encode("utf-8")
             encoded = base64.b64encode(encoded)
         return Node(name=key, type=NodeType.SECRET if is_secret else NodeType.ENV, value=encoded if is_secret else value)
+    
