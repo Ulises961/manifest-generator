@@ -41,7 +41,8 @@ def test_parse_dockerfile(command_mapper):
 
 def test_generate_cmd_node(command_mapper):
     cmd = {"instruction": "CMD", "value": ["python", "app.py"]}
-    node = command_mapper._generate_cmd_node(cmd, None)
+    nodes = command_mapper._generate_cmd_nodes(cmd, None)
+    node = nodes[0]
     assert isinstance(node, DockerInstruction)
     assert node.type == NodeType.CMD
     assert node.value == ["python", "app.py"]
@@ -50,27 +51,30 @@ def test_generate_cmd_node(command_mapper):
 def test_generate_label_node(mock_decide_label, command_mapper):
     mock_decide_label.return_value = True
     label = {"instruction": "LABEL", "value": "version=1.0"}
-    node = command_mapper._generate_label_node(label, None)
+    nodes = command_mapper._generate_label_nodes(label, None)
+    node = nodes[0]
     assert isinstance(node, DockerInstruction)
     assert node.type == NodeType.LABEL
-    assert node.value == "version=1.0"
+    assert node.name == "version"
+    assert node.value == "1.0"
 
 def test_generate_expose_node(command_mapper):
     expose = {"instruction": "EXPOSE", "value": "80"}
-    node = command_mapper._generate_expose_node(expose, None)
+    nodes = command_mapper._generate_expose_nodes(expose, None)
+    node = nodes[0]
     assert node.type == NodeType.PORT
     assert node.value == "80"
 
 def test_generate_volume_node(command_mapper):
-    load_environment()
-
     volumes_content = '["test_volume"]'
     with open("volumes.json", "w") as f:
         f.write(volumes_content)
 
     try:
         volume = {"instruction": "VOLUME", "value": "test_volume"}
-        node = command_mapper._generate_volume_node(volume, None)
+        nodes = command_mapper._generate_volume_nodes(volume, None)
+        node = nodes[0]
+
         assert isinstance(node, DockerInstruction)
         assert node.type == NodeType.VOLUME
         assert not node.is_persistent
@@ -92,16 +96,18 @@ def test_get_commands(command_mapper):
     assert isinstance(commands[0], DockerInstruction)
     assert isinstance(commands[1], DockerInstruction)
 
-def test_generate_entrypoint_node(command_mapper):
+def test_generate_entrypoint_nodes(command_mapper):
     entrypoint = {"instruction": "ENTRYPOINT", "value": ["python", "app.py"]}
-    node = command_mapper._generate_entrypoint_node(entrypoint, None)
+    nodes = command_mapper._generate_entrypoint_nodes(entrypoint, None)
+    node = nodes[0]
     assert isinstance(node, DockerInstruction)
     assert node.type == NodeType.ENTRYPOINT
     assert node.value == ["python", "app.py"]
 
 def test_generate_entrypoint_w_script(command_mapper):
     entrypoint = {"instruction": "ENTRYPOINT", "value": ["./start.sh"]}
-    node = command_mapper._generate_entrypoint_node(entrypoint, None)
+    nodes = command_mapper._generate_entrypoint_nodes(entrypoint, None)
+    node = nodes[0]
     assert isinstance(node, DockerInstruction)
     assert node.type == NodeType.ENTRYPOINT
     assert node.value == ["./start.sh"]
@@ -111,7 +117,8 @@ def test_generate_entrypoint_w_script_and_args(command_mapper):
         "instruction": "ENTRYPOINT",
         "value": ["./start.sh", "--arg1", "--arg2"],
     }
-    node = command_mapper._generate_entrypoint_node(entrypoint, None)
+    nodes = command_mapper._generate_entrypoint_nodes(entrypoint, None)
+    node = nodes[0]
     assert isinstance(node, DockerInstruction)
     assert node.type == NodeType.ENTRYPOINT
     assert node.value == ["./start.sh", "--arg1", "--arg2"]
@@ -146,4 +153,37 @@ def test_parse_healthcheck_invalid_exec_form(command_mapper):
     command = 'HEALTHCHECK CMD [invalid json]'
     with pytest.raises(ValueError, match="Invalid exec form CMD array"):
         command_mapper._parse_healthcheck(command)
+     
+@patch("parsers.env_parser.EnvParser.parse_env_var")
+def test_generate_env_nodes(mock_parse_env_var, command_mapper):
+    # Create a mock node that would be returned by parse_env_var
+    mock_node = type('MockNode', (), {
+        'name': 'TEST_ENV',
+        'type': NodeType.ENV,
+        'value': 'test_value',
+        'metadata': {'is_secret': False}
+    })
+    
+    # Configure mock to return list with mock node
+    mock_parse_env_var.return_value = [mock_node]
+    
+    # Test data
+    command = {"instruction": "ENV", "value": "TEST_ENV=test_value"}
+    
+    # Call method 
+    nodes = command_mapper.generate_env_nodes(command, None)
+    
+    # Assertions
+    assert len(nodes) == 1
+    node = nodes[0]
+    assert isinstance(node, DockerInstruction)
+    assert node.name == 'TEST_ENV'
+    assert node.type == NodeType.ENV
+    assert node.value == 'test_value'
+    assert node.parent is None
+    assert not node.is_persistent
+    assert node.metadata == {'is_secret': False}
+    
+    mock_parse_env_var.assert_called_once_with("TEST_ENV=test_value")
+
 

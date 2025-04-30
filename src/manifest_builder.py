@@ -157,8 +157,8 @@ class ManifestBuilder:
                 existing_data = yaml.safe_load(file) or {}
 
             # Update or add the secret entry
-            existing_data.setdefault("secret", {})
-            existing_data["secret"].update(secret_entry)
+            existing_data.setdefault("secrets", {})
+            existing_data["secrets"].update(secret_entry)
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
@@ -180,8 +180,8 @@ class ManifestBuilder:
             "secrets",
         )
 
-        os.path.join(secrets_path, f"{secret_name}-secret.yaml")
-
+        os.makedirs(secrets_path, exist_ok=True)
+        
         self._save_yaml(
             template, os.path.join(secrets_path, f"{secret_name}-secret.yaml")
         )
@@ -193,7 +193,7 @@ class ManifestBuilder:
         # Prepare the config map entry
         config_map_entry = {
             "name": config_map_name,
-            "config": config_map["value"],
+            "value": config_map["value"],
         }
 
         config_map_entry = remove_none_values(config_map_entry)
@@ -224,7 +224,7 @@ class ManifestBuilder:
         template["kind"] = "ConfigMap"
         template["metadata"]["name"] = f"{config_map_name}"
         template["data"] = {
-            config_map['name']: "{{ "+ config_values + ".config }}"}
+            config_map['name']: "{{ "+ config_values + ".value }}"}
         # Convert the template to YAML string
         config_map_path = os.path.join(
             self.manifests_path,
@@ -241,14 +241,14 @@ class ManifestBuilder:
 
         service_name = to_snake(deployment["name"])
 
-        deployment_entry = {
-            "name": service_name,
+        deployment_entry: Dict[str,Any] = {
+            "name": deployment["name"],
             "labels": deployment["labels"],
             "command": deployment["command"],
             "args": deployment.get("args"),
             "volumes": deployment.get("volumes"),
             "volume_mounts": deployment.get("volume_mounts"),
-            "ports": {"containerPort":int(port) for port in deployment.get("ports", [])},
+            "ports": {"containerPort":port for port in deployment.get("ports", [])},
             "workdir": deployment.get("workdir"),
             "liveness_probe": deployment.get("liveness_probe"),
             "user": deployment.get("user"),
@@ -283,12 +283,15 @@ class ManifestBuilder:
             template["metadata"]["annotations"] = (
                 "{{ " + deployment_values + ".annotations }}"
             )
+
         template["spec"]["selector"]["matchLabels"] = (
             "{{ " + deployment_values + ".labels }}"
         )
+
         template["spec"]["template"]["metadata"]["labels"] = (
             "{{ " + deployment_values + ".labels }}"
         )
+        
         template["spec"]["template"]["spec"]["containers"][0]["name"] = (
             "{{ " + deployment_values + ".name }}"
         )
@@ -334,19 +337,7 @@ class ManifestBuilder:
         if "env" in deployment:
             env_vars = []
             for entry in deployment["env"]:
-                if entry.get("key") == "config":
-                    env_vars.append(
-                        {
-                            "name": entry["name"],
-                            "valueFrom": {
-                                "configMapKeyRef": {
-                                    "name": to_snake(entry["name"]),
-                                    "key": entry["name"],
-                                }
-                            },
-                        }
-                    )
-                elif entry.get("key") == "password":
+                if entry.get("key") == "password":
                     env_vars.append(
                         {
                             "name": entry["name"],
@@ -359,7 +350,17 @@ class ManifestBuilder:
                         }
                     )
                 else:
-                    env_vars.append({"name": entry["name"], "value": entry["value"]})
+                    env_vars.append(
+                        {
+                            "name": entry["name"],
+                            "valueFrom": {
+                                "configMapKeyRef": {
+                                    "name": to_snake(entry["name"]),
+                                    "key": entry["name"],
+                                }
+                            },
+                        }
+                    )
 
             template["spec"]["template"]["spec"]["containers"][0]["env"] = env_vars
 
@@ -386,7 +387,7 @@ class ManifestBuilder:
 
         # Prepare the stateful set entry
         stateful_set_entry = {
-            "name": stateful_set_name,
+            "name": stateful_set["name"],
             "labels": stateful_set["labels"],
             "command": stateful_set["command"],
             "args": stateful_set.get("args", None),
@@ -479,19 +480,7 @@ class ManifestBuilder:
         if "env" in stateful_set:
             env_vars = []
             for entry in stateful_set["env"]:
-                if entry.get("key") == "config":
-                    env_vars.append(
-                        {
-                            "name": entry["name"],
-                            "valueFrom": {
-                                "configMapKeyRef": {
-                                    "name": to_snake(entry["name"]),
-                                    "key": entry["name"],
-                                }
-                            },
-                        }
-                    )
-                elif entry.get("key") == "password":
+                if entry.get("key") == "password":
                     env_vars.append(
                         {
                             "name": entry["name"],
@@ -504,7 +493,18 @@ class ManifestBuilder:
                         }
                     )
                 else:
-                    env_vars.append({"name": entry["name"], "value": entry["value"]})
+                    env_vars.append(
+                        {
+                            "name": entry["name"],
+                            "valueFrom": {
+                                "configMapKeyRef": {
+                                    "name": to_snake(entry["name"]),
+                                    "key": entry["name"],
+                                }
+                            },
+                        }
+                    )
+                
 
             template["spec"]["template"]["spec"]["containers"][0]["env"] = env_vars
         # Remove all None values from the template
@@ -536,7 +536,7 @@ class ManifestBuilder:
 
         # Prepare the service entry
         service_entry = {
-            "name": service_name,
+            "name": service["name"],
             "labels": service["labels"],
             "ports": port_mappings,
             "type": service.get("type", "ClusterIP"),
@@ -590,7 +590,7 @@ class ManifestBuilder:
         pvc_name = to_snake(pvc["name"])
         # Prepare the PVC entry
         pvc_entry = {
-            "name": pvc_name,
+            "name": pvc["name"],
             "labels": pvc.get("labels", []),
             "storage_class": pvc.get("storage_class", None),
             "access_modes": pvc.get("access_modes", None),

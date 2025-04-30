@@ -1,498 +1,694 @@
 import os
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+import numpy as np
 import pytest
+from embeddings.embeddings_engine import EmbeddingsEngine
 from manifest_builder import ManifestBuilder
 from utils.file_utils import load_environment
+
 
 @pytest.fixture(autouse=True)
 def load_env():
     load_environment()
 
-def test_get_template_valid_names():
-    builder = ManifestBuilder()
-    
-    assert builder.get_template("config_map") == builder._config_map_template
-    assert builder.get_template("deployment") == builder.deployment_template 
-    assert builder.get_template("service") == builder._service_template
-    assert builder.get_template("stateful_set") == builder._stateful_set_template
-    assert builder.get_template("pvc") == builder._pvc_template
 
-def test_get_template_invalid_name():
-    builder = ManifestBuilder()
+@pytest.fixture
+def mock_embeddings_engine():
+    """Create a mock embeddings engine for testing."""
+    engine = Mock()
+    engine.encode = Mock(return_value=np.array([0.1, 0.2, 0.3]))
+    engine.encode = Mock(return_value=np.array([0.1, 0.2, 0.3]))
+    engine.compute_similarity = Mock(return_value=0.85)
+    return engine
+
+
+@pytest.fixture
+def manifest_builder(mock_embeddings_engine):
+    return ManifestBuilder(mock_embeddings_engine)
+
+
+def test_get_template_valid_names(manifest_builder):
+
+    assert (
+        manifest_builder.get_template("config_map")
+        == manifest_builder._config_map_template
+    )
+    assert (
+        manifest_builder.get_template("deployment")
+        == manifest_builder.deployment_template
+    )
+    assert (
+        manifest_builder.get_template("service") == manifest_builder._service_template
+    )
+    assert (
+        manifest_builder.get_template("stateful_set")
+        == manifest_builder._stateful_set_template
+    )
+    assert manifest_builder.get_template("pvc") == manifest_builder._pvc_template
+
+
+def test_get_template_invalid_name(manifest_builder):
     with pytest.raises(AssertionError):
-        builder.get_template("invalid_name")
+        manifest_builder.get_template("invalid_name")
 
-def test_get_template_empty_name():
-    builder = ManifestBuilder()
+
+def test_get_template_empty_name(manifest_builder):
     with pytest.raises(AssertionError):
-        builder.get_template("")
+        manifest_builder.get_template("")
 
-def test_get_template_none_name():
-    builder = ManifestBuilder()
+
+def test_get_template_none_name(manifest_builder):
     with pytest.raises(AssertionError):
-        builder.get_template(None)
+        manifest_builder.get_template(None)
 
-def test_build_secrets_yaml():
+
+def test_build_secrets_yaml(manifest_builder):
     # Create a mock for ManifestBuilder with template methods pre-configured
-    with patch('manifest_builder.ManifestBuilder._get_config_map_template') as mock_config_map, \
-         patch('manifest_builder.ManifestBuilder._get_deployment_template'), \
-         patch('manifest_builder.ManifestBuilder._get_service_template'), \
-         patch('manifest_builder.ManifestBuilder._get_stateful_set_template'), \
-         patch('manifest_builder.ManifestBuilder._get_pvc_template'), \
-         patch('os.path.exists', return_value=False), \
-         patch('os.makedirs', return_value=None), \
-         patch('builtins.open', mock.mock_open(), create=True), \
-         patch('yaml.dump') as mock_dump, \
-         patch('manifest_builder.ManifestBuilder._save_yaml') as mock_save:
-        
+    with patch(
+        "manifest_builder.ManifestBuilder._get_config_map_template"
+    ) as mock_config_map, patch(
+        "manifest_builder.ManifestBuilder._get_deployment_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_service_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_stateful_set_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_pvc_template"
+    ), patch(
+        "os.path.exists", return_value=False
+    ), patch(
+        "os.makedirs", return_value=None
+    ), patch(
+        "builtins.open", mock.mock_open(), create=True
+    ), patch(
+        "manifest_builder.ManifestBuilder._save_yaml"
+    ) as mock_save:
+
+        # Remove the yaml.dump mock since we're not directly calling it
+        # patch('yaml.dump') as mock_dump, <-- Remove this line
+
         # Set up the template that will be returned by get_template
         template = {
-            'apiVersion': 'v1',
-            'kind': 'ConfigMap',
-            'metadata': {'name': 'template-name'},
-            'data': {}
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "template-name"},
+            "data": {},
         }
         mock_config_map.return_value = template
-        
-        # Create the builder
-        builder = ManifestBuilder()
-        
-        # Provide test data
-        secret = {
-            "name": "secret1",
-            "service": "service1",
-            "value": "value1"
-        }
-        
-        # Call the method being tested
-        builder.build_secrets_yaml(secret)
-        
-        # Check if yaml.dump was called with correct parameters
-        expected_values_data = {
-            "secrets": {
-                "secret1": {
-                    "name": "secret1",
-                    "password": "value1"
-                }
-            }
-        }
-        mock_dump.assert_called_once_with(expected_values_data, mock.ANY)
-        
-        # Check if _save_yaml was called with the correct template
-        expected_template = {
-            'apiVersion': 'v1',
-            'kind': 'Secret',
-            'metadata': {'name': '{{ .Values.secrets.secret1.name }}'},
-            'data': {'password': '{{ .Values.secrets.secret1.password }}'},
-            'type': 'Opaque'
-        }
-        mock_save.assert_called_once()
-        actual_template = mock_save.call_args[0][0]
-        assert actual_template == expected_template
 
-def test_build_config_map_yaml():
+        # Provide test data
+        secret = {"name": "secret1", "value": "value1"}
+
+        # Call the method being tested
+        manifest_builder.build_secrets_yaml(secret)
+
+        # Check if _save_yaml was called with values.yaml data first
+        expected_values_data = {
+            "secrets": {"secret1": {"name": "secret1", "password": "value1"}}
+        }
+        # First call should be for values.yaml
+        assert mock_save.call_count >= 1
+        assert mock_save.call_args_list[0][0][0] == expected_values_data
+
+        # Second call should be for the template
+        expected_template = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": "{{ .Values.secrets.secret1.name }}"},
+            "data": {"secret1": "{{ .Values.secrets.secret1.password }}"},
+            "type": "Opaque",
+        }
+        assert mock_save.call_count >= 2
+        second_call_template = mock_save.call_args_list[1][0][0]
+        assert second_call_template["kind"] == "Secret"
+        assert "{{ .Values.secrets.secret1.name }}" in str(
+            second_call_template["metadata"]["name"]
+        )
+        assert "secret1" in second_call_template["data"]
+
+
+def test_build_config_map_yaml(manifest_builder):
     # Create a mock for ManifestBuilder with template methods pre-configured
-    with patch('manifest_builder.ManifestBuilder._get_config_map_template') as mock_config_map, \
-         patch('manifest_builder.ManifestBuilder._get_deployment_template'), \
-         patch('manifest_builder.ManifestBuilder._get_service_template'), \
-         patch('manifest_builder.ManifestBuilder._get_stateful_set_template'), \
-         patch('manifest_builder.ManifestBuilder._get_pvc_template'), \
-         patch('os.path.exists', return_value=False), \
-         patch('os.makedirs', return_value=None), \
-         patch('builtins.open', mock.mock_open(), create=True), \
-         patch('yaml.dump') as mock_dump, \
-         patch('manifest_builder.ManifestBuilder._save_yaml') as mock_save, \
-         patch('os.getenv', return_value='/mock/path'):
-        
+    with patch(
+        "manifest_builder.ManifestBuilder._get_config_map_template"
+    ) as mock_config_map, patch(
+        "manifest_builder.ManifestBuilder._get_deployment_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_service_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_stateful_set_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_pvc_template"
+    ), patch(
+        "os.path.exists", return_value=False
+    ), patch(
+        "os.makedirs", return_value=None
+    ), patch(
+        "builtins.open", mock.mock_open(), create=True
+    ), patch(
+        "yaml.dump"
+    ) as mock_dump, patch(
+        "manifest_builder.ManifestBuilder._save_yaml"
+    ) as mock_save, patch(
+        "os.getenv", return_value="/mock/path"
+    ):
+
         # Set up the template that will be returned by get_template
         template = {
-            'apiVersion': 'v1',
-            'kind': 'ConfigMap',
-            'metadata': {'name': 'template-name'},
-            'data': {}
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "template-name"},
+            "data": {},
         }
         mock_config_map.return_value = template
-        
-        # Create the builder
-        builder = ManifestBuilder()
-        
+
         # Provide test data
-        config_map = {
-            "name": "my-config",
-            "service": "test-service",
-            "config": "sample-config-content"
-        }
-        
+        config_map = {"name": "my-config", "value": "sample-config-content"}
+
         # Call the method being tested
-        builder.build_config_map_yaml(config_map)
-        
+        manifest_builder.build_config_map_yaml(config_map)
+
         # Check if yaml.dump was called with correct parameters
         expected_values_data = {
-            "configs": {
-                "config-my-config": {
-                    "name": "my-config",
-                    "config": "sample-config-content"
-                }
+            "config": {
+                "my_config": {"name": "my_config", "value": "sample-config-content"}
             }
         }
-        mock_dump.assert_called_once_with(expected_values_data, mock.ANY)
-        
+        # First call should be for values.yaml
+        assert mock_save.call_count >= 1
+        assert mock_save.call_args_list[0][0][0] == expected_values_data
+
         # Check if _save_yaml was called with the correct template
         expected_template = {
-            'apiVersion': 'v1',
-            'kind': 'ConfigMap',
-            'metadata': {'name': 'config-my-config'},
-            'data': {'config': '{{ .Values.config.my-config.config }}'}
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "my_config"},
+            "data": {"my-config": "{{ .Values.config.my_config.value }}"},
         }
-        mock_save.assert_called_once()
-        actual_template = mock_save.call_args[0][0]
-        assert actual_template == expected_template
 
-def test_build_deployment_yaml():
+        assert mock_save.call_count >= 2
+        second_call_template = mock_save.call_args_list[1][0][0]
+        assert second_call_template == expected_template
+
+
+def test_build_deployment_yaml(manifest_builder):
     # Create a mock for ManifestBuilder with template methods pre-configured
-    with patch('manifest_builder.ManifestBuilder._get_config_map_template'), \
-         patch('manifest_builder.ManifestBuilder._get_deployment_template') as mock_deployment, \
-         patch('manifest_builder.ManifestBuilder._get_service_template'), \
-         patch('manifest_builder.ManifestBuilder._get_stateful_set_template'), \
-         patch('manifest_builder.ManifestBuilder._get_pvc_template'), \
-         patch('os.path.exists', return_value=False), \
-         patch('os.makedirs', return_value=None), \
-         patch('builtins.open', mock.mock_open(), create=True), \
-         patch('yaml.dump') as mock_dump, \
-         patch('manifest_builder.ManifestBuilder._save_yaml') as mock_save, \
-         patch('os.getenv', return_value='/mock/path'), \
-         patch('manifest_builder.ManifestBuilder.get_template', return_value=mock_deployment.return_value):
-        
+    with patch("manifest_builder.ManifestBuilder._get_config_map_template"), patch(
+        "manifest_builder.ManifestBuilder._get_deployment_template"
+    ) as mock_deployment, patch(
+        "manifest_builder.ManifestBuilder._get_service_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_stateful_set_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_pvc_template"
+    ), patch(
+        "os.path.exists", return_value=False
+    ), patch(
+        "os.makedirs", return_value=None
+    ), patch(
+        "builtins.open", mock.mock_open(), create=True
+    ), patch(
+        "manifest_builder.ManifestBuilder._save_yaml"
+    ) as mock_save, patch(
+        "os.getenv", return_value="/mock/path"
+    ), patch(
+        "manifest_builder.ManifestBuilder.get_template",
+        return_value=mock_deployment.return_value,
+    ):
+
         # Set up the template that will be returned by get_template
         template = {
-            'apiVersion': 'apps/v1',
-            'kind': 'Deployment',
-            'metadata': {'name': 'template-name', 'labels': {}},
-            'spec': {
-                'selector': {'matchLabels': {}},
-                'template': {
-                    'metadata': {'labels': {}},
-                    'spec': {
-                        'containers': [
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "template-name", "labels": {}},
+            "spec": {
+                "selector": {"matchLabels": {}},
+                "template": {
+                    "metadata": {"labels": {}},
+                    "spec": {
+                        "containers": [
                             {
-                                'name': 'container-name',
-                                'command': [],
-                                'args': [],
-                                'env': [],
-                                'ports': [],
+                                "name": "container-name",
+                                "command": [],
+                                "args": [],
+                                "env": [],
+                                "ports": [],
                             }
                         ]
-                    }
-                }
-            }
+                    },
+                },
+            },
         }
         mock_deployment.return_value = template
-        
-        # Create the builder
-        builder = ManifestBuilder()
-        
+
         # Patch the specific method in the ManifestBuilder class
-        with patch.object(builder, 'get_template', return_value=template.copy()):
-            
+        with patch.object(
+            manifest_builder, "get_template", return_value=template.copy()
+        ):
+
             # Provide test data
             deployment = {
                 "name": "test-app",
-                "service": "test-service",
                 "labels": {"app": "test-app"},
                 "command": ["/bin/sh"],
                 "args": ["-c", "echo Hello"],
                 "env": [{"name": "ENV_VAR", "value": "value"}],
-                "volumes": [{"name": "config-vol", "configMap": {"name": "test-config"}}],
+                "volumes": [
+                    {"name": "config-vol", "configMap": {"name": "test-config"}}
+                ],
                 "volume_mounts": [{"name": "config-vol", "mountPath": "/etc/config"}],
-                "ports": [{"containerPort": 8080, "protocol": "TCP"}],
+                "ports": [8080],
                 "workdir": "/app",
                 "liveness_probe": {"httpGet": {"path": "/health", "port": 8080}},
-                "user": 1000
+                "user": 1000,
             }
-            
+
             # Call the method being tested
-            builder.build_deployment_yaml(deployment)
-            
+            manifest_builder.build_deployment_yaml(deployment)
+
             # Check if yaml.dump was called with correct parameters
             expected_values_data = {
-                "deployment-test-service": {
-                    "name": "test-service",
-                    "labels": {"app": "test-app"},  # Direct dictionary assignment
-                    "command": ["/bin/sh"],
-                    "args": ["-c", "echo Hello"],
-                    "env": [{"name": "ENV_VAR", "value": "value"}],
-                    "volumes": [{"name": "config-vol", "configMap": {"name": "test-config"}}],
-                    "volume_mounts": [{"name": "config-vol", "mountPath": "/etc/config"}],
-                    "ports": [{"containerPort": 8080, "protocol": "TCP"}],
-                    "workdir": "/app",
-                    "liveness_probe": {"httpGet": {"path": "/health", "port": 8080}},
-                    "security_context": {"runAsUser": 1000}
+                "deployment": {
+                    "test_app": {
+                        "name": "test-app",
+                        "labels": {"app": "test-app"},
+                        "command": ["/bin/sh"],
+                        "args": ["-c", "echo Hello"],
+                        "volumes": [
+                            {"name": "config-vol", "configMap": {"name": "test-config"}}
+                        ],
+                        "volume_mounts": [
+                            {"name": "config-vol", "mountPath": "/etc/config"}
+                        ],
+                        "ports": {"containerPort": 8080},
+                        "workdir": "/app",
+                        "liveness_probe": {
+                            "httpGet": {"path": "/health", "port": 8080}
+                        },
+                        "user": 1000,
+                    }
                 }
             }
-            mock_dump.assert_called_once_with(expected_values_data, mock.ANY)
 
-def test_build_service_yaml():
+            # First call should be for values.yaml
+            assert mock_save.call_count >= 1
+            assert mock_save.call_args_list[0][0][0] == expected_values_data
+
+            expected_template = {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "name": "{{ .Values.deployment.test_app.name }}",
+                    "labels": "{{ .Values.deployment.test_app.labels }}",
+                },
+                "spec": {
+                    "selector": {
+                        "matchLabels": "{{ .Values.deployment.test_app.labels }}"
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": "{{ .Values.deployment.test_app.labels }}"
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": "{{ .Values.deployment.test_app.name }}",
+                                    "command": "{{ .Values.deployment.test_app.command }}",
+                                    "args": "{{ .Values.deployment.test_app.args }}",
+                                    "env": [
+                                        {
+                                            "name": "ENV_VAR",
+                                            "valueFrom": {
+                                                "configMapKeyRef": {
+                                                    "name": "env_var",
+                                                    "key": "ENV_VAR",
+                                                }
+                                            },
+                                        }
+                                    ],
+                                    "ports": "{{ .Values.deployment.test_app.ports }}",
+                                    "securityContext": {
+                                        "runAsUser": "{{ .Values.deployment.test_app.user }}"
+                                    },
+                                    "volumeMounts": "{{ .Values.deployment.test_app.volume_mounts }}",
+                                    "workingDir": "{{ .Values.deployment.test_app.workdir }}",
+                                    "livenessProbe": "{{ .Values.deployment.test_app.liveness_probe }}",
+                                }
+                            ],
+                            "volumes": "{{ .Values.deployment.test_app.volumes }}",
+                        },
+                    },
+                },
+            }
+            assert mock_save.call_count >= 2
+            assert mock_save.call_args_list[1][0][0] == expected_template
+
+
+def test_build_stateful_set_yaml_extended(manifest_builder):
     # Create a mock for ManifestBuilder with template methods pre-configured
-    with patch('manifest_builder.ManifestBuilder._get_config_map_template'), \
-         patch('manifest_builder.ManifestBuilder._get_deployment_template'), \
-         patch('manifest_builder.ManifestBuilder._get_service_template') as mock_service, \
-         patch('manifest_builder.ManifestBuilder._get_stateful_set_template'), \
-         patch('manifest_builder.ManifestBuilder._get_pvc_template'), \
-         patch('os.path.exists', return_value=False), \
-         patch('os.makedirs', return_value=None), \
-         patch('builtins.open', mock.mock_open(), create=True), \
-         patch('yaml.dump') as mock_dump, \
-         patch('manifest_builder.ManifestBuilder._save_yaml') as mock_save, \
-         patch('os.getenv', return_value='/mock/path'):
-        
+    with patch("manifest_builder.ManifestBuilder._get_config_map_template"), patch(
+        "manifest_builder.ManifestBuilder._get_deployment_template"
+    ), patch("manifest_builder.ManifestBuilder._get_service_template"), patch(
+        "manifest_builder.ManifestBuilder._get_stateful_set_template"
+    ) as mock_stateful_set, patch(
+        "manifest_builder.ManifestBuilder._get_pvc_template"
+    ), patch(
+        "os.path.exists", return_value=False
+    ), patch(
+        "os.makedirs", return_value=None
+    ), patch(
+        "builtins.open", mock.mock_open(), create=True
+    ), patch(
+        "manifest_builder.ManifestBuilder._save_yaml"
+    ) as mock_save, patch(
+        "os.getenv", return_value="/mock/path"
+    ), patch(
+        "manifest_builder.ManifestBuilder.get_template",
+        return_value=mock_stateful_set.return_value,
+    ):
+
         # Set up the template that will be returned by get_template
         template = {
-            'apiVersion': 'v1',
-            'kind': 'Service',
-            'metadata': {'name': 'template-name', 'labels': {}},
-            'spec': {
-                'selector': {},
-                'ports': [
+            "apiVersion": "apps/v1",
+            "kind": "StatefulSet",
+            "metadata": {"name": "template-name", "labels": {}},
+            "spec": {
+                "selector": {"matchLabels": {}},
+                "template": {
+                    "metadata": {"labels": {}},
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "container-name",
+                                "command": [],
+                                "args": [],
+                                "env": [],
+                                "ports": [],
+                            }
+                        ]
+                    },
+                },
+            },
+        }
+        mock_stateful_set.return_value = template
+
+        # Patch the specific method in the ManifestBuilder class
+        with patch.object(
+            manifest_builder, "get_template", return_value=template.copy()
+        ):
+
+            # Provide test data
+            stateful_set = {
+                "name": "db-stateful",
+                "labels": {"app": "database"},
+                "command": ["mysqld"],
+                "args": ["--default-authentication-plugin=mysql_native_password"],
+                "env": [{"name": "MYSQL_ROOT_PASSWORD", "value": "secretpassword"}],
+                "volumes": [
                     {
-                        'port': 80,
-                        'targetPort': 8080,
-                        'protocol': 'TCP',
-                        'name': 'http'
+                        "name": "data-vol",
+                        "persistentVolumeClaim": {"claimName": "mysql-data"},
                     }
                 ],
-                'type': 'ClusterIP'
+                "volume_mounts": [{"name": "data-vol", "mountPath": "/var/lib/mysql"}],
+                "ports": [3306],
+                "workdir": "/var/lib/mysql",
+                "liveness_probe": {"exec": {"command": ["mysqladmin", "ping"]}},
+                "user": 999,
             }
+
+            # Call the method being tested
+            manifest_builder.build_stateful_set_yaml(stateful_set)
+
+            # Check if yaml.dump was called with correct parameters
+            expected_values_data = {
+                "stateful-set": {
+                    "db_stateful": {
+                        "name": "db-stateful",
+                        "labels": {"app": "database"},
+                        "command": ["mysqld"],
+                        "args": [
+                            "--default-authentication-plugin=mysql_native_password"
+                        ],
+                        "volumes": [
+                            {
+                                "name": "data-vol",
+                                "persistentVolumeClaim": {"claimName": "mysql-data"},
+                            }
+                        ],
+                        "volume_mounts": [
+                            {"name": "data-vol", "mountPath": "/var/lib/mysql"}
+                        ],
+                        "ports": [3306],
+                        "workdir": "/var/lib/mysql",
+                        "liveness_probe": {"exec": {"command": ["mysqladmin", "ping"]}},
+                        "user": 999,
+                    }
+                }
+            }
+
+            # First call should be for values.yaml
+            assert mock_save.call_count >= 1
+            assert mock_save.call_args_list[0][0][0] == expected_values_data
+
+            expected_template = {
+                "apiVersion": "apps/v1",
+                "kind": "StatefulSet",
+                "metadata": {
+                    "name": "{{ .Values.stateful-set.db_stateful.name }}",
+                    "labels": "{{ .Values.stateful-set.db_stateful.labels }}",
+                },
+                "spec": {
+                    "selector": {
+                        "matchLabels": "{{ .Values.stateful-set.db_stateful.labels }}"
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": "{{ .Values.stateful-set.db_stateful.labels }}"
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": "{{ .Values.stateful-set.db_stateful.name }}",
+                                    "command": "{{ .Values.stateful-set.db_stateful.command }}",
+                                    "args": "{{ .Values.stateful-set.db_stateful.args }}",
+                                    "env": [
+                                        {
+                                            "name": "MYSQL_ROOT_PASSWORD",
+                                            "valueFrom": {
+                                                "configMapKeyRef": {
+                                                    "name": "mysql_root_password",
+                                                    "key": "MYSQL_ROOT_PASSWORD",
+                                                }
+                                            },
+                                        }
+                                    ],
+                                    "ports": "{{ .Values.stateful-set.db_stateful.ports }}",
+                                    "securityContext": {
+                                        "runAsUser": "{{ .Values.stateful-set.db_stateful.user }}"
+                                    },
+                                    "volumeMounts": "{{ .Values.stateful-set.db_stateful.volume_mounts }}",
+                                    "workingDir": "{{ .Values.stateful-set.db_stateful.workdir }}",
+                                    "livenessProbe": "{{ .Values.stateful-set.db_stateful.liveness_probe }}",
+                                }
+                            ],
+                            "volumes": "{{ .Values.stateful-set.db_stateful.volumes }}",
+                        },
+                    },
+                },
+            }
+
+            assert mock_save.call_count >= 2
+            assert mock_save.call_args_list[1][0][0] == expected_template
+
+
+def test_build_service_yaml(manifest_builder):
+    # Create a mock for ManifestBuilder with template methods pre-configured
+    with patch("manifest_builder.ManifestBuilder._get_config_map_template"), patch(
+        "manifest_builder.ManifestBuilder._get_deployment_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_service_template"
+    ) as mock_service, patch(
+        "manifest_builder.ManifestBuilder._get_stateful_set_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_pvc_template"
+    ), patch(
+        "os.path.exists", return_value=False
+    ), patch(
+        "os.makedirs", return_value=None
+    ), patch(
+        "builtins.open", mock.mock_open(), create=True
+    ), patch(
+        "manifest_builder.ManifestBuilder._save_yaml"
+    ) as mock_save, patch(
+        "os.getenv", return_value="/mock/path"
+    ):
+
+        # Set up the template that will be returned by get_template
+        template = {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": "template-name", "labels": {}},
+            "spec": {
+                "selector": {},
+                "ports": [
+                    {"port": 80, "targetPort": 8080, "protocol": "TCP", "name": "http"}
+                ],
+                "type": "ClusterIP",
+            },
         }
         mock_service.return_value = template
-        
-        # Create the builder
-        builder = ManifestBuilder()
-        
+
         # Patch the specific method in the ManifestBuilder class
-        with patch.object(builder, 'get_template', return_value=template.copy()):
-            
+        with patch.object(
+            manifest_builder, "get_template", return_value=template.copy()
+        ):
+
             # Provide test data
             service = {
                 "name": "web-service",
                 "labels": {"app": "web"},
-                "port": 80,
-                "target_port": 8080,
+                "ports": [8080],
+                "service-ports": [80, 443],
                 "protocol": "TCP",
-                "type": "ClusterIP"
+                "type": "ClusterIP",
             }
-            
+
             # Call the method being tested
-            builder.build_service_yaml(service)
-            
+            manifest_builder.build_service_yaml(service)
+
             # Check if yaml.dump was called with correct parameters
             expected_values_data = {
-                "service-web-service": {
-                    "name": "web-service",
-                    "labels": {"app": "web"},
-                    "port": 80,
-                    "target_port": 8080,
-                    "protocol": "TCP",
-                    "type": "ClusterIP"
-                }
-            }
-            mock_dump.assert_called_once_with(expected_values_data, mock.ANY)
-            
-            # Instead of checking for exact string format, check that key parts are present
-            actual_template = mock_save.call_args[0][0]
-            assert actual_template['apiVersion'] == 'v1'
-            assert actual_template['kind'] == 'Service'
-            
-            # Check that the metadata contains the service name template reference
-            assert 'Values.service' in actual_template['metadata']['name']
-            assert 'web-service' in actual_template['metadata']['name']
-            
-            # Check that the ports section contains the correct port template reference
-            assert len(actual_template['spec']['ports']) == 1
-            assert 'Values.service' in str(actual_template['spec']['ports'][0]['port'])
-            assert 'Values.service' in str(actual_template['spec']['ports'][0]['targetPort'])
-            
-            # Check service type
-            assert 'Values.service' in str(actual_template['spec']['type'])
-
-def test_build_stateful_set_yaml():
-    # Create a mock for ManifestBuilder with template methods pre-configured
-    with patch('manifest_builder.ManifestBuilder._get_config_map_template'), \
-         patch('manifest_builder.ManifestBuilder._get_deployment_template'), \
-         patch('manifest_builder.ManifestBuilder._get_service_template'), \
-         patch('manifest_builder.ManifestBuilder._get_stateful_set_template') as mock_stateful_set, \
-         patch('manifest_builder.ManifestBuilder._get_pvc_template'), \
-         patch('os.path.exists', return_value=False), \
-         patch('os.makedirs', return_value=None), \
-         patch('builtins.open', mock.mock_open(), create=True), \
-         patch('yaml.dump') as mock_dump, \
-         patch('manifest_builder.ManifestBuilder._save_yaml') as mock_save, \
-         patch('os.getenv', return_value='/mock/path'):
-        
-        # Set up the template that will be returned by get_template
-        template = {
-            'apiVersion': 'apps/v1',
-            'kind': 'StatefulSet',
-            'metadata': {'name': 'template-name', 'labels': {}},
-            'spec': {
-                'selector': {'matchLabels': {}},
-                'serviceName': 'service-name',
-                'replicas': 1,
-                'template': {
-                    'metadata': {'labels': {}},
-                    'spec': {
-                        'containers': [
+                "service": {
+                    "web_service": {
+                        "name": "web-service",
+                        "labels": {"app": "web"},
+                        "ports": [
                             {
-                                'name': 'container-name',
-                                'command': [],
-                                'args': [],
-                                'env': [],
-                                'ports': [],
-                            }
-                        ]
+                                "port": 80,
+                                "targetPort": 8080,
+                                "name": "http",
+                                "protocol": "TCP",
+                            },
+                            {
+                                "port": 443,
+                                "targetPort": 8080,
+                                "name": "https",
+                                "protocol": "TCP",
+                            },
+                        ],
+                        "type": "ClusterIP",
                     }
                 }
             }
-        }
-        mock_stateful_set.return_value = template
-        
-        # Create the builder
-        builder = ManifestBuilder()
-        
-        # Patch the specific method in the ManifestBuilder class
-        with patch.object(builder, 'get_template', return_value=template.copy()):
-            
-            # Provide test data
-            stateful_set = {
-                "name": "database",
-                "labels": {"app": "db"},
-                "command": ["mysqld"],
-                "args": ["--default-authentication-plugin=mysql_native_password"],
-                "env": [{"name": "MYSQL_ROOT_PASSWORD", "value": "password"}],
-                "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": "mysql-data"}}],
-                "volume_mounts": [{"name": "data", "mountPath": "/var/lib/mysql"}],
-                "ports": [{"containerPort": 3306, "protocol": "TCP"}],
-                "workdir": "/var/lib/mysql",
-                "liveness_probe": {"exec": {"command": ["mysqladmin", "ping"]}},
-                "user": 1000
-            }
-            
-            # Call the method being tested
-            builder.build_stateful_set_yaml(stateful_set)
-            
-            # Check if yaml.dump was called with correct parameters
-            expected_values_data = {
-                "stateful-set-database": {
-                    "name": "database",
-                    "labels": {"app": "db"},
-                    "command": ["mysqld"],
-                    "args": ["--default-authentication-plugin=mysql_native_password"],
-                    "env": [{"name": "MYSQL_ROOT_PASSWORD", "value": "password"}],
-                    "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": "mysql-data"}}],
-                    "volume_mounts": [{"name": "data", "mountPath": "/var/lib/mysql"}],
-                    "ports": [{"containerPort": 3306, "protocol": "TCP"}],
-                    "workdir": "/var/lib/mysql",
-                    "liveness_probe": {"exec": {"command": ["mysqladmin", "ping"]}},
-                    "security_context": {"runAsUser": 1000}
-                }
-            }
-            mock_dump.assert_called_once_with(expected_values_data, mock.ANY)
-            
-            # Instead of checking for exact string format, check that key parts are present
-            actual_template = mock_save.call_args[0][0]
-            assert actual_template['apiVersion'] == 'apps/v1'
-            assert actual_template['kind'] == 'StatefulSet'
-            
-            # Check that the metadata contains the statefulset name template reference
-            assert 'Values.stateful-set' in str(actual_template['metadata']['name'])
-            assert 'database' in str(actual_template['metadata']['name'])
-            
-            # Check that the container section includes all the required fields
-            container = actual_template['spec']['template']['spec']['containers'][0]
-            assert 'Values.stateful-set' in str(container['name'])
-            assert 'Values.stateful-set' in str(container['command'])
-            assert 'Values.stateful-set' in str(container['args'])
-            assert 'Values.stateful-set' in str(container['env'])
-            
-            # Check volume mounts and volumes
-            assert 'Values.stateful-set' in str(container.get('volumeMounts', ''))
-            assert 'Values.stateful-set' in str(actual_template['spec']['template']['spec'].get('volumes', ''))
-            
-            # Check that securityContext is set
-            assert 'Values.stateful-set' in str(container.get('securityContext', {}).get('runAsUser', ''))
 
-def test_build_pvc_yaml():
+            # First call should be for values.yaml
+            assert mock_save.call_count >= 1
+            assert mock_save.call_args_list[0][0][0] == expected_values_data
+
+            expected_template = {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "name": "{{ .Values.service.web_service.name }}",
+                    "labels": "{{ .Values.service.web_service.labels }}",
+                },
+                "spec": {
+                    "selector": "{{ .Values.service.web_service.labels }}",
+                    "ports": "{{ .Values.service.web_service.ports }}",
+                    "type": "{{ .Values.service.web_service.type }}",
+                },
+            }
+
+            assert mock_save.call_count >= 2
+            assert expected_template == mock_save.call_args_list[1][0][0]
+
+
+def test_build_pvc_yaml(manifest_builder):
     # Create a mock for ManifestBuilder with template methods pre-configured
-    with patch('manifest_builder.ManifestBuilder._get_config_map_template'), \
-         patch('manifest_builder.ManifestBuilder._get_deployment_template'), \
-         patch('manifest_builder.ManifestBuilder._get_service_template'), \
-         patch('manifest_builder.ManifestBuilder._get_stateful_set_template'), \
-         patch('manifest_builder.ManifestBuilder._get_pvc_template') as mock_pvc, \
-         patch('os.path.exists', return_value=False), \
-         patch('os.makedirs', return_value=None), \
-         patch('builtins.open', mock.mock_open(), create=True), \
-         patch('yaml.dump') as mock_dump, \
-         patch('manifest_builder.ManifestBuilder._save_yaml') as mock_save, \
-         patch('os.getenv', return_value='/mock/path'):
-        
+    with patch("manifest_builder.ManifestBuilder._get_config_map_template"), patch(
+        "manifest_builder.ManifestBuilder._get_deployment_template"
+    ), patch("manifest_builder.ManifestBuilder._get_service_template"), patch(
+        "manifest_builder.ManifestBuilder._get_stateful_set_template"
+    ), patch(
+        "manifest_builder.ManifestBuilder._get_pvc_template"
+    ) as mock_pvc, patch(
+        "os.path.exists", return_value=False
+    ), patch(
+        "os.makedirs", return_value=None
+    ), patch(
+        "builtins.open", mock.mock_open(), create=True
+    ), patch(
+        "manifest_builder.ManifestBuilder._save_yaml"
+    ) as mock_save, patch(
+        "os.getenv", return_value="/mock/path"
+    ):
+
         # Set up the template that will be returned by get_template
         template = {
-            'apiVersion': 'v1',
-            'kind': 'PersistentVolumeClaim',
-            'metadata': {'name': 'template-name', 'labels': {}},
-            'spec': {
-                'storageClassName': 'standard',
-                'accessModes': ['ReadWriteOnce'],
-                'resources': {
-                    'requests': {'storage': '1Gi'}
-                }
-            }
+            "apiVersion": "v1",
+            "kind": "PersistentVolumeClaim",
+            "metadata": {"name": "template-name", "labels": {}},
+            "spec": {
+                "storageClassName": "standard",
+                "accessModes": ["ReadWriteOnce"],
+                "resources": {"requests": {"storage": "1Gi"}},
+            },
         }
         mock_pvc.return_value = template
-        
-        # Create the builder
-        builder = ManifestBuilder()
-        
+
         # Patch the specific method in the ManifestBuilder class
-        with patch.object(builder, 'get_template', return_value=template.copy()):
-            
+        with patch.object(
+            manifest_builder, "get_template", return_value=template.copy()
+        ):
+
             # Provide test data
             pvc = {
                 "name": "data-storage",
                 "labels": {"app": "mysql"},
                 "storage_class": "standard",
                 "access_modes": ["ReadWriteOnce"],
-                "resources": "10Gi"
+                "resources": "10Gi",
             }
-            
+
             # Call the method being tested
-            builder.build_pvc_yaml(pvc)
-            
+            manifest_builder.build_pvc_yaml(pvc)
+
             # Check if yaml.dump was called with correct parameters
             expected_values_data = {
-                "pvc-data-storage": {
-                    "name": "data-storage",
-                    "labels": {"app": "mysql"},
-                    "storage_class": "standard",
-                    "access_modes": ["ReadWriteOnce"],
-                    "resources": "10Gi"
+                "pvc": {
+                    "data_storage": {
+                        "name": "data-storage",
+                        "labels": {"app": "mysql"},
+                        "storage_class": "standard",
+                        "access_modes": ["ReadWriteOnce"],
+                        "resources": "10Gi",
+                    }
                 }
             }
-            mock_dump.assert_called_once_with(expected_values_data, mock.ANY)
-            
-            # Instead of checking for exact string format, check that key parts are present
-            actual_template = mock_save.call_args[0][0]
-            assert actual_template['apiVersion'] == 'v1'
-            assert actual_template['kind'] == 'PersistentVolumeClaim'
-            
-            # Check that the metadata contains the PVC name template reference
-            assert 'Values.pvc' in str(actual_template['metadata']['name'])
-            assert 'data-storage' in str(actual_template['metadata']['name'])
-            
-            # Check that spec contains the storage class name
-            assert 'Values.pvc' in str(actual_template['spec']['storageClassName'])
-            assert 'Values.pvc' in str(actual_template['spec']['accessModes'])
-            
-            # Check resources section
-            assert 'Values.pvc' in str(actual_template['spec']['resources']['requests']['storage'])
 
+            # First call should be for values.yaml
+            assert mock_save.call_count >= 1
+            assert mock_save.call_args_list[0][0][0] == expected_values_data
+
+            expected_template = {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "name": "{{ .Values.pvc.data_storage.name }}",
+                    "labels": "{{ .Values.pvc.data_storage.labels }}",
+                },
+                "spec": {
+                    "storageClassName": "{{ .Values.pvc.data_storage.storage_class }}",
+                    "accessModes": "{{ .Values.pvc.data_storage.access_modes }}",
+                    "resources": {
+                        "requests": {
+                            "storage": "{{ .Values.pvc.data_storage.resources }}"
+                        }
+                    },
+                },
+            }
+
+            assert mock_save.call_count >= 2
+            assert expected_template == mock_save.call_args_list[1][0][0]

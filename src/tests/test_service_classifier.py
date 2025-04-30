@@ -65,3 +65,31 @@ def test_decide_service_below_threshold(mock_embeddings_engine, sample_services)
         classifier = ServiceClassifier(mock_embeddings_engine)
         result = classifier.decide_service("unrelated query")
         assert result is None
+
+def test_decide_service_with_ports(mock_embeddings_engine, sample_services):
+    with patch("embeddings.service_classifier.load_file") as mock_load:
+        # Modify sample services to include ports
+        sample_services["services"][0]["ports"] = [8080, 8081]
+        mock_load.return_value = sample_services
+        classifier = ServiceClassifier(mock_embeddings_engine)
+        
+        # Test with matching port
+        result = classifier.decide_service("test query", ports=[8080])
+        assert result is not None
+        assert result["name"] == "test_service"
+        
+        # Test with non-matching port
+        result = classifier.decide_service("test query", ports=[9090])
+        assert result is not None  # Should still match due to high similarity
+
+def test_decide_service_no_ports(mock_embeddings_engine, sample_services):
+    with patch("embeddings.service_classifier.load_file") as mock_load:
+        # Service with no ports defined
+        sample_services["services"][0]["ports"] = []
+        mock_load.return_value = sample_services
+        classifier = ServiceClassifier(mock_embeddings_engine)
+        
+        result = classifier.decide_service("test query", ports=[8080])
+        assert result is not None
+        assert result["name"] == "test_service"
+

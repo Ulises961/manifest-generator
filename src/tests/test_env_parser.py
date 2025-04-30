@@ -22,8 +22,8 @@ def parent_node():
 
 def test_parse_empty_file(env_parser, parent_node):
     with patch("builtins.open", mock_open(read_data="")):
-        env_parser.parse("dummy.env", parent_node)
-        assert len(parent_node.children) == 0
+        nodes = env_parser.parse("dummy.env")
+        assert len(nodes) == 0
 
 def test_parse_comments_and_empty_lines(env_parser, parent_node):
     content = """
@@ -32,8 +32,8 @@ def test_parse_comments_and_empty_lines(env_parser, parent_node):
     # another comment
     """
     with patch("builtins.open", mock_open(read_data=content)):
-        env_parser.parse("dummy.env", parent_node)
-        assert len(parent_node.children) == 0
+        nodes = env_parser.parse("dummy.env")
+        assert len(nodes) == 0
 
 def test_parse_valid_env_vars(env_parser, parent_node):
     content = """
@@ -41,12 +41,12 @@ def test_parse_valid_env_vars(env_parser, parent_node):
     DB_PORT=5432
     """
     with patch("builtins.open", mock_open(read_data=content)):
-        env_parser.parse("dummy.env", parent_node)
-        assert len(parent_node.children) == 2
-        assert parent_node.children[0].name == "DB_HOST"
-        assert parent_node.children[0].value == "localhost"
-        assert parent_node.children[1].name == "DB_PORT"
-        assert parent_node.children[1].value == "5432"
+        nodes = env_parser.parse("dummy.env")
+        assert len(nodes) == 2
+        assert nodes[0].name == "DB_HOST"
+        assert nodes[0].value == "localhost"
+        assert nodes[1].name == "DB_PORT"
+        assert nodes[1].value == "5432"
 
 def test_parse_invalid_lines(env_parser, parent_node):
     content = """
@@ -55,10 +55,10 @@ def test_parse_invalid_lines(env_parser, parent_node):
     another_invalid
     """
     with patch("builtins.open", mock_open(read_data=content)):
-        env_parser.parse("dummy.env", parent_node)
-        assert len(parent_node.children) == 1
-        assert parent_node.children[0].name == "DB_HOST"
-        assert parent_node.children[0].value == "localhost"
+        nodes = env_parser.parse("dummy.env")
+        assert len(nodes) == 1
+        assert nodes[0].name == "DB_HOST"
+        assert nodes[0].value == "localhost"
 
 def test_multiline_env_var(env_parser, parent_node):
     content = """

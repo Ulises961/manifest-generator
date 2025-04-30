@@ -84,33 +84,33 @@ class CommandMapper:
 
         match instruction:
             case "CMD":
-                return self._generate_cmd_node(command, parent)
+                return self._generate_cmd_nodes(command, parent)
             case "LABEL":
                 return self._generate_label_nodes(command, parent)
             case "EXPOSE":
                 return self._generate_expose_nodes(command, parent)
             case "ENTRYPOINT":
-                return self._generate_entrypoint_node(command, parent)
+                return self._generate_entrypoint_nodes(command, parent)
             case "VOLUME":
-                return self._generate_volume_node(command, parent)
+                return self._generate_volume_nodes(command, parent)
             case "USER":
-                return self._generate_user_node(command, parent)
+                return self._generate_user_nodes(command, parent)
             case "WORKDIR":
-                return self._generate_workdir_node(command, parent)
+                return self._generate_workdir_nodes(command, parent)
             case "HEALTHCHECK":
-                return self._generate_healthcheck_node(command, parent)
+                return self._generate_healthcheck_nodes(command, parent)
             case "ENV":
                 return self.generate_env_nodes(command, parent)
 
         return []
 
-    def _generate_entrypoint_node(
+    def _generate_entrypoint_nodes(
         self, command: dict, parent: Node
     ) -> List[DockerInstruction]:
         """Generate a node from an ENTRYPOINT command."""
         return [self._generate_command_node(command, NodeType.ENTRYPOINT, parent)]
 
-    def _generate_cmd_node(
+    def _generate_cmd_nodes(
         self, command: dict, parent: Node
     ) -> List[DockerInstruction]:
         """Generate a node from a CMD command."""
@@ -160,7 +160,7 @@ class CommandMapper:
             )
         return nodes
 
-    def _generate_volume_node(
+    def _generate_volume_nodes(
         self, command: dict, parent: Node
     ) -> List[DockerInstruction]:
         """Generate a node from a VOLUME command."""
@@ -189,19 +189,19 @@ class CommandMapper:
             )
         return nodes
 
-    def _generate_user_node(
+    def _generate_user_nodes(
         self, command: dict, parent: Node
     ) -> List[DockerInstruction]:
         """Generate a node from a USER command."""
         return [self._create_docker_node(command, NodeType.USER, parent)]
 
-    def _generate_workdir_node(
+    def _generate_workdir_nodes(
         self, command: dict, parent: Node
     ) -> List[DockerInstruction]:
         """Generate a node from a WORKDIR command."""
         return [self._create_docker_node(command, NodeType.WORKDIR, parent)]
 
-    def _generate_healthcheck_node(
+    def _generate_healthcheck_nodes(
         self, command: dict, parent: Node
     ) -> List[DockerInstruction]:
         """Generate a node from a HEALTHCHECK command."""

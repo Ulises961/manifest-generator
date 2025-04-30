@@ -42,7 +42,6 @@ class ServiceClassifier:
         services: Dict[str, List[Dict[str, Any]]] = load_file(path)
 
         for service in services["services"]:
-   
             # Add the microservice label to the keywords list
             if service["name"] not in service["keywords"]:
                 service["keywords"] = service["keywords"] + [service["name"]]
@@ -76,7 +75,7 @@ class ServiceClassifier:
             if ports and len(service["ports"]) > 0:
                 for port in ports:
                     if port in service["ports"]:
-                        similarity += 0.1 
+                        similarity += 0.1
             # Check if the similarity is greater than the threshold
             if similarity > max_similarity and similarity >= self.calculate_threshold(len(service["embeddings"])):
                 most_similar = service
