@@ -14,6 +14,8 @@ from tree.node import Node
 from parsers.bash_parser import BashScriptParser
 import logging
 
+from utils.docker_utils import parse_key_value_string
+
 
 class MicroservicesTree:
     def __init__(
@@ -56,7 +58,7 @@ class MicroservicesTree:
         )
         return root_node
 
-    def _scan_helper(self, path: str, parent: Node, dir_name: str) -> None:
+    def _scan_helper(self, path: str, parent: Node, dir_name: str, preferred_name: Optional[str]=None) -> None:
         """Scan the directory for microservices and find Dockerfile."""
         # Only check files in the current directory, not recursively
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
@@ -70,6 +72,10 @@ class MicroservicesTree:
                 dockerfile_found = True
                 self.logger.info(f"Found Dockerfile in {os.path.join(path, file)}")
                 # Generate a new node parent
+                if preferred_name is not None:
+                    # Use the preferred name if provided
+                    dir_name = preferred_name
+
                 microservice_node = Node(
                     name=dir_name, type=NodeType.MICROSERVICE, parent=parent
                 )
@@ -86,25 +92,27 @@ class MicroservicesTree:
 
                 for command in commands:
                     # Classify the command
-                    node: DockerInstruction = (
+                    nodes: List[DockerInstruction] = (
                         self.command_parser.generate_node_from_command(
                             command, microservice_node
                         )
                     )
-                    if node.type == NodeType.WORKDIR:
-                        # Keep the latest one
-                        for child in microservice_node.children:
-                            if child.type == NodeType.WORKDIR:
-                                self.logger.debug(
-                                    f"Removing old WORKDIR node: {child.name}"
-                                )
-                                microservice_node.children.remove(child)
 
-                    if node.metadata == {} or node.metadata["status"] == "active":
-                        self.logger.debug(
-                            f"Adding command node: {node.name} with metadata: {node.metadata}"
-                        )
-                        microservice_node.add_child(node)
+                    for node in nodes:
+                        if node.type == NodeType.WORKDIR:
+                            # Keep the latest one
+                            for child in microservice_node.children:
+                                if child.type == NodeType.WORKDIR:
+                                    self.logger.debug(
+                                        f"Removing old WORKDIR node: {child.name}"
+                                    )
+                                    microservice_node.children.remove(child)
+
+                        if node.metadata == {} or node.metadata["status"] == "active":
+                            self.logger.debug(
+                                f"Adding command node: {node.name} with metadata: {node.metadata}"
+                            )
+                            microservice_node.add_child(node)
 
                 break  # Stop looking for more Dockerfiles in this directory
 
@@ -134,7 +142,7 @@ class MicroservicesTree:
                 subdir_path = os.path.join(path, subdir)
                 self.logger.info(f"Scanning directory: {subdir_path}")
                 # Use a subdirectory name that combines parent and child for clarity
-                self._scan_helper(subdir_path, parent, subdir)
+                self._scan_helper(subdir_path, parent, subdir, preferred_name=dir_name)
 
     def prepare_for_manifest(self, node: Node) -> None:
         """Generate manifests for the given node and its children."""
@@ -148,16 +156,19 @@ class MicroservicesTree:
         """Generate manifests for the given microservice node."""
         # Generate manifests for the microservice
         microservice: Dict[str, Any] = {"name": node.name}
-        microservice.setdefault("labels", ["app: " + node.name])
+        microservice.setdefault("labels", {"app": node.name})
 
         if len(labels := node.get_children_by_type(NodeType.LABEL)) > 0:
 
             for label in labels:
-                microservice["labels"].append(label.value)  # type: ignore
+                parsed_labels = parse_key_value_string(label.value)
+                microservice["labels"].update(parsed_labels)  # type: ignore
+
         if len(annotations := node.get_children_by_type(NodeType.ANNOTATION)) > 0:
-            microservice.setdefault("annotations", [])
+            microservice.setdefault("annotations", {})
             for annotation in annotations:
-                microservice["annotations"].append(annotation.value)  # type: ignore
+                parsed_annotations = parse_key_value_string(annotation.value)
+                microservice["annotations"].update(parsed_annotations)  # type: ignore
 
         if (
             len(
@@ -195,7 +206,12 @@ class MicroservicesTree:
             > 0
         ):
             # There's a unique healthcheck
-            microservice["liveness_probe"] = healthcheck[0].value
+            microservice["liveness_probe"] = {
+                "exec": {"command": healthcheck[0].value},
+            }
+
+            for flag, value in healthcheck[0].metadata.items():
+                microservice["liveness_probe"].update({flag: value})
 
         if (
             len(
@@ -203,10 +219,11 @@ class MicroservicesTree:
             )
             > 0
         ):
+            microservice.setdefault("env", [])
             for env in env_vars:
-                microservice.setdefault("env", [])
+                self.logger.info(f"processing env var: {env.name}")
                 microservice["env"].append(
-                    {"key": env.name, "value": env.value}
+                    {"name": env.name, "key":"config", "value": env.value}
                 )  # type: ignore
         if (
             len(
@@ -220,7 +237,7 @@ class MicroservicesTree:
             microservice.setdefault("secrets", [])
             for secret in secrets:
                 microservice["secrets"].append(
-                    {"name": secret.name, "key": secret.value}
+                    {"name": secret.name, "key":"password", "value":secret.value}
                 )  # type: ignore
         if (
             len(
@@ -262,9 +279,10 @@ class MicroservicesTree:
                     volume_to_add["emptyDir"] = {}
                 microservice["volumes"].append(volume_to_add)
 
-        if len(wordirs := node.get_children_by_type(NodeType.WORKDIR)) > 0:
+        if len(workdirs := node.get_children_by_type(NodeType.WORKDIR)) > 0:
             # There's a unique child working dir
-            microservice["workingDir"] = wordirs[0].value
+            microservice.setdefault("workdir", None)
+            microservice["workdir"] = workdirs[0].value
 
         # Enrich microservice
         container_ports = microservice.get("ports", [])
@@ -287,8 +305,8 @@ class MicroservicesTree:
             if len(microservice["ports"]) == 0:
                 microservice["ports"] = container_ports
 
-            for label in service_extra_info["labels"]:
-                microservice["labels"].append(label)
+            
+            microservice["labels"].update(service_extra_info["labels"])
 
         self.logger.info(
             f"Microservice {microservice} prepared for manifest generation"

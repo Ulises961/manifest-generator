@@ -1,14 +1,21 @@
 import json
 import os
+import re
 import shlex
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from dockerfile_parse import DockerfileParser
 from embeddings.label_classifier import LabelClassifier
 from parsers.env_parser import EnvParser
 from tree.docker_instruction_node import DockerInstruction
 from tree.node import Node
 from tree.node_types import NodeType
+from utils.docker_utils import (
+    normalize_multiline,
+    normalize_spaced_values,
+    parse_key_value_string,
+)
 from utils.file_utils import check_shell_in_commands, normalize_command_field
+import itertools
 
 
 class CommandMapper:
@@ -50,7 +57,7 @@ class CommandMapper:
 
     def get_commands(
         self, parsed_dockerfile: List[dict], parent: Node
-    ) -> List[Optional[DockerInstruction]]:
+    ) -> List[DockerInstruction]:
         """Get the list of commands from a parsed Dockerfile.
         Args:
             parsed_dockerfile (list[dict]): Parsed Dockerfile.
@@ -58,14 +65,15 @@ class CommandMapper:
             list[dict]: List of commands from the Dockerfile.
         """
 
-        return [
+        commands = [
             self.generate_node_from_command(command, parent)
             for command in parsed_dockerfile
         ]
+        return list(itertools.chain.from_iterable(commands))
 
     def generate_node_from_command(
         self, command: dict, parent: Node
-    ) -> DockerInstruction:
+    ) -> List[DockerInstruction]:
         """Generate a node from a Dockerfile command.
         Args:
             command (dict): Dockerfile command.
@@ -74,36 +82,39 @@ class CommandMapper:
         """
         instruction = command["instruction"]
 
-        switch = {
-            "CMD": self._generate_cmd_node,
-            "LABEL": self._generate_label_node,
-            "EXPOSE": self._generate_expose_node,
-            "ENTRYPOINT": self._generate_entrypoint_node,
-            "VOLUME": self._generate_volume_node,
-            "USER": self._generate_user_node,
-            "WORKDIR": self._generate_workdir_node,
-            "HEALTHCHECK": self._generate_healthcheck_node,
-            "ENV": self._generate_env_node,
-        }
+        match instruction:
+            case "CMD":
+                return self._generate_cmd_node(command, parent)
+            case "LABEL":
+                return self._generate_label_nodes(command, parent)
+            case "EXPOSE":
+                return self._generate_expose_nodes(command, parent)
+            case "ENTRYPOINT":
+                return self._generate_entrypoint_node(command, parent)
+            case "VOLUME":
+                return self._generate_volume_node(command, parent)
+            case "USER":
+                return self._generate_user_node(command, parent)
+            case "WORKDIR":
+                return self._generate_workdir_node(command, parent)
+            case "HEALTHCHECK":
+                return self._generate_healthcheck_node(command, parent)
+            case "ENV":
+                return self.generate_env_nodes(command, parent)
 
-        # Only filtered commands are passed as argument so the lambda is never executed
-        assert instruction in switch, f"Unexpected instruction: {instruction}"
-        return switch[instruction](command, parent)
+        return []
 
-    def _generate_cmd_node(self, command: dict, parent: Node) -> DockerInstruction:
+    def _generate_entrypoint_node(
+        self, command: dict, parent: Node
+    ) -> List[DockerInstruction]:
+        """Generate a node from an ENTRYPOINT command."""
+        return [self._generate_command_node(command, NodeType.ENTRYPOINT, parent)]
+
+    def _generate_cmd_node(
+        self, command: dict, parent: Node
+    ) -> List[DockerInstruction]:
         """Generate a node from a CMD command."""
-        return self._generate_command_node(command, NodeType.CMD, parent)
-
-    def _generate_label_node(self, command: dict, parent: Node) -> DockerInstruction:
-        """Generate a node from a LABEL command."""
-        is_label = self.decide_label(command["value"])
-        return self._create_docker_node(
-            command, NodeType.LABEL if is_label else NodeType.ANNOTATION, parent
-        )
-
-    def _generate_expose_node(self, command: dict, parent: Node) -> DockerInstruction:
-        """Generate a node from an PORT command."""
-        return self._create_docker_node(command, NodeType.PORT, parent)
+        return [self._generate_command_node(command, NodeType.CMD, parent)]
 
     def _generate_command_node(
         self,
@@ -118,56 +129,109 @@ class CommandMapper:
 
         return self._create_docker_node(command, node_type, parent)
 
-    def _generate_entrypoint_node(
+    def _generate_label_nodes(
         self, command: dict, parent: Node
-    ) -> DockerInstruction:
-        """Generate a node from an ENTRYPOINT command."""
-        return self._generate_command_node(command, NodeType.ENTRYPOINT, parent)
+    ) -> List[DockerInstruction]:
+        """Generate a node from a LABEL command."""
+        nodes = []
+        labels_dict = parse_key_value_string(command["value"])
+        for key, value in labels_dict.items():
+            is_label = self.decide_label(key)
+            nodes.append(
+                self._create_docker_node(
+                    {"instruction": key, "value": value},
+                    NodeType.LABEL if is_label else NodeType.ANNOTATION,
+                    parent,
+                )
+            )
+        return nodes
 
-    def _generate_volume_node(self, command: dict, parent: Node) -> DockerInstruction:
+    def _generate_expose_nodes(
+        self, command: dict, parent: Node
+    ) -> List[DockerInstruction]:
+        """Generate a node from an PORT command."""
+        nodes = []
+        ports = normalize_spaced_values(command["value"])
+        for port in ports:
+            nodes.append(
+                self._create_docker_node(
+                    {"instruction": "PORT", "value": port}, NodeType.PORT, parent
+                )
+            )
+        return nodes
+
+    def _generate_volume_node(
+        self, command: dict, parent: Node
+    ) -> List[DockerInstruction]:
         """Generate a node from a VOLUME command."""
-        # Check if the volume is persistent
-        volumes_path = os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            os.getenv("VOLUMES_PATH", "resources/knowledge_base/volumes.json"),
-        )
-        with open(volumes_path, "r") as f:
-            volumes = json.load(f)
+        nodes = []
+        # Normalize the command value
+        normalized_volume_paths = normalize_spaced_values(command["value"])
+        for volume_path in normalized_volume_paths:
+            # Check if the volume is persistent
+            volumes_path = os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                os.getenv("VOLUMES_PATH", "resources/knowledge_base/volumes.json"),
+            )
+            with open(volumes_path, "r") as f:
+                volumes = json.load(f)
 
-        is_persistent = command["value"] in volumes
-        return self._create_docker_node(
-            command, NodeType.VOLUME, parent, is_persistent=is_persistent
-        )
+            is_persistent = volume_path in volumes
 
-    def _generate_user_node(self, command: dict, parent: Node) -> DockerInstruction:
+            nodes.append(
+                self._create_docker_node(
+                    {"instruction": "VOLUME", "value": volume_path},
+                    NodeType.VOLUME,
+                    parent,
+                    is_persistent=is_persistent,
+                )
+            )
+        return nodes
+
+    def _generate_user_node(
+        self, command: dict, parent: Node
+    ) -> List[DockerInstruction]:
         """Generate a node from a USER command."""
-        return self._create_docker_node(command, NodeType.USER, parent)
+        return [self._create_docker_node(command, NodeType.USER, parent)]
 
-    def _generate_workdir_node(self, command: dict, parent: Node) -> DockerInstruction:
+    def _generate_workdir_node(
+        self, command: dict, parent: Node
+    ) -> List[DockerInstruction]:
         """Generate a node from a WORKDIR command."""
-        return self._create_docker_node(command, NodeType.WORKDIR, parent)
+        return [self._create_docker_node(command, NodeType.WORKDIR, parent)]
 
     def _generate_healthcheck_node(
         self, command: dict, parent: Node
-    ) -> DockerInstruction:
+    ) -> List[DockerInstruction]:
         """Generate a node from a HEALTHCHECK command."""
-        # TODO: check if the health command is a shell command
-        return self._create_docker_node(command, NodeType.HEALTHCHECK, parent)
+        healthcheck = normalize_multiline(command["value"])
+        parsed_check = self._parse_healthcheck(healthcheck)
+        command["value"] = parsed_check["check"]
+        node = self._create_docker_node(command, NodeType.HEALTHCHECK, parent)
+        node.metadata = {"flags": parsed_check["flags"]}
+        return [node]
 
     def decide_label(self, label_key: str) -> bool:
         classified_label = self._label_classifier.classify_label(label_key)
         return classified_label == "label"
 
-    def _generate_env_node(self, command: dict, parent: Node) -> DockerInstruction:
-        node = self._env_parser.parse_env_var(command["value"])
-        return DockerInstruction(
-            name=node.name if node else command["value"],
-            type=node.type if node else NodeType.ENV,
-            value=node.value if node else "",
-            parent=parent,
-            is_persistent=False,
-        )
+    def generate_env_nodes(
+        self, command: dict, parent: Node
+    ) -> List[DockerInstruction]:
+        nodes = self._env_parser.parse_env_var(command["value"])
+
+        return [
+            DockerInstruction(
+                name=node.name,
+                type=node.type,
+                value=node.value,
+                parent=parent,
+                is_persistent=False,
+                metadata=node.metadata,
+            )
+            for node in nodes
+        ]
 
     def _create_docker_node(
         self, command: dict, type: NodeType, parent: Node, is_persistent: bool = False
@@ -180,3 +244,55 @@ class CommandMapper:
             parent=parent,
             is_persistent=is_persistent,
         )
+
+    def _parse_healthcheck(self, command: str) -> Dict[str, Any]:
+        if "HEALTHCHECK NONE" in command:
+            return {"disabled": True}
+
+        healthcheck: Dict[str, Any] = {}
+
+        # Extract flags and the actual CMD part
+        cmd_match = re.search(r"(CMD|CMD-SHELL)\s+(.*)", command)
+        if not cmd_match:
+            raise ValueError(f"Invalid HEALTHCHECK command format: {command}")
+
+        action = cmd_match.group(2).strip()
+
+        if action.startswith("["):
+            try:
+                parsed_action = json.loads(action)
+            except json.JSONDecodeError:
+                raise ValueError(f"Invalid exec form CMD array: {action}")
+            # Join array to shell string for Kubernetes
+            healthcheck["check"] = (
+                '/bin/sh -c "' + " ".join(shlex.quote(a) for a in parsed_action) + '"'
+            )
+        else:
+            # Treat as already a shell string
+            healthcheck["check"] = action
+
+        # Docker / Kubernetes flags mapping
+        key_map = {
+            "interval": "periodSeconds",
+            "timeout": "timeoutSeconds",
+            "start-period": "initialDelaySeconds",
+            "retries": "failureThreshold",
+        }
+
+        # Extract all flags
+        flags = re.findall(r"--(\w[\w-]*)=([\wsm]+)", command)
+
+        for key, value in flags:
+            if key in key_map:
+                # Convert seconds like '10s' or '1m' to int seconds
+                if value.endswith("s"):
+                    val = int(value[:-1])
+                elif value.endswith("m"):
+                    val = int(value[:-1]) * 60
+                else:
+                    val = int(value)
+
+                # Group flags under a unique key for later manipulation
+                healthcheck.setdefault("flags", {})[key_map[key]] = val
+
+        return healthcheck
