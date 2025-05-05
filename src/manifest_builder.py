@@ -158,7 +158,7 @@ class ManifestBuilder:
 
             # Update or add the secret entry
             existing_data.setdefault("secrets", {})
-            existing_data["secrets"].update(secret_entry)
+            existing_data["secrets"].update({secret_name:secret_entry})
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
@@ -415,8 +415,7 @@ class ManifestBuilder:
 
             # Update or add the stateful set entry
             existing_data.setdefault("stateful-set", {})
-            existing_data["stateful-set"][f"{stateful_set_name}"] = stateful_set_entry
-
+            existing_data["stateful-set"][stateful_set_name] = stateful_set_entry
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
 

@@ -1,5 +1,8 @@
 import pytest
 from unittest.mock import Mock, patch
+
+from torch import Tensor
+import torch
 from embeddings.secret_classifier import SecretClassifier
 import numpy as np
 
@@ -8,17 +11,17 @@ from utils.file_utils import load_environment
 @pytest.fixture
 def mock_embeddings_engine():
     engine = Mock()
-    engine.encode.return_value = [np.array([0.1, 0.2, 0.3])]
+    engine.encode.return_value = [torch.tensor([0.1, 0.2, 0.3])]
     return engine
 
 @pytest.fixture
 def secret_classifier(mock_embeddings_engine):
-    with patch('embeddings.secret_classifier.load_file') as mock_load:
+    with patch('embeddings.secret_classifier.load_file'):
         classifier = SecretClassifier(mock_embeddings_engine)
     return classifier
 
 @pytest.fixture
-def load_env_variables(monkeypatch):
+def load_env_variables():
     load_environment()
 
 def test_load_secrets(secret_classifier, mock_embeddings_engine):
@@ -43,7 +46,11 @@ def test_load_secrets(secret_classifier, mock_embeddings_engine):
         assert "embeddings" in result
         assert isinstance(result["embeddings"], list)
         assert len(result["embeddings"]) == 2  # One embedding per misc secret
-        assert all(isinstance(emb, np.ndarray) for emb in result["embeddings"])
+        print (result["embeddings"])
+        for emb in result["embeddings"]:
+            assert isinstance(emb, list)  # First level is a list
+            assert len(emb) == 1  # Each list has one element
+            assert isinstance(emb[0], Tensor)  # That element is a NumPy array
 
 def test_load_secrets_preserves_original_keys(secret_classifier, mock_embeddings_engine):
     with patch('embeddings.secret_classifier.load_file') as mock_load:

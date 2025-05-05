@@ -32,11 +32,11 @@ class SecretClassifier:
         )  # Ensure threshold is between 0.1 and 0.9
         
     @property
-    def secrets(self) -> Dict[str, List[ndarray]]:
+    def secrets(self) -> Dict[str, List[Tensor]]:
         """Get the secrets embeddings."""
         return self._secrets
 
-    def _load_secrets(self, path: str) -> Dict[str, List[ndarray]]:
+    def _load_secrets(self, path: str) -> Dict[str, List[Tensor]]:
         """Load secrets from a file."""
         secrets: Dict[str, List[Any]] = load_file(path)
 
@@ -60,10 +60,8 @@ class SecretClassifier:
         * Regex match
         * Embeddings simmilarity: The decision threshold is calculated in relation to the size of the knowledge base dynamically learnt during the usage of the tool
         """
-        print(f"Query: {query}")
         # Find an exact match among the possible values
         for key, values in self._secrets.items():
-            print(f"Key: {key}")
             if key == "regex" or key == "embeddings":
                 continue
             for value in values:
