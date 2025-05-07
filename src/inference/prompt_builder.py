@@ -1,5 +1,5 @@
 from typing import Any, Dict, List
-
+import logging
 
 class PromptBuilder:
     def __init__(
@@ -7,6 +7,7 @@ class PromptBuilder:
         microservices: List[Dict[str, Any]],
     ):
         self.prompt = self._generate_base_prompt(microservices)
+        self.logger = logging.getLogger(__name__)
 
     def add_instruction(self, instruction: str):
         self.prompt += f"Instruction: {instruction}\n"
@@ -79,4 +80,6 @@ class PromptBuilder:
         prompt += "- Return only the final Kubernetes manifest in YAML.\n"
         prompt += "\nYour output should contain Deployment and Service manifests.\n"
 
+        self.logger.info(f"Prompt generated for the {microservice['name']} microservice: {prompt}")
+        
         return prompt
