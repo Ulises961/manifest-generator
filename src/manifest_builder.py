@@ -2,7 +2,6 @@ import logging
 import os
 from typing import Any, Dict, List, cast
 from embeddings.embeddings_engine import EmbeddingsEngine
-from embeddings.service_classifier import ServiceClassifier
 from utils.file_utils import load_file, remove_none_values
 from caseutil import to_snake
 import yaml
@@ -11,18 +10,17 @@ import yaml
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
-    def __init__(self, embeddings_engine: EmbeddingsEngine) -> None:
+    def __init__(self) -> None:
         """Initialize the tree builder with the manifest templates."""
         self._config_map_template = self._get_config_map_template()
         self.deployment_template = self._get_deployment_template()
         self._service_template = self._get_service_template()
         self._stateful_set_template = self._get_stateful_set_template()
         self._pvc_template = self._get_pvc_template()
-        self.service_classifier = ServiceClassifier(embeddings_engine)
 
-        self.target_path = os.getenv("TARGET_PATH", "target/charts")
+        self.target_path = os.getenv("TARGET_PATH", "target/manifests")
         self.manifests_path = os.path.join(
-            self.target_path, os.getenv("MANUAL_MANIFESTS_PATH", "manual_manifests")
+            self.target_path, os.getenv("MANUAL_MANIFESTS_PATH", "manual")
         )
         self.values_file_path = os.path.join(
             self.target_path, os.getenv("VALUES_FILE_PATH", "values.yaml")
