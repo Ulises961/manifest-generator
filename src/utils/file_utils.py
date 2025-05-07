@@ -1,13 +1,18 @@
+import gc
 import json
 import os
 import re
-from typing import Any, List, Optional, cast
+import time
+from typing import Any, List, Optional, cast, Tuple
 import torch
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 import shlex
-from io import StringIO
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import logging
+from transformers import BitsAndBytesConfig
 
+logger = logging.getLogger(__name__)
 
 def load_file(path: str) -> Any:
     """Load a JSON file."""
@@ -46,33 +51,107 @@ def load_environment():
     load_dotenv(env_path)
 
 
-def setup_sentence_transformer(force_cpu: bool = False) -> Any:
-    """Setup and return a SentenceTransformer model."""
+def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
+    """Get model name and path from environment variables."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    models_dir = os.path.realpath(
-        os.path.join(current_dir, "..", "resources", "models")
-    )
-    model_name: str = os.getenv("EMBEDDINGS_MODEL", "all-MiniLM-L6-v2")
+    models_dir = os.path.realpath(os.path.join(current_dir, "..", "resources", "models"))
+    model_name: str = os.getenv(model_env_var, default_model)
     model_path = os.path.join(models_dir, model_name)
+    return model_name, model_path
 
-    # Check CUDA availability
+def setup_cuda(force_cpu: bool = False) -> str:
+    """Setup CUDA for PyTorch."""
     device = "cpu" if force_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
 
     if device == "cuda":
+        logger.info("CUDA is available. Using GPU for inference.")
+    
+        if torch.cuda.memory_allocated() > 0:            
+            gc.collect()
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()    
+                        
+            logger.info(f"CUDA memory cleared. Total allocated remaining: {torch.cuda.memory_allocated() / (1024 ** 2)} MB")
+            logger.info(f"Total reserved: {torch.cuda.memory_reserved() / (1024 ** 2)} MB")
+            
+
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
 
-    # First try loading from local path
-    if os.path.exists(model_path):
-        return SentenceTransformer(model_name_or_path=model_path, device=device)  # type: ignore
+    else: 
+        logger.info("CUDA is not available. Using CPU for inference.")
 
-    # Download and save if not found locally
+    return device
+
+def setup_sentence_transformer(force_cpu: bool = False) -> Any:
+    """Setup and return a SentenceTransformer model."""
+    model_name, model_path = _get_model_paths("EMBEDDINGS_MODEL", "all-MiniLM-L6-v2")
+    
+    device = setup_cuda(force_cpu)
+
+    if os.path.exists(model_path):
+        return SentenceTransformer(model_name_or_path=model_path, device=device) # type: ignore
+
     os.makedirs(model_path, exist_ok=True)
-    model = SentenceTransformer(model_name_or_path=model_name, device=device)  # type: ignore
+
+    model = SentenceTransformer(model_name_or_path=model_name, device=device) # type: ignore
     model.save(model_path)
 
     return model
 
+def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any]:
+    """Setup and return a AutoModelForCausalLM model and tokenizer."""
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
+    # Check if in development or production mode
+    is_dev_mode = os.getenv("DEV_MODE", "true").lower() == "true"
+    
+    if is_dev_mode:
+        # Development mode - use smaller model with quantization
+        model_name, model_path = _get_model_paths("INFERENCE_MODEL", "microsoft/phi-1.5")
+        logger.info("Running in DEVELOPMENT mode with smaller model: %s", model_name)
+        
+        # Use 8-bit quantization to reduce memory footprint
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False
+        )
+    else:
+        # Production mode - use full-size model
+        model_name, model_path = _get_model_paths("PRODUCTION_INFERENCE_MODEL", 
+                                                 "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+        logger.info("Running in PRODUCTION mode with model: %s", model_name)
+        quantization_config = None  
+    
+    try:
+        return (
+            AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map="auto",
+                quantization_config=quantization_config if is_dev_mode else None,
+                torch_dtype=torch.float16,
+                low_cpu_mem_usage=True
+            ),
+            AutoTokenizer.from_pretrained(model_name)
+        )
+    except Exception as e:
+        logger.error(f"Failed to load model {model_name}: {e}")
+        
+        # Fallback to an even smaller model in dev mode
+        if is_dev_mode:
+            fallback_model = "facebook/opt-125m" 
+            logger.info(f"Falling back to tiny model: {fallback_model}")
+            return (
+                AutoModelForCausalLM.from_pretrained(fallback_model, device_map="cpu"),
+                AutoTokenizer.from_pretrained(fallback_model)
+            )
+        else:
+            # In production, we want to fail rather than use an inadequate model
+            raise RuntimeError(f"Failed to load production model: {model_name}")
 
 def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
     """Normalize Docker CMD/ENTRYPOINT field into list."""

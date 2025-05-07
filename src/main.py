@@ -1,13 +1,27 @@
+import gc
+import time
+from typing import Any, Dict, List
 from sentence_transformers import SentenceTransformer
+import torch
 from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
+from inference.inference_engine import InferenceEngine
+from inference.prompt_builder import PromptBuilder
 from manifest_builder import ManifestBuilder
 from tree.microservices_tree import MicroservicesTree
-from utils.file_utils import load_environment, setup_sentence_transformer
+from utils.file_utils import (
+    load_environment,
+    setup_inference_models,
+    setup_sentence_transformer,
+
+)
 from utils.logging_utils import setup_logging
 import logging
+import subprocess
+import os
+import sys
 
 # Get module-specific logger
 logger = logging.getLogger(__name__)
@@ -15,22 +29,22 @@ logger = logging.getLogger(__name__)
 if __name__ == "__main__":
     # Load environment variables
     load_environment()
-    
+
     # Set up logging
     setup_logging(
         log_dir="src/logs",
         log_file_name="microservices_tree.log",
         max_size_mb=10,  # 10MB per file
-        console_output=True
+        console_output=True,
     )
     
     logger.info("Starting microservices manifest generator")
 
     # Load the SentenceTransformer model
-    model: SentenceTransformer = setup_sentence_transformer()
+    embeddings_model: SentenceTransformer = setup_sentence_transformer()
 
     # Load the embeddings engine
-    embeddings_engine = EmbeddingsEngine(model)
+    embeddings_engine = EmbeddingsEngine(embeddings_model)
     # Load the secret classifier
     secret_classifier = SecretClassifier(embeddings_engine)
     # Load the service classifier
@@ -39,6 +53,8 @@ if __name__ == "__main__":
     label_classifier = LabelClassifier(embeddings_engine)
     # Generate a tree with the microservices detected in the repository
     target_repository = "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/microservices-demo/src"
+
+    ### Phase 1: Build the microservices tree ###
     treebuilder = MicroservicesTree(
         target_repository,
         embeddings_engine,
@@ -46,13 +62,65 @@ if __name__ == "__main__":
         service_classifier,
         label_classifier,
     )
-    
+
     repository_tree = treebuilder.build()
     treebuilder.print_tree(repository_tree)  # Print the tree structure
 
-    # Generate the manifests from the repository tree
-    manifest_builder = ManifestBuilder(embeddings_engine)
+    ### Phase 2: Generate the manifests from the repository tree ###
+    manifest_builder = ManifestBuilder()
+    enriched_services: List[Dict[str,Any]] = []
     for child in repository_tree.children:
         logging.info(f"Generating manifests for child... {child.name}")
         microservice = treebuilder.prepare_microservice(child)
+        enriched_services.append(microservice)
         manifest_builder.generate_manifests(microservice)
+
+
+    # Unload the model
+    del treebuilder
+    del manifest_builder
+    del secret_classifier
+    del service_classifier
+    del label_classifier
+    del embeddings_engine
+    del embeddings_model
+
+
+    logger.info(f"Unloaded models and freed memory. Total allocated: {torch.cuda.memory_allocated() / (1024 ** 2)} MB")
+    logger.info(f"Total reserved: {torch.cuda.memory_reserved() / (1024 ** 2)} MB")
+
+    ### Phase 3: Generate inferred manifests from the repository tree ###
+    # Load the inference models
+    inference_model, tokenizer = setup_inference_models()
+    
+    if inference_model is None or tokenizer is None:
+        logger.error("Failed to load inference model or tokenizer.")
+        raise RuntimeError("Inference model or tokenizer not loaded.")
+    
+    # Load the inference engine
+    inference_engine = InferenceEngine(inference_model, tokenizer)
+    # Load the prompt builder
+    prompt_builder = PromptBuilder(enriched_services)
+
+    for child in repository_tree.children:
+        logging.info(f"Generating manifests for child... {child.name}")
+        prompt = prompt_builder.generate_prompt(microservice)
+        # Generate the response
+        response = inference_engine.generate(prompt)
+        # Process the response
+        processed_response = inference_engine.process_response(response)
+        for manifest in processed_response:
+            logging.info(f"Generated manifest: {manifest['name']}")
+         
+            target_dir = os.path.join(
+                os.getenv("TARGET_PATH", "target/manifests"),
+                os.getenv("LLM_MANIFESTS_PATH", "llm"),
+                manifest["name"],
+            )
+
+            os.makedirs(target_dir, exist_ok=True)
+            # Save the response to a file
+            with open(f"{target_dir}/{child.name}.yaml", "w") as f:
+                f.write(manifest["manifest"])
+            logging.info(f"Saved manifest to {target_dir}/{child.name}.yaml")
+
