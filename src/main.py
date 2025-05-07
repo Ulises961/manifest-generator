@@ -109,13 +109,13 @@ if __name__ == "__main__":
         response = inference_engine.generate(prompt)
         # Process the response
         processed_response = inference_engine.process_response(response)
+
         for manifest in processed_response:
-            logging.info(f"Generated manifest: {manifest['name']}")
+            logging.info(f"Generated manifest: {child.name}")
          
             target_dir = os.path.join(
                 os.getenv("TARGET_PATH", "target/manifests"),
                 os.getenv("LLM_MANIFESTS_PATH", "llm"),
-                manifest["name"],
             )
 
             os.makedirs(target_dir, exist_ok=True)

@@ -103,8 +103,7 @@ def setup_sentence_transformer(force_cpu: bool = False) -> Any:
 def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any]:
     """Setup and return a AutoModelForCausalLM model and tokenizer."""
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    device = setup_cuda(force_cpu)
     
     # Check if in development or production mode
     is_dev_mode = os.getenv("DEV_MODE", "true").lower() == "true"
@@ -116,10 +115,12 @@ def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any]:
         
         # Use 8-bit quantization to reduce memory footprint
         quantization_config = BitsAndBytesConfig(
-            load_in_8bit=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False
-        )
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4"
+    )
+        
     else:
         # Production mode - use full-size model
         model_name, model_path = _get_model_paths("PRODUCTION_INFERENCE_MODEL", 
@@ -128,16 +129,19 @@ def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any]:
         quantization_config = None  
     
     try:
-        return (
-            AutoModelForCausalLM.from_pretrained(
+        model = AutoModelForCausalLM.from_pretrained(
                 model_name,
-                device_map="auto",
+                device_map=device,
                 quantization_config=quantization_config if is_dev_mode else None,
                 torch_dtype=torch.float16,
                 low_cpu_mem_usage=True
-            ),
-            AutoTokenizer.from_pretrained(model_name)
-        )
+            )
+        
+        tokenizer =  AutoTokenizer.from_pretrained(model_name)
+        
+        model.save_pretrained(model_path)
+        
+        return model, tokenizer
     except Exception as e:
         logger.error(f"Failed to load model {model_name}: {e}")
         

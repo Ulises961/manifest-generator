@@ -56,7 +56,7 @@ class PromptBuilder:
         """
         prompt = self.prompt
         prompt += "\n\n"
-        prompt = f"Using the context above, generate a Kubernetes manifest (YAML format) for the microservice '{microservice['name']}':\n"
+        prompt += f"Using the context above, generate a Kubernetes manifest (YAML format) for the microservice '{microservice['name']}':\n"
         prompt += f"Here are its details:\n\n"
         prompt += f"{microservice['name']}:\n"
 
