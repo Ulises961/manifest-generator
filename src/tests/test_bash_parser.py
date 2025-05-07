@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 from parsers.bash_parser import BashScriptParser
 from tree.node import Node
 from tree.node_types import NodeType
-from tree.docker_instruction_node import DockerInstruction
+
 
 
 @pytest.fixture
@@ -111,7 +111,7 @@ def test_determine_startup_command(mock_open, parser):
 
         # Test with no entrypoint/cmd
         parser.determine_startup_command(root, files, service_node)
-        entrypoint = DockerInstruction(
+        entrypoint = Node(
             "test-service",
             NodeType.ENTRYPOINT,
             ["echo", "Starting service"],
@@ -129,13 +129,13 @@ def test_determine_startup_command(mock_open, parser):
         # You can add assertions here based on expected behavior
 
         # Test with entrypoint
-        entrypoint = DockerInstruction("test-service", NodeType.ENTRYPOINT, "start.sh")
+        entrypoint = Node("test-service", NodeType.ENTRYPOINT, "start.sh")
         service_node.add_child(entrypoint)
         parser.determine_startup_command(root, files, service_node)
         assert entrypoint in service_node.children
 
         # Test with cmd
-        cmd = DockerInstruction("test-service", NodeType.CMD, "python app.py")
+        cmd = Node("test-service", NodeType.CMD, "python app.py")
         service_node.add_child(cmd)
         parser.determine_startup_command(root, files, service_node)
         assert cmd in service_node.children

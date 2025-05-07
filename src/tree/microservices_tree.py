@@ -2,13 +2,14 @@ import json
 import os
 from typing import Any, Dict, Optional, List, cast
 from parsers.env_parser import EnvParser
+from tree.attached_file import AttachedFile
 from tree.command_mapper import CommandMapper
 from embeddings.embeddings_engine import EmbeddingsEngine
 
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
-from tree.docker_instruction_node import DockerInstruction
+
 from tree.node_types import NodeType
 from tree.node import Node
 from parsers.bash_parser import BashScriptParser
@@ -34,9 +35,21 @@ class MicroservicesTree:
         self.command_parser: CommandMapper = CommandMapper(
             label_classifier, self.env_parser
         )
+
         self.bash_parser: BashScriptParser = BashScriptParser(
             secret_classifier, self.env_parser, embeddings_engine
         )
+
+        self.file_extensions = {
+            "markdown": [".md", ".markdown"],
+            "json": [".json"],
+            "yaml": [".yml", ".yaml"],
+            "text": [".txt"],
+            "config": [".ini", ".cfg", ".conf", ".toml"],
+            "dockerfile": ["Dockerfile"],
+            "bash": [".sh"],
+            "env": [".env"],
+        }
 
         self.logger = logging.getLogger(__name__)
 
@@ -58,7 +71,13 @@ class MicroservicesTree:
         )
         return root_node
 
-    def _scan_helper(self, path: str, parent: Node, dir_name: str, preferred_name: Optional[str]=None) -> None:
+    def _scan_helper(
+        self,
+        path: str,
+        parent: Node,
+        dir_name: str,
+        preferred_name: Optional[str] = None,
+    ) -> None:
         """Scan the directory for microservices and find Dockerfile."""
         # Only check files in the current directory, not recursively
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
@@ -68,7 +87,7 @@ class MicroservicesTree:
         microservice_node = None
 
         for file in files:
-            if file.endswith(".dockerfile") or file == "Dockerfile":
+            if file == "Dockerfile":
                 dockerfile_found = True
                 self.logger.info(f"Found Dockerfile in {os.path.join(path, file)}")
                 # Generate a new node parent
@@ -82,51 +101,25 @@ class MicroservicesTree:
 
                 # Add the microservice node to the parent node
                 parent.add_child(microservice_node)
+
                 self.logger.debug(
                     f"Adding microservice node: {microservice_node.name} to parent: {parent.name}"
                 )
                 # Parse Dockerfile and add commands as children to the microservice node
-                commands = self.command_parser.parse_dockerfile(
-                    os.path.join(path, file)
+                self._populate_microservice_node(
+                    os.path.join(path, file), microservice_node
                 )
-
-                for command in commands:
-                    # Classify the command
-                    nodes: List[DockerInstruction] = (
-                        self.command_parser.generate_node_from_command(
-                            command, microservice_node
-                        )
-                    )
-
-                    for node in nodes:
-                        if node.type == NodeType.WORKDIR:
-                            # Keep the latest one
-                            for child in microservice_node.children:
-                                if child.type == NodeType.WORKDIR:
-                                    self.logger.debug(
-                                        f"Removing old WORKDIR node: {child.name}"
-                                    )
-                                    microservice_node.children.remove(child)
-
-                        if node.metadata == {} or node.metadata["status"] == "active":
-                            self.logger.debug(
-                                f"Adding command node: {node.name} with metadata: {node.metadata}"
-                            )
-                            microservice_node.add_child(node)
 
                 break  # Stop looking for more Dockerfiles in this directory
 
         # Only process environment files and scripts if a Dockerfile was found
         if dockerfile_found and microservice_node is not None:
-            # Parse the directory for .env files (only in this directory)
+
+            # Attach relevant context files to the microservice node
             for file in files:
-                # Skip hidden files except .env
-                if str(file).startswith("."):
-                    if file == ".env":
-                        # Parse env file and add vars as children to root node
-                        env_nodes = self.env_parser.parse(os.path.join(path, file))
-                        # Add env node to microservice node
-                        microservice_node.add_children(env_nodes)
+                self._process_contextual_file(
+                    file, os.path.join(path, file), microservice_node
+                )
 
             # Parse bash script if present in EntryPoint or CMD
             self.bash_parser.determine_startup_command(path, files, microservice_node)
@@ -185,7 +178,7 @@ class MicroservicesTree:
             # There's a unique command. Possibly none
             microservice["args"] = cmd[0].value
 
-        microservice.setdefault("ports", set())
+        microservice.setdefault("ports", [])
 
         if (
             len(ports := node.get_children_by_type(NodeType.PORT, must_be_active=True))
@@ -223,7 +216,7 @@ class MicroservicesTree:
             for env in env_vars:
                 self.logger.info(f"processing env var: {env.name}")
                 microservice["env"].append(
-                    {"name": env.name, "key":"config", "value": env.value}
+                    {"name": env.name, "key": "config", "value": env.value}
                 )  # type: ignore
         if (
             len(
@@ -237,7 +230,7 @@ class MicroservicesTree:
             microservice.setdefault("secrets", [])
             for secret in secrets:
                 microservice["secrets"].append(
-                    {"name": secret.name, "key":"password", "value":secret.value}
+                    {"name": secret.name, "key": "password", "value": secret.value}
                 )  # type: ignore
         if (
             len(
@@ -248,7 +241,6 @@ class MicroservicesTree:
             > 0
         ):
             for index, volume in enumerate(volumes):
-                volume = cast(DockerInstruction, volume)
                 if volume.is_persistent:
                     # If the volume is persistent, add it to the persistent volumes list
                     if "persistent_volumes" not in microservice:
@@ -284,6 +276,13 @@ class MicroservicesTree:
             microservice.setdefault("workdir", None)
             microservice["workdir"] = workdirs[0].value
 
+        if node.attached_files is not None:
+            # Attach files to the microservice node
+            for file_name, file in node.attached_files.items():
+                microservice.setdefault("attached_files", {})
+                microservice["attached_files"][file_name] = file.__to_dict__()
+                
+
         # Enrich microservice
         container_ports = microservice.get("ports", [])
         service_extra_info = self.service_classifier.decide_service(
@@ -294,18 +293,19 @@ class MicroservicesTree:
             microservice["workload"] = service_extra_info["workload"]
             microservice["protocol"] = service_extra_info["protocol"]
             microservice["type"] = service_extra_info.get("serviceType", "ClusterIP")
-            
+
             # Set ports
             container_ports = [int(port) for port in service_extra_info["ports"]]
-            
+
             # Set service ports fallback to the container ports
-            microservice["service-ports"] = service_extra_info.get("servicePorts", container_ports)           
+            microservice["service-ports"] = service_extra_info.get(
+                "servicePorts", container_ports
+            )
 
             # Only use ontology ports of not set in the container configuration
             if len(microservice["ports"]) == 0:
                 microservice["ports"] = container_ports
 
-            
             microservice["labels"].update(service_extra_info["labels"])
 
         self.logger.info(
@@ -332,3 +332,73 @@ class MicroservicesTree:
 
         for child in node.children:
             self.print_tree(child, level + 1)
+
+    def _populate_microservice_node(
+        self, dockerfile_path: str, microservice_node: Node
+    ) -> None:
+        """Parse and populate the microservice node with information gathered from the dockerfile"""
+        commands = self.command_parser.parse_dockerfile(dockerfile_path)
+
+        for command in commands:
+            # Classify the command
+            nodes: List[Node] = (
+                self.command_parser.generate_node_from_command(
+                    command, microservice_node
+                )
+            )
+
+            for node in nodes:
+                if node.type == NodeType.WORKDIR:
+                    # Keep the latest one
+                    for child in microservice_node.children:
+                        if child.type == NodeType.WORKDIR:
+                            self.logger.debug(
+                                f"Removing old WORKDIR node: {child.name}"
+                            )
+                            microservice_node.children.remove(child)
+
+                if node.metadata == {} or node.metadata["status"] == "active":
+                    self.logger.debug(
+                        f"Adding command node: {node.name} with metadata: {node.metadata}"
+                    )
+                    microservice_node.add_child(node)
+
+    def _process_contextual_file(
+        self, file_name: str, file_path: str, node: Node, max_file_size_kb: int = 500
+    ) -> None:
+        name, ext = os.path.splitext(file_name)
+        for file_type, extensions in self.file_extensions.items():
+            if ext in extensions:
+                # Check if the file is a config file
+                if file_type == ".env":
+                    # Parse the config file and add it to the node
+                    config_nodes = self.env_parser.parse(file_path)
+                    node.add_children(config_nodes)
+
+                else:
+                    # Check if the file size is within the limit
+                    if os.path.getsize(file_path) > max_file_size_kb * 1024:
+                        self.logger.warning(
+                            f"File {file_name} exceeds the size limit of {max_file_size_kb} KB. Skipping."
+                        )
+                        return
+
+                    try:
+                        with open(file_path, "r") as f:
+                            content = f.read()
+                            attachment = AttachedFile(
+                                file_name,
+                                file_type,
+                                os.path.getsize(file_path) / 1024,
+                                content
+                            )
+
+                            node.attach_file(name, attachment)
+
+                            self.logger.info(
+                                f"Attached file {file_name} to node {node.name}"
+                            )
+
+                    except Exception as e:
+                        self.logger.error(f"Error reading file {file_path}: {e}")
+                        return

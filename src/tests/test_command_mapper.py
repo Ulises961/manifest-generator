@@ -8,7 +8,7 @@ from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper
 from embeddings.label_classifier import LabelClassifier
 from tree.node_types import NodeType
-from tree.docker_instruction_node import DockerInstruction
+
 import os
 from utils.file_utils import load_environment, setup_sentence_transformer
 
@@ -43,7 +43,7 @@ def test_generate_cmd_node(command_mapper):
     cmd = {"instruction": "CMD", "value": ["python", "app.py"]}
     nodes = command_mapper._generate_cmd_nodes(cmd, None)
     node = nodes[0]
-    assert isinstance(node, DockerInstruction)
+    assert isinstance(node, Node)
     assert node.type == NodeType.CMD
     assert node.value == ["python", "app.py"]
 
@@ -53,7 +53,7 @@ def test_generate_label_node(mock_decide_label, command_mapper):
     label = {"instruction": "LABEL", "value": "version=1.0"}
     nodes = command_mapper._generate_label_nodes(label, None)
     node = nodes[0]
-    assert isinstance(node, DockerInstruction)
+    assert isinstance(node, Node)
     assert node.type == NodeType.LABEL
     assert node.name == "version"
     assert node.value == "1.0"
@@ -75,7 +75,7 @@ def test_generate_volume_node(command_mapper):
         nodes = command_mapper._generate_volume_nodes(volume, None)
         node = nodes[0]
 
-        assert isinstance(node, DockerInstruction)
+        assert isinstance(node, Node)
         assert node.type == NodeType.VOLUME
         assert not node.is_persistent
     finally:
@@ -93,14 +93,14 @@ def test_get_commands(command_mapper):
     ]
     commands = command_mapper.get_commands(parsed_dockerfile, None)
     assert len(commands) == 2
-    assert isinstance(commands[0], DockerInstruction)
-    assert isinstance(commands[1], DockerInstruction)
+    assert isinstance(commands[0], Node)
+    assert isinstance(commands[1], Node)
 
 def test_generate_entrypoint_nodes(command_mapper):
     entrypoint = {"instruction": "ENTRYPOINT", "value": ["python", "app.py"]}
     nodes = command_mapper._generate_entrypoint_nodes(entrypoint, None)
     node = nodes[0]
-    assert isinstance(node, DockerInstruction)
+    assert isinstance(node, Node)
     assert node.type == NodeType.ENTRYPOINT
     assert node.value == ["python", "app.py"]
 
@@ -108,7 +108,7 @@ def test_generate_entrypoint_w_script(command_mapper):
     entrypoint = {"instruction": "ENTRYPOINT", "value": ["./start.sh"]}
     nodes = command_mapper._generate_entrypoint_nodes(entrypoint, None)
     node = nodes[0]
-    assert isinstance(node, DockerInstruction)
+    assert isinstance(node, Node)
     assert node.type == NodeType.ENTRYPOINT
     assert node.value == ["./start.sh"]
 
@@ -119,7 +119,7 @@ def test_generate_entrypoint_w_script_and_args(command_mapper):
     }
     nodes = command_mapper._generate_entrypoint_nodes(entrypoint, None)
     node = nodes[0]
-    assert isinstance(node, DockerInstruction)
+    assert isinstance(node, Node)
     assert node.type == NodeType.ENTRYPOINT
     assert node.value == ["./start.sh", "--arg1", "--arg2"]
 
@@ -176,7 +176,7 @@ def test_generate_env_nodes(mock_parse_env_var, command_mapper):
     # Assertions
     assert len(nodes) == 1
     node = nodes[0]
-    assert isinstance(node, DockerInstruction)
+    assert isinstance(node, Node)
     assert node.name == 'TEST_ENV'
     assert node.type == NodeType.ENV
     assert node.value == 'test_value'

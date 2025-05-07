@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from dockerfile_parse import DockerfileParser
 from embeddings.label_classifier import LabelClassifier
 from parsers.env_parser import EnvParser
-from tree.docker_instruction_node import DockerInstruction
+
 from tree.node import Node
 from tree.node_types import NodeType
 from utils.docker_utils import (
@@ -14,7 +14,7 @@ from utils.docker_utils import (
     normalize_spaced_values,
     parse_key_value_string,
 )
-from utils.file_utils import check_shell_in_commands, normalize_command_field
+from utils.file_utils import  normalize_command_field
 import itertools
 
 
@@ -57,7 +57,7 @@ class CommandMapper:
 
     def get_commands(
         self, parsed_dockerfile: List[dict], parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Get the list of commands from a parsed Dockerfile.
         Args:
             parsed_dockerfile (list[dict]): Parsed Dockerfile.
@@ -73,7 +73,7 @@ class CommandMapper:
 
     def generate_node_from_command(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from a Dockerfile command.
         Args:
             command (dict): Dockerfile command.
@@ -106,13 +106,13 @@ class CommandMapper:
 
     def _generate_entrypoint_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from an ENTRYPOINT command."""
         return [self._generate_command_node(command, NodeType.ENTRYPOINT, parent)]
 
     def _generate_cmd_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from a CMD command."""
         return [self._generate_command_node(command, NodeType.CMD, parent)]
 
@@ -121,24 +121,24 @@ class CommandMapper:
         command: dict,
         node_type: NodeType,
         parent: Node,
-    ) -> DockerInstruction:
+    ) -> Node:
         """Generalized generator for CMD or ENTRYPOINT."""
         value = normalize_command_field(command["value"])
 
         command["value"] = value
 
-        return self._create_docker_node(command, node_type, parent)
+        return self._create_node(command, node_type, parent)
 
     def _generate_label_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from a LABEL command."""
         nodes = []
         labels_dict = parse_key_value_string(command["value"])
         for key, value in labels_dict.items():
             is_label = self.decide_label(key)
             nodes.append(
-                self._create_docker_node(
+                self._create_node(
                     {"instruction": key, "value": value},
                     NodeType.LABEL if is_label else NodeType.ANNOTATION,
                     parent,
@@ -148,13 +148,13 @@ class CommandMapper:
 
     def _generate_expose_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from an PORT command."""
         nodes = []
         ports = normalize_spaced_values(command["value"])
         for port in ports:
             nodes.append(
-                self._create_docker_node(
+                self._create_node(
                     {"instruction": "PORT", "value": port}, NodeType.PORT, parent
                 )
             )
@@ -162,7 +162,7 @@ class CommandMapper:
 
     def _generate_volume_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from a VOLUME command."""
         nodes = []
         # Normalize the command value
@@ -180,7 +180,7 @@ class CommandMapper:
             is_persistent = volume_path in volumes
 
             nodes.append(
-                self._create_docker_node(
+                self._create_node(
                     {"instruction": "VOLUME", "value": volume_path},
                     NodeType.VOLUME,
                     parent,
@@ -191,24 +191,24 @@ class CommandMapper:
 
     def _generate_user_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from a USER command."""
-        return [self._create_docker_node(command, NodeType.USER, parent)]
+        return [self._create_node(command, NodeType.USER, parent)]
 
     def _generate_workdir_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from a WORKDIR command."""
-        return [self._create_docker_node(command, NodeType.WORKDIR, parent)]
+        return [self._create_node(command, NodeType.WORKDIR, parent)]
 
     def _generate_healthcheck_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
+    ) -> List[Node]:
         """Generate a node from a HEALTHCHECK command."""
         healthcheck = normalize_multiline(command["value"])
         parsed_check = self._parse_healthcheck(healthcheck)
         command["value"] = parsed_check["check"]
-        node = self._create_docker_node(command, NodeType.HEALTHCHECK, parent)
+        node = self._create_node(command, NodeType.HEALTHCHECK, parent)
         node.metadata = {"flags": parsed_check["flags"]}
         return [node]
 
@@ -218,26 +218,16 @@ class CommandMapper:
 
     def generate_env_nodes(
         self, command: dict, parent: Node
-    ) -> List[DockerInstruction]:
-        nodes = self._env_parser.parse_env_var(command["value"])
+    ) -> List[Node]:
+        return self._env_parser.parse_env_var(command["value"])
 
-        return [
-            DockerInstruction(
-                name=node.name,
-                type=node.type,
-                value=node.value,
-                parent=parent,
-                is_persistent=False,
-                metadata=node.metadata,
-            )
-            for node in nodes
-        ]
+    
 
-    def _create_docker_node(
+    def _create_node(
         self, command: dict, type: NodeType, parent: Node, is_persistent: bool = False
-    ) -> DockerInstruction:
-        """Create a DockerInstruction from a command."""
-        return DockerInstruction(
+    ) -> Node:
+        """Create a Node from a command."""
+        return Node(
             name=command["instruction"],
             type=type,
             value=command["value"],

@@ -5,7 +5,7 @@ from embeddings.embeddings_engine import EmbeddingsEngine
 from parsers.env_parser import EnvParser
 from tree.node import Node
 from tree.node_types import NodeType
-from tree.docker_instruction_node import DockerInstruction
+
 from embeddings.secret_classifier import SecretClassifier
 from utils.file_utils import normalize_command_field
 
@@ -218,7 +218,7 @@ class BashScriptParser:
 
         forwards_args = any(token in ["$@", '"$@"', "'$@'", "${@}"] for token in args)
 
-        entrypoint_node = DockerInstruction(
+        entrypoint_node = Node(
             name=parent.name,
             type=NodeType.ENTRYPOINT,
             value=command,
@@ -233,7 +233,7 @@ class BashScriptParser:
 
         cmd_node = None
         if not forwards_args and args:
-            cmd_node = DockerInstruction(
+            cmd_node = Node(
                 name=parent.name,
                 type=NodeType.CMD,
                 value=args,

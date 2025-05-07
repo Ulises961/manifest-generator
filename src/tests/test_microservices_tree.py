@@ -2,7 +2,7 @@ import pytest
 from tree.microservices_tree import MicroservicesTree
 from tree.node import Node
 from tree.node_types import NodeType
-from tree.docker_instruction_node import DockerInstruction
+
 from unittest.mock import Mock, patch
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def test_prepare_microservice_basic(tree):
 
 def test_prepare_microservice_with_labels(tree):
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
-    label_node = DockerInstruction(name="label", type=NodeType.LABEL, value="key=value")
+    label_node = Node(name="label", type=NodeType.LABEL, value="key=value")
     node.add_child(label_node)
     
     result = tree.prepare_microservice(node)
@@ -44,7 +44,7 @@ def test_prepare_microservice_with_labels(tree):
 
 def test_prepare_microservice_with_ports(tree):
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
-    port_node = DockerInstruction(name="port", type=NodeType.PORT, value="8080")
+    port_node = Node(name="port", type=NodeType.PORT, value="8080")
     node.add_child(port_node)
     
     result = tree.prepare_microservice(node)
@@ -55,7 +55,7 @@ def test_prepare_microservice_with_ports(tree):
 
 def test_prepare_microservice_with_env_vars(tree):
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
-    env_node = DockerInstruction(name="DB_HOST", type=NodeType.ENV, value="localhost")
+    env_node = Node(name="DB_HOST", type=NodeType.ENV, value="localhost")
     node.add_child(env_node)
     
     result = tree.prepare_microservice(node)
@@ -67,7 +67,7 @@ def test_prepare_microservice_with_env_vars(tree):
 
 def test_prepare_microservice_with_volume(tree):
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
-    volume = DockerInstruction(name="volume", type=NodeType.VOLUME, value="/data")
+    volume = Node(name="volume", type=NodeType.VOLUME, value="/data")
     volume.is_persistent = True
     node.add_child(volume)
     
