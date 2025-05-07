@@ -18,8 +18,9 @@ setup(
         'torch>=2.0.0',
         'mypy',
         'types-PyYAML',
-        'types-dockerfile-parse'
+        'types-dockerfile-parse',
         'caseutil',
+        'accelerate>=0.26.0',
         'dotenv'],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",
