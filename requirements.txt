@@ -14,3 +14,4 @@ types-dockerfile-parse
 caseutil
 dotenv
 accelerate>=0.26.0
+bitsandbytes
