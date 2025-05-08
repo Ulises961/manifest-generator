@@ -41,9 +41,6 @@ class PromptBuilder:
 
             generic_prompt += "\n"
 
-        generic_prompt += (
-            "\nUse this structure to infer possible dependencies and shared patterns.\n"
-        )
         return generic_prompt
 
     def generate_prompt(self, microservice: Dict[str, Any]) -> str:
@@ -57,7 +54,8 @@ class PromptBuilder:
         """
         prompt = self.prompt
         prompt += "\n\n"
-        prompt += f"Using the context above, generate a Kubernetes manifest (YAML format) for the microservice '{microservice['name']}':\n"
+        prompt += f"The task is to generate a set Kubernetes manifests (YAML format) for the microservice '{microservice['name']}' using the schema presented above.\n"
+        prompt += f"Please use it to infer any relations or iterdependencies and produce an appropriate output.\n\n"
         prompt += f"Here are its details:\n\n"
         prompt += f"{microservice['name']}:\n"
 
@@ -78,7 +76,6 @@ class PromptBuilder:
             "- Do not guess values for unknowns — use TODO comments where applicable.\n"
         )
         prompt += "- Return only the final Kubernetes manifest in YAML.\n"
-        prompt += "\nYour output should contain Deployment and Service manifests.\n"
 
         self.logger.info(f"Prompt generated for the {microservice['name']} microservice: {prompt}")
         
