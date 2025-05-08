@@ -246,14 +246,17 @@ class MicroservicesTree:
                     if "persistent_volumes" not in microservice:
                         microservice["persistent_volumes"] = []
 
-                    # TODO: define custom based values for PVC
+                    # TODO: define a skaffold file to define the persistent volume
                     microservice["persistent_volumes"].append(
                         {
                             "name": f"volume-{index}",
-                            "labels": [],
-                            "storage_class": None,
-                            "access_modes": None,
-                            "resources": None,
+                            "labels": {
+                                "app": microservice["labels"]["app"],
+                                "storage-type": "persistent"
+                            },
+                            "storage_class": "standard",
+                            "access_modes": ["ReadWriteOnce"],
+                            "resources": 1024,
                         }
                     )  # type: ignore
                 microservice.setdefault("volume_mounts", [])
