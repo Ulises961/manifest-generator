@@ -1,5 +1,9 @@
+import os
 from typing import Any, Dict, List
 import logging
+
+from tree.attached_file import AttachedFile
+
 
 class PromptBuilder:
     def __init__(
@@ -8,12 +12,11 @@ class PromptBuilder:
     ):
         self.prompt = self._generate_base_prompt(microservices)
         self.logger = logging.getLogger(__name__)
+        self.is_prod_mode = os.getenv("DEV_MODE", "false").lower() == "false"
+        self.attached_files: List[AttachedFile] = []
 
     def add_instruction(self, instruction: str):
         self.prompt += f"Instruction: {instruction}\n"
-
-    def add_input(self, input_data: str):
-        self.prompt += f"Input: {input_data}\n"
 
     def add_output(self, output_data: str):
         self.prompt += f"Output: {output_data}\n"
@@ -22,61 +25,99 @@ class PromptBuilder:
         return self.prompt.strip()
 
     def attach_files(self, files: list):
-        for file in files:
-            self.prompt += f"File: {file}\n"
-            with open(file, "r") as f:
-                content = f.read()
-                self.prompt += f"Content: {content}\n"
+        """Attach files to the prompt for additional context."""
+        self.attached_files.extend(files)
+
+    def attach_file(self, file: AttachedFile):
+        """Attach a file to the prompt for additional context."""
+        self.attached_files.append(file)
+
+    def include_attached_files(self):
+        """Include attached files in the prompt for a specific microservice."""
+        if self.is_prod_mode and len(self.attached_files) > 0:
+            self.prompt += f"\nAttached files for additional context:\n"
+            for file in self.attached_files:
+                self.prompt += f" {file.name}: {file}"
+            
 
     def _generate_base_prompt(self, services: List[Dict[str, Any]]) -> str:
-        generic_prompt = "Given the following microservices schema:\n"
+        """Generate the base prompt for all microservices, providing context for interdependencies."""
+        self.logger.info("Generating base prompt for microservices.")
+        self.prompt = "You are a DevOps assistant tasked with generating Kubernetes manifests.\n\n"
+        self.prompt += "Here is the schema for all microservices in this system:\n\n"
 
         for service in services:
-            #    Microservice {'name': 'recommendationservice', 'labels': {'app': 'recommendationservice'}, 'command': ['python', 'recommendation_server.py'], 'ports': [8080], 'service-ports': [8080], 'type': 'ClusterIP', 'protocol': 'TCP', 'workload': 'Deployment', 'env': [{'name': 'PYTHONUNBUFFERED', 'key': 'config', 'value': '1'}], 'workdir': '/recommendationservice'} prepared for manifest generation
-            generic_prompt += f"{service['name']}: \n\t"
+            self.prompt += f"Microservice: {service['name']}\n"
             for key, value in service.items():
-                if key == "attached_files":
-                    continue
-                generic_prompt += f"{key}: {value}\n\t"
+                if key != "attached_files":
+                    self.prompt += f"  {key}: {value}\n"
+            self.prompt += "\n"
 
-            generic_prompt += "\n"
+        self.prompt += (
+            "Use the above context to infer relationships, shared configurations, "
+            "and any relevant interdependencies between services.\n"
+        )
 
-        return generic_prompt
+        return self.prompt
 
     def generate_prompt(self, microservice: Dict[str, Any]) -> str:
-        """Generate a prompt for a specific microservice.
+        """Generate a Kubernetes manifest generation prompt for a specific microservice."""
+        prompt = self.prompt + "\n"
 
-        Args:
-            microservice: Dictionary containing microservice information
-
-        Returns:
-            str: Generated prompt
-        """
-        prompt = self.prompt
-        prompt += "\n\n"
-        prompt += f"The task is to generate a set Kubernetes manifests (YAML format) for the microservice '{microservice['name']}' using the schema presented above.\n"
-        prompt += f"Please use it to infer any relations or iterdependencies and produce an appropriate output.\n\n"
-        prompt += f"Here are its details:\n\n"
-        prompt += f"{microservice['name']}:\n"
-
+        prompt += f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
+        prompt += "Microservice details:\n"
         for key, value in microservice.items():
-            if key == "attached_files":
-                continue
-            prompt += f"{key}: {value}\n"
+            if key != "attached_files":
+                prompt += f"  {key}: {value}\n"
+        if self.is_prod_mode and microservice.get("attached_files"):
+            prompt += f"\nAttached files for additional context:\n  {microservice['attached_files']}\n"
 
         prompt += "\nGuidelines:\n"
-        prompt += "- Use best practices for production-ready workloads.\n"
-        prompt += "- Infer appropriate labels (tier, role) based on service name.\n"
+        prompt += "- Use production-ready best practices.\n"
+        prompt += "- Include Deployment and Service at minimum. Add ConfigMap, Secret, PVC, Ingress, etc., if required.\n"
+        prompt += "- Infer appropriate metadata like labels (tier, role, environment) from the service name.\n"
+        prompt += "- Use TODO placeholders for values you cannot confidently infer.\n"
         prompt += (
-            "- Add liveness/readiness probes if appropriate for a Python-based API.\n"
+            "- Do NOT include explanations, comments, or extra text in the output.\n"
         )
-        prompt += "- Create associated Kubernetes objects if needed (e.g., Service, ConfigMap):\n"
-        prompt += "\t\tEach associated manifest must be headed with the object name in lowercase\n"
-        prompt += (
-            "- Do not guess values for unknowns — use TODO comments where applicable.\n"
-        )
-        prompt += "- Return only the final Kubernetes manifest in YAML.\n"
+        prompt += "- Return only the final Kubernetes YAML manifest.\n"
+        prompt += "- If multiple Kubernetes objects are needed, separate them with '---' and include the object type as a comment above each.\n"
+        prompt += "- The result must be directly usable in a CI/CD or `kubectl apply -f` pipeline.\n"
 
-        self.logger.info(f"Prompt generated for the {microservice['name']} microservice: {prompt}")
-        
+        prompt += "\nOutput:\n"
+
+        self.logger.info(
+            f"Prompt generated for the {microservice['name']} microservice."
+        )
         return prompt
+
+    def clear_prompt(self):
+        """Clear the prompt."""
+        self.prompt = ""
+
+    def create_prompt(self, instruction: str, output_data: str):
+        """Create a prompt with instruction and output data."""
+        self.prompt = f"Instruction: {instruction}\nOutput: {output_data}\n"
+
+    def generate_second_pass_prompt(self) -> None:
+        """Generate a second pass prompt to optimize the already generated manifests."""
+
+        self.clear_prompt()
+        self.prompt = """
+        You are a senior DevOps engineer reviewing Kubernetes manifests for a microservice-based system.
+
+        Your task is to review and improve these YAML manifests to ensure:
+        1. They follow production best practices (security, scalability, observability, reliability).
+        2. They include all required fields (resource limits, probes, labels, volumes, secrets).
+        3. They coordinate properly across services (e.g., environment variables, service names, configs).
+        4. They are ready to be deployed in a real-world CI/CD pipeline using `kubectl apply -f`.
+
+        Guidelines:
+        - Maintain the structure and intention of the original manifests.
+        - Improve where needed — do not guess unknowns, insert '# TODO' where applicable.
+        - Include all changes as valid Kubernetes YAML.
+        - Do not include any comments, explanations, or markdown.
+        - Do not regenerate unchanged parts unnecessarily.
+
+        If multiple manifests are returned, separate them using '---' and place a YAML comment with the object type above each manifest (e.g., `# Deployment`, `# Service`).
+        """

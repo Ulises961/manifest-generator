@@ -77,6 +77,8 @@ class InferenceEngine:
         named_manifests = []
         for manifest in manifests:
             first_line = manifest.split("\n")[0]
+            if first_line.startswith("#"): # It's the name of the object, use it as the name for the manifest
+                first_line = first_line.split("#")[1].strip()           
             named_manifests.append({"name":first_line, "manifest": manifest.replace(first_line, "").strip()})
         return named_manifests
 

@@ -10,6 +10,7 @@ from embeddings.service_classifier import ServiceClassifier
 from inference.inference_engine import InferenceEngine
 from inference.prompt_builder import PromptBuilder
 from manifest_builder import ManifestBuilder
+from tree.attached_file import AttachedFile
 from tree.microservices_tree import MicroservicesTree
 from utils.file_utils import (
     load_environment,
@@ -116,11 +117,64 @@ if __name__ == "__main__":
             target_dir = os.path.join(
                 os.getenv("TARGET_PATH", "target/manifests"),
                 os.getenv("LLM_MANIFESTS_PATH", "llm"),
+                "first_pass",
+                child.name
             )
 
             os.makedirs(target_dir, exist_ok=True)
             # Save the response to a file
-            with open(f"{target_dir}/{child.name}.yaml", "w") as f:
+            manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
+            with open(manifest_path, "w") as f:
                 f.write(manifest["manifest"])
             logging.info(f"Saved manifest to {target_dir}/{child.name}.yaml")
 
+    ### Phase 4: Validate and refine the generated manifests ###
+
+        # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones   
+        
+        # Second pass on the generated manifests.
+        prompt_builder.generate_second_pass_prompt()
+
+
+        generated_manifests_dir = os.path.join(
+            os.getenv("TARGET_PATH", "target/manifests"),
+            os.getenv("LLM_MANIFESTS_PATH", "llm")
+        )
+
+        for dir, _, files in os.walk(generated_manifests_dir):
+            for file in files:
+                if file.endswith(".yaml") or file.endswith(".yml"):
+                    file_path = os.path.join(dir, file)
+                    with open(file_path, "r") as f:
+                        attached_file = AttachedFile(
+                            name=file,
+                            type="yaml",
+                            size=os.path.getsize(file_path),
+                            content=f.read()
+                        )
+                        prompt_builder.attach_file(attached_file)
+                        logging.info(f"Attached file: {file_path}")
+                        # Attach the file to the prompt
+        
+        prompt_builder.include_attached_files()
+        # Generate the response
+        response = inference_engine.generate(prompt_builder.get_prompt())
+        # Process the response
+        processed_response = inference_engine.process_response(response)
+
+        for manifest in processed_response:
+            logging.info(f"Generated manifest: {child.name}")
+         
+            target_dir = os.path.join(
+                os.getenv("TARGET_PATH", "target/manifests"),
+                os.getenv("LLM_MANIFESTS_PATH", "llm"),
+                "second_pass",
+                child.name
+            )
+
+            os.makedirs(target_dir, exist_ok=True)
+            # Save the response to a file
+            manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
+            with open(manifest_path, "w") as f:
+                f.write(manifest["manifest"])
+            logging.info(f"Saved manifest to {target_dir}/{child.name}.yaml")
