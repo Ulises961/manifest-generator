@@ -1,3 +1,4 @@
+import re
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from typing import Dict, Any, List, Optional
@@ -6,11 +7,7 @@ from typing import Dict, Any, List, Optional
 class InferenceEngine:
     """Engine for LLM text generation using local models."""
 
-    def __init__(
-        self,
-        model: AutoModelForCausalLM,
-        tokenizer: AutoTokenizer
-    ) -> None:
+    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer) -> None:
         """Initialize the language model and tokenizer.
 
         Args:
@@ -19,7 +16,6 @@ class InferenceEngine:
         self._model = model
         self._tokenizer = tokenizer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
     @property
     def model(self) -> AutoModelForCausalLM:
@@ -74,12 +70,17 @@ class InferenceEngine:
         response.strip()
         manifests = response.split("---")
         manifests = [manifest.strip() for manifest in manifests if manifest.strip()]
-        named_manifests = []
+        named_manifests: List[Dict[str, Any]] = []
         for manifest in manifests:
-            first_line = manifest.split("\n")[0]
-            if first_line.startswith("#"): # It's the name of the object, use it as the name for the manifest
-                first_line = first_line.split("#")[1].strip()           
-            named_manifests.append({"name":first_line, "manifest": manifest.replace(first_line, "").strip()})
-        return named_manifests
-
+            res = re.search(r"^kind:\s*(.*)$", manifest, re.MULTILINE)
+            if res:
+                name = res.group(1).strip()
+            else:
+                name = "default"
             
+            named_manifest = {
+                "name": name,
+                "manifest": manifest,
+            }
+            named_manifests.append(named_manifest)
+        return named_manifests
