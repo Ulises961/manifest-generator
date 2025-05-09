@@ -53,7 +53,7 @@ if __name__ == "__main__":
     # Load the label classifier
     label_classifier = LabelClassifier(embeddings_engine)
     # Generate a tree with the microservices detected in the repository
-    target_repository = "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/microservices-demo/src"
+    target_repository = "/home/ulisesemiliano.sosa/microservices-demo/src"
 
     ### Phase 1: Build the microservices tree ###
     treebuilder = MicroservicesTree(

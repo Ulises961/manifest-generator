@@ -10,8 +10,8 @@ class PromptBuilder:
         self,
         microservices: List[Dict[str, Any]],
     ):
-        self.prompt = self._generate_base_prompt(microservices)
         self.logger = logging.getLogger(__name__)
+        self.prompt = self._generate_base_prompt(microservices)
         self.is_prod_mode = os.getenv("DEV_MODE", "false").lower() == "false"
         self.attached_files: List[AttachedFile] = []
 
@@ -87,7 +87,7 @@ class PromptBuilder:
         prompt += "\nOutput:\n"
 
         self.logger.info(
-            f"Prompt generated for the {microservice['name']} microservice."
+            f"Prompt generated for the {microservice['name']} microservice:\n {prompt}"
         )
         return prompt
 

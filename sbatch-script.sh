@@ -9,9 +9,12 @@
 #SBATCH --output=logs/k8s-infer-%j.out
 #SBATCH -N 1
 
-source venv/bin/activate
+cd manifest-generator
 
-python src/main.py
+source venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+accelerate launch src/main.py
 
 
 

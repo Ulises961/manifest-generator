@@ -65,7 +65,7 @@ def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
 
 def setup_cuda(force_cpu: bool = False) -> str:
     """Setup CUDA for PyTorch."""
-    device = "cpu" if force_cpu else ("auto" if torch.cuda.is_available() else "cpu")
+    device = "cpu" if force_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
 
     if device == "cuda":
         logger.info("CUDA is available. Using GPU for inference.")
