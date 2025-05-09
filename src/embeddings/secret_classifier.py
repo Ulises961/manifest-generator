@@ -65,7 +65,6 @@ class SecretClassifier:
             if key == "regex" or key == "embeddings":
                 continue
             for value in values:
-                print(f"Comparing {query} with {value}")
                 if query == value:
                     return True
 

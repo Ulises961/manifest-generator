@@ -1,7 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from typing import Dict, Any, List, Optional
-
+import logging
 
 class InferenceEngine:
     """Engine for LLM text generation using local models."""
@@ -16,6 +16,7 @@ class InferenceEngine:
         Args:
             model_name_or_path: Hugging Face model name or local path to model
         """
+        self.logger = logging.getLogger(__name__)
         self._model = model
         self._tokenizer = tokenizer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -70,7 +71,7 @@ class InferenceEngine:
         Returns:
             str: Processed response
         """
-
+        self.logger.info(f"Processing response {response}")
         response.strip()
         manifests = response.split("---")
         manifests = [manifest.strip() for manifest in manifests if manifest.strip()]
