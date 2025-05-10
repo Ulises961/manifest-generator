@@ -66,9 +66,11 @@ class PromptBuilder:
 
         prompt += f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
         prompt += "Microservice details:\n"
+        
         for key, value in microservice.items():
             if key != "attached_files":
                 prompt += f"  {key}: {value}\n"
+
         if self.is_prod_mode and microservice.get("attached_files"):
             prompt += f"\nAttached files for additional context:\n  {microservice['attached_files']}\n"
 
@@ -78,7 +80,7 @@ class PromptBuilder:
         prompt += "- Infer appropriate metadata like labels (tier, role, environment) from the service name.\n"
         prompt += "- Use TODO placeholders for values you cannot confidently infer.\n"
         prompt += (
-            "- Do NOT include explanations, comments, or extra text in the output.\n"
+            "- Do NOT include explanations, comments, markdown or any other extra text in the output.\n"
         )
         prompt += "- Return only the final Kubernetes YAML manifest.\n"
         prompt += "- If multiple Kubernetes objects are needed, separate them with '---' and include the object type as a comment above each.\n"
