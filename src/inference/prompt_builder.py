@@ -43,9 +43,15 @@ class PromptBuilder:
     def _generate_base_prompt(self, services: List[Dict[str, Any]]) -> str:
         """Generate the base prompt for all microservices, providing context for interdependencies."""
         self.logger.info("Generating base prompt for microservices.")
-        self.prompt = "You are a DevOps assistant tasked with generating Kubernetes manifests.\n\n"
-        self.prompt += "Here is the schema for all microservices in this system:\n\n"
 
+        # Strong role assignment and formatting constraint for small models
+        self.prompt = (
+            "You are a strict Kubernetes YAML generator.\n"
+            "You only output valid raw Kubernetes YAML manifests.\n"
+            "Do not explain, do not reason, do not output markdown or comments.\n\n"
+        )
+
+        self.prompt += "Here is the schema for all microservices in this system:\n\n"
         for service in services:
             self.prompt += f"Microservice: {service['name']}\n"
             for key, value in service.items():
@@ -54,8 +60,8 @@ class PromptBuilder:
             self.prompt += "\n"
 
         self.prompt += (
-            "Use the above context to infer relationships, shared configurations, "
-            "and any relevant interdependencies between services.\n"
+            "Use the above to understand context and infer common configurations "
+            "or interdependencies between services, but do not explain them.\n"
         )
 
         return self.prompt
@@ -65,6 +71,7 @@ class PromptBuilder:
         prompt = self.prompt + "\n"
 
         prompt += f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
+
         prompt += "Microservice details:\n"
         for key, value in microservice.items():
             if key != "attached_files":
@@ -73,18 +80,16 @@ class PromptBuilder:
             prompt += f"\nAttached files for additional context:\n  {microservice['attached_files']}\n"
 
         prompt += "\nGuidelines:\n"
-        prompt += "- Use production-ready best practices.\n"
-        prompt += "- Include Deployment and Service at minimum. Add ConfigMap, Secret, PVC, Ingress, etc., if required.\n"
-        prompt += "- Infer appropriate metadata like labels (tier, role, environment) from the service name.\n"
-        prompt += "- Use TODO placeholders for values you cannot confidently infer.\n"
-        prompt += (
-            "- Do NOT include explanations, comments, or extra text in the output.\n"
-        )
-        prompt += "- Return only the final Kubernetes YAML manifest.\n"
-        prompt += "- If multiple Kubernetes objects are needed, separate them with '---' and include the object type as a comment above each.\n"
-        prompt += "- The result must be directly usable in a CI/CD or `kubectl apply -f` pipeline.\n"
+        prompt += "- Use production-ready Kubernetes best practices.\n"
+        prompt += "- Include at minimum a Deployment or StatefulSet and a Service.\n"
+        prompt += "- If needed, add ConfigMap, Secret, or PVC.\n"
+        prompt += "- Use labels like `app`, `tier`, `role`, and `environment`.\n"
+        prompt += "- Use TODO placeholders for values that cannot be confidently inferred.\n"
+        prompt += "- Output ONLY valid raw Kubernetes YAML — no explanations, no markdown, no comments.\n"
+        prompt += "- Separate each manifest with '---' if multiple objects are required.\n"
+        prompt += "- The result must be directly usable with `kubectl apply -f` or in CI/CD pipelines.\n"
 
-        prompt += "\nOutput:\n"
+        prompt += "\nBegin YAML output now:\n"
 
         self.logger.info(
             f"Prompt generated for the {microservice['name']} microservice:\n {prompt}"
@@ -103,21 +108,18 @@ class PromptBuilder:
         """Generate a second pass prompt to optimize the already generated manifests."""
 
         self.clear_prompt()
-        self.prompt = """
-        You are a senior DevOps engineer reviewing Kubernetes manifests for a microservice-based system.
-
-        Your task is to review and improve these YAML manifests to ensure:
-        1. They follow production best practices (security, scalability, observability, reliability).
-        2. They include all required fields (resource limits, probes, labels, volumes, secrets).
-        3. They coordinate properly across services (e.g., environment variables, service names, configs).
-        4. They are ready to be deployed in a real-world CI/CD pipeline using `kubectl apply -f`.
-
-        Guidelines:
-        - Maintain the structure and intention of the original manifests.
-        - Improve where needed — do not guess unknowns, insert '# TODO' where applicable.
-        - Include all changes as valid Kubernetes YAML.
-        - Do not include any comments, explanations, or markdown.
-        - Do not regenerate unchanged parts unnecessarily.
-
-        If multiple manifests are returned, separate them using '---' and place a YAML comment with the object type above each manifest (e.g., `# Deployment`, `# Service`).
-        """
+        self.prompt = (
+            "You are a senior DevOps engineer. Your task is to strictly review and improve Kubernetes manifests.\n\n"
+            "Requirements:\n"
+            "1. Enforce production best practices (security, scalability, observability, reliability).\n"
+            "2. Ensure all required fields are present (resources, probes, labels, volumes, secrets).\n"
+            "3. Ensure manifests coordinate across services (env vars, service names, config refs).\n"
+            "4. Output must be valid and directly usable with `kubectl apply -f`.\n\n"
+            "Guidelines:\n"
+            "- DO NOT guess unknown values. Use '# TODO' where needed.\n"
+            "- DO NOT explain anything or include markdown/comments.\n"
+            "- DO NOT regenerate unchanged content unless improvement is necessary.\n"
+            "- Output ONLY valid raw Kubernetes YAML.\n"
+            "- If returning multiple manifests, separate with '---' and prefix with a YAML comment of the object type (e.g., '# Deployment').\n\n"
+            "Begin improved YAML output now:\n"
+        )

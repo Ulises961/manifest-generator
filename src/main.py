@@ -16,7 +16,6 @@ from utils.file_utils import (
     load_environment,
     setup_inference_models,
     setup_sentence_transformer,
-
 )
 from utils.logging_utils import setup_logging
 import logging
@@ -38,7 +37,7 @@ if __name__ == "__main__":
         max_size_mb=10,  # 10MB per file
         console_output=True,
     )
-    
+
     logger.info("Starting microservices manifest generator")
 
     # Load the SentenceTransformer model
@@ -69,13 +68,12 @@ if __name__ == "__main__":
 
     ### Phase 2: Generate the manifests from the repository tree ###
     manifest_builder = ManifestBuilder()
-    enriched_services: List[Dict[str,Any]] = []
+    enriched_services: List[Dict[str, Any]] = []
     for child in repository_tree.children:
         logging.info(f"Generating manifests for child... {child.name}")
         microservice = treebuilder.prepare_microservice(child)
         enriched_services.append(microservice)
         manifest_builder.generate_manifests(microservice)
-
 
     # Unload the model
     del treebuilder
@@ -86,39 +84,49 @@ if __name__ == "__main__":
     del embeddings_engine
     del embeddings_model
 
-
-    logger.info(f"Unloaded models and freed memory. Total allocated: {torch.cuda.memory_allocated() / (1024 ** 2)} MB")
+    logger.info(
+        f"Unloaded models and freed memory. Total allocated: {torch.cuda.memory_allocated() / (1024 ** 2)} MB"
+    )
     logger.info(f"Total reserved: {torch.cuda.memory_reserved() / (1024 ** 2)} MB")
 
     ### Phase 3: Generate inferred manifests from the repository tree ###
     # Load the inference models
     inference_model, tokenizer = setup_inference_models()
-    
+
     if inference_model is None or tokenizer is None:
         logger.error("Failed to load inference model or tokenizer.")
         raise RuntimeError("Inference model or tokenizer not loaded.")
-    
+
     # Load the inference engine
     inference_engine = InferenceEngine(inference_model, tokenizer)
     # Load the prompt builder
     prompt_builder = PromptBuilder(enriched_services)
 
+    inference_config = {
+        "max_new_tokens": 512,  # Limit output length to avoid rambling
+        "temperature": 0.2,  # Lower temperature = more deterministic
+        "top_p": 0.85,  # Reduce sampling pool
+        "do_sample": True,  # Keep on for diversity, but limit randomness
+        "repetition_penalty": 1.1,  # Avoid loops
+        "no_repeat_ngram_size": 3,  # Prevent local repetition
+    }
+
     for child in repository_tree.children:
         logging.info(f"Generating manifests for child... {child.name}")
         prompt = prompt_builder.generate_prompt(microservice)
         # Generate the response
-        response = inference_engine.generate(prompt)
+        response = inference_engine.generate(prompt, inference_config)
         # Process the response
         processed_response = inference_engine.process_response(response)
 
         for manifest in processed_response:
             logging.info(f"Generated manifest: {child.name}")
-         
+
             target_dir = os.path.join(
                 os.getenv("TARGET_PATH", "target/manifests"),
                 os.getenv("LLM_MANIFESTS_PATH", "llm"),
                 "first_pass",
-                child.name
+                child.name,
             )
 
             os.makedirs(target_dir, exist_ok=True)
@@ -128,17 +136,16 @@ if __name__ == "__main__":
                 f.write(manifest["manifest"])
             logging.info(f"Saved manifest to {target_dir}/{child.name}.yaml")
 
-    ### Phase 4: Validate and refine the generated manifests ###
+        ### Phase 4: Validate and refine the generated manifests ###
 
-        # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones   
-        
+        # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones
+
         # Second pass on the generated manifests.
         prompt_builder.generate_second_pass_prompt()
 
-
         generated_manifests_dir = os.path.join(
             os.getenv("TARGET_PATH", "target/manifests"),
-            os.getenv("LLM_MANIFESTS_PATH", "llm")
+            os.getenv("LLM_MANIFESTS_PATH", "llm"),
         )
 
         for dir, _, files in os.walk(generated_manifests_dir):
@@ -150,26 +157,28 @@ if __name__ == "__main__":
                             name=file,
                             type="yaml",
                             size=os.path.getsize(file_path),
-                            content=f.read()
+                            content=f.read(),
                         )
                         prompt_builder.attach_file(attached_file)
                         logging.info(f"Attached file: {file_path}")
                         # Attach the file to the prompt
-        
+
         prompt_builder.include_attached_files()
         # Generate the response
-        response = inference_engine.generate(prompt_builder.get_prompt())
+        response = inference_engine.generate(
+            prompt_builder.get_prompt(), inference_config
+        )
         # Process the response
         processed_response = inference_engine.process_response(response)
 
         for manifest in processed_response:
             logging.info(f"Generated manifest: {child.name}")
-         
+
             target_dir = os.path.join(
                 os.getenv("TARGET_PATH", "target/manifests"),
                 os.getenv("LLM_MANIFESTS_PATH", "llm"),
                 "second_pass",
-                child.name
+                child.name,
             )
 
             os.makedirs(target_dir, exist_ok=True)
