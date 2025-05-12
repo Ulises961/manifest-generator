@@ -73,9 +73,11 @@ class PromptBuilder:
         prompt += f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
 
         prompt += "Microservice details:\n"
+        
         for key, value in microservice.items():
             if key != "attached_files":
                 prompt += f"  {key}: {value}\n"
+
         if self.is_prod_mode and microservice.get("attached_files"):
             prompt += f"\nAttached files for additional context:\n  {microservice['attached_files']}\n"
 

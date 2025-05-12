@@ -12,8 +12,7 @@
 cd manifest-generator
 
 source venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+
 accelerate launch src/main.py
 
 
