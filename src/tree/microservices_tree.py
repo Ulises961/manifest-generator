@@ -389,10 +389,15 @@ class MicroservicesTree:
                     try:
                         with open(file_path, "r") as f:
                             content = f.read()
+                            file_size_kb = os.path.getsize(file_path) / 1024
+                            
+                            # Make sure the file size is an integer
+                            file_size_int = int(file_size_kb)
+                            
                             attachment = AttachedFile(
                                 file_name,
                                 file_type,
-                                os.path.getsize(file_path) / 1024,
+                                file_size_int,  # Use integer size instead of float
                                 content
                             )
 

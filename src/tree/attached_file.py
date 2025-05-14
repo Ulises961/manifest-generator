@@ -14,7 +14,7 @@ class AttachedFile:
         if isinstance(name, str):
             self._name = name
         else:
-            raise ValueError("Name must be a string.")
+            raise ValueError(f"Name must be a string. Got {type(name)} instead.")
 
     @property
     def type(self):
@@ -25,7 +25,7 @@ class AttachedFile:
         if isinstance(type, str):
             self._type = type
         else:
-            raise ValueError("Type must be a string.")
+            raise ValueError(f"Type must be a string. Got {type(type)} instead.")
 
     @property
     def size(self):
@@ -36,7 +36,7 @@ class AttachedFile:
         if isinstance(size, int):
             self._size = size
         else:
-            raise ValueError("Size must be an integer.")
+            raise ValueError(f"Size must be an integer. Got {type(size)} instead.")
 
     @property
     def content(self):
@@ -47,7 +47,7 @@ class AttachedFile:
         if isinstance(content, str):
             self._content = content
         else:
-            raise ValueError("Content must be a string.")
+            raise ValueError(f"Content must be a string. Got {type(content)} instead.")
 
     def __to_dict__(self):
         return {

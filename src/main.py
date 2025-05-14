@@ -9,7 +9,8 @@ from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
 from inference.inference_engine import InferenceEngine
 from inference.prompt_builder import PromptBuilder
-from manifest_builder import ManifestBuilder
+from manifests_generation.helm_renderer import HelmRenderer
+from manifests_generation.manifest_builder import ManifestBuilder
 from tree.attached_file import AttachedFile
 from tree.microservices_tree import MicroservicesTree
 from utils.file_utils import (
@@ -38,6 +39,8 @@ if __name__ == "__main__":
         console_output=True,
     )
 
+    target_repository = os.getenv("TARGET_REPOSITORY", "")
+
     logger.info("Starting microservices manifest generator")
 
     # Load the SentenceTransformer model
@@ -52,7 +55,6 @@ if __name__ == "__main__":
     # Load the label classifier
     label_classifier = LabelClassifier(embeddings_engine)
     # Generate a tree with the microservices detected in the repository
-    target_repository = "/home/ulisesemiliano.sosa/microservices-demo/src"
 
     ### Phase 1: Build the microservices tree ###
     treebuilder = MicroservicesTree(
@@ -86,14 +88,14 @@ if __name__ == "__main__":
 
     ### Phase 3: Generate inferred manifests from the repository tree ###
     # Load the inference models
-    inference_model, tokenizer = setup_inference_models()
+    inference_model, tokenizer, device = setup_inference_models()
 
     if inference_model is None or tokenizer is None:
         logger.error("Failed to load inference model or tokenizer.")
         raise RuntimeError("Inference model or tokenizer not loaded.")
 
     # Load the inference engine
-    inference_engine = InferenceEngine(inference_model, tokenizer)
+    inference_engine = InferenceEngine(inference_model, tokenizer, device)
 
     # Load the prompt builder
     prompt_builder = PromptBuilder(enriched_services)
@@ -107,8 +109,8 @@ if __name__ == "__main__":
         "no_repeat_ngram_size": 3,  # Prevent local repetition
     }
 
-    for child in repository_tree.children:
-        logging.info(f"Generating manifests for child... {child.name}")
+    for microservice in enriched_services:
+        logging.info(f"Generating manifests for child... {microservice['name']}")
         prompt = prompt_builder.generate_prompt(microservice)
 
         # Generate the response
@@ -117,13 +119,14 @@ if __name__ == "__main__":
         processed_response = inference_engine.process_response(response)
 
         for manifest in processed_response:
-            logging.info(f"Generated manifest: {child.name}")
+            logging.info(f"Generated manifest: {microservice['name']}")
 
             target_dir = os.path.join(
-                os.getenv("TARGET_PATH", "target/manifests"),
+                os.getenv("TARGET_PATH", "target"),
+                os.getenv("MANIFESTS_PATH", "manifests"),
                 os.getenv("LLM_MANIFESTS_PATH", "llm"),
                 "first_pass",
-                child.name,
+                microservice["name"],
             )
 
             os.makedirs(target_dir, exist_ok=True)
@@ -134,39 +137,40 @@ if __name__ == "__main__":
             with open(manifest_path, "w") as f:
                 f.write(manifest["manifest"])
 
-            logging.info(f"Saved manifest to {target_dir}/{child.name}.yaml")
+            logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
 
             # Clear prompt to reduce prompt size. Whole microservices tree is shown once.
             prompt_builder.clear_prompt()
 
     ### Phase 4: Refine the generated manifests ###
 
-    # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones   
-    
+    # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones
+
     # Second pass on the generated manifests.
     prompt_builder.generate_second_pass_prompt()
 
-
     generated_manifests_dir = os.path.join(
-        os.getenv("TARGET_PATH", "target/manifests"),
-        os.getenv("LLM_MANIFESTS_PATH", "llm")
+        os.getenv("TARGET_PATH", "target"),
+        os.getenv("MANIFESTS_PATH", "manifests"),
+        os.getenv("LLM_MANIFESTS_PATH", "llm"),
+        "first_pass",
     )
 
-    for dir, _, files in os.walk(generated_manifests_dir):
+    for root, dirs, files in os.walk(generated_manifests_dir):
         for file in files:
             if file.endswith(".yaml") or file.endswith(".yml"):
-                file_path = os.path.join(dir, file)
+                file_path = os.path.join(root, file)
                 with open(file_path, "r") as f:
                     attached_file = AttachedFile(
                         name=file,
                         type="yaml",
                         size=os.path.getsize(file_path),
-                        content=f.read()
+                        content=f.read(),
                     )
                     prompt_builder.attach_file(attached_file)
                     logging.info(f"Attached file: {file_path}")
                     # Attach the file to the prompt
-    
+
     prompt_builder.include_attached_files()
     # Generate the response
     response = inference_engine.generate(prompt_builder.get_prompt())
@@ -174,13 +178,13 @@ if __name__ == "__main__":
     processed_response = inference_engine.process_response(response)
 
     for manifest in processed_response:
-        logging.info(f"Generated manifest: {child.name}")
-        
+        logging.info(f"Generated manifest: {manifest['name']}")
+
         target_dir = os.path.join(
-            os.getenv("TARGET_PATH", "target/manifests"),
+            os.getenv("TARGET_PATH", "target"),
+            os.getenv("MANIFESTS_PATH", "manifests"),
             os.getenv("LLM_MANIFESTS_PATH", "llm"),
             "second_pass",
-            child.name
         )
 
         os.makedirs(target_dir, exist_ok=True)
@@ -188,4 +192,4 @@ if __name__ == "__main__":
         manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
         with open(manifest_path, "w") as f:
             f.write(manifest["manifest"])
-        logging.info(f"Saved manifest to {target_dir}/{child.name}.yaml")
+        logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")

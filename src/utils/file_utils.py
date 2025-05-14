@@ -95,7 +95,7 @@ def setup_sentence_transformer(force_cpu: bool = False) -> Any:
     return model
 
 
-def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any]:
+def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any, str]:
     """Setup and return a AutoModelForCausalLM model and tokenizer."""
 
     device = setup_cuda(force_cpu)
@@ -141,17 +141,17 @@ def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any]:
         if not os.path.exists(model_path):
             model.save_pretrained(model_path)
 
-        return model, tokenizer
+        return model, tokenizer, device
     except Exception as e:
         logger.error(f"Failed to load model {model_name}: {e}")
 
-        # Fallback to an even smaller model in dev mode
+        # Run the model in cpu instead of gpu
         if is_dev_mode:
-            fallback_model = "facebook/opt-125m"
-            logger.info(f"Falling back to tiny model: {fallback_model}")
+            logger.info(f"Falling back to cpu device")
             return (
-                AutoModelForCausalLM.from_pretrained(fallback_model, device_map="cpu"),
-                AutoTokenizer.from_pretrained(fallback_model),
+                AutoModelForCausalLM.from_pretrained(model_name, device_map="cpu"),
+                AutoTokenizer.from_pretrained(model_name, device_map="cpu"),
+                "cpu",
             )
         else:
             # In production, we want to fail rather than use an inadequate model

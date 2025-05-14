@@ -7,7 +7,7 @@ import logging
 class InferenceEngine:
     """Engine for LLM text generation using local models."""
 
-    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer) -> None:
+    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, device: str="cpu") -> None:
         """Initialize the language model and tokenizer.
 
         Args:
@@ -16,7 +16,7 @@ class InferenceEngine:
         self.logger = logging.getLogger(__name__)
         self._model = model
         self._tokenizer = tokenizer
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
 
     @property
     def model(self) -> AutoModelForCausalLM:
