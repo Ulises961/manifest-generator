@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import yaml
 from embeddings.embeddings_engine import EmbeddingsEngine
-from manifest_builder import ManifestBuilder
+from manifests_generation.manifest_builder import ManifestBuilder
 from utils.file_utils import load_environment
 
 

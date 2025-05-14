@@ -6,31 +6,41 @@ from utils.file_utils import load_file, remove_none_values
 from caseutil import to_snake
 import yaml
 
+class HelmTemplateValue(str):
+    pass
 
-class ManifestBuilder:
+class ChartBuilder:
     """Manifest builder for microservices."""
 
     def __init__(self) -> None:
         """Initialize the tree builder with the manifest templates."""
+        self.logger = logging.getLogger(__name__)
         self._config_map_template = self._get_config_map_template()
         self.deployment_template = self._get_deployment_template()
         self._service_template = self._get_service_template()
         self._stateful_set_template = self._get_stateful_set_template()
         self._pvc_template = self._get_pvc_template()
 
-        self.target_path = os.getenv("TARGET_PATH", "target/manifests")
-        self.manifests_path = os.path.join(
-            self.target_path, os.getenv("MANUAL_MANIFESTS_PATH", "manual")
+        self.target_path = os.getenv("TARGET_PATH", "target")
+        self.charts_path = os.path.join(
+            self.target_path, os.getenv("HELM_CHARTS_PATH", "helm_charts")
         )
+        
+        self.helm_templates_path = os.path.join(
+            self.charts_path, os.getenv("HELM_TEMPLATES_PATH", "templates")
+        )
+
         self.values_file_path = os.path.join(
-            self.target_path, os.getenv("VALUES_FILE_PATH", "values.yaml")
+            self.charts_path,
+            os.getenv("VALUES_FILE_PATH", "values.yaml"),
         )
 
         os.makedirs(os.path.dirname(self.target_path), exist_ok=True)
-        os.makedirs(os.path.dirname(self.manifests_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.charts_path), exist_ok=True)
         os.makedirs(os.path.dirname(self.values_file_path), exist_ok=True)
-
-        self.logger = logging.getLogger(__name__)
+        
+        # Ensure the chart structure is set up
+        self.setup_chart_structure()
 
     def get_template(self, template_name: str) -> Dict[str, Any]:
         """Get the template by name."""
@@ -55,6 +65,7 @@ class ManifestBuilder:
         return self._load_template(
             os.path.join(
                 os.path.dirname(__file__),
+                "..",
                 os.getenv(
                     "CONFIG_MAP_TEMPLATE_PATH", "resources/k8s_templates/configmap.json"
                 ),
@@ -66,6 +77,7 @@ class ManifestBuilder:
         return self._load_template(
             os.path.join(
                 os.path.dirname(__file__),
+                "..",
                 os.getenv(
                     "DEPLOYMENT_TEMPLATE_PATH",
                     "resources/k8s_templates/deployment.json",
@@ -78,6 +90,7 @@ class ManifestBuilder:
         return self._load_template(
             os.path.join(
                 os.path.dirname(__file__),
+                "..",
                 os.getenv(
                     "SERVICES_TEMPLATE_PATH", "resources/k8s_templates/services.json"
                 ),
@@ -89,6 +102,7 @@ class ManifestBuilder:
         return self._load_template(
             os.path.join(
                 os.path.dirname(__file__),
+                "..",
                 os.getenv(
                     "STATEFULSET_TEMPLATE_PATH",
                     "resources/k8s_templates/statefulset.json",
@@ -101,9 +115,38 @@ class ManifestBuilder:
         return self._load_template(
             os.path.join(
                 os.path.dirname(__file__),
+                "..",
                 os.getenv("PVC_TEMPLATE_PATH", "resources/k8s_templates/pvc.json"),
             )
         )
+
+    def setup_chart_structure(self) -> None:
+        """Set up the chart structure for Helm."""
+        # Create directories
+        chart_templates_dir = os.path.join(self.charts_path, "templates")
+        os.makedirs(chart_templates_dir, exist_ok=True)
+        
+        # Create the Chart.yaml file
+        chart_yaml_path = os.path.join(self.charts_path, "Chart.yaml")
+
+        if not os.path.exists(chart_yaml_path):
+            chart_yaml = {
+                "apiVersion": "v2",
+                "name": os.getenv("CHART_NAME", "microservices"),
+                "version": os.getenv("CHART_VERSION", "0.1.0"),
+                "description": os.getenv(
+                    "CHART_DESCRIPTION", "A Helm chart for microservices"
+                ),
+                "type": os.getenv("CHART_TYPE", "application")
+            }
+            self._save_yaml(chart_yaml, chart_yaml_path)
+        
+        # Create the values.yaml file if it doesn't exist
+        if not os.path.exists(self.values_file_path):
+            with open(self.values_file_path, "w") as file:
+                file.write("")
+
+        self.logger.info(f"Chart structure set up at {self.charts_path}")
 
     def generate_manifests(self, microservice: Dict[str, Any]) -> None:
         """Generate manifests for the microservice and its dependencies."""
@@ -137,8 +180,8 @@ class ManifestBuilder:
 
         # Prepare the secret entry
         secret_entry = {
-                "name": secret_name,
-                "password": secret["value"],
+            "name": secret_name,
+            "password": secret["value"],
         }
 
         # Remove all None values from the secret entry
@@ -156,33 +199,48 @@ class ManifestBuilder:
 
             # Update or add the secret entry
             existing_data.setdefault("secrets", {})
-            existing_data["secrets"].update({secret_name:secret_entry})
+            existing_data["secrets"].update({secret_name: secret_entry})
 
             # Write the updated content back to the values.yaml file
             self._save_yaml(existing_data, self.values_file_path)
 
-        # Prepare the Kubernetes Secret template
-        template = self.get_template("config_map")
-        template["kind"] = "Secret"
-        template["metadata"]["name"] = "{{ .Values.secrets." + secret_name + ".name }}"
-        template["type"] = "Opaque"
-        template["data"] = {
-            secret["name"]: "{{ .Values.secrets." + secret_name + ".password }}"
-        }
-
-        # Remove all None values from the template
-        template = remove_none_values(template)
-
         secrets_path = os.path.join(
-            self.manifests_path,
-            "secrets",
+            self.helm_templates_path,
+            "secrets.yaml",
         )
 
-        os.makedirs(secrets_path, exist_ok=True)
-        
-        self._save_yaml(
-            template, os.path.join(secrets_path, f"{secret_name}-secret.yaml")
-        )
+        if not os.path.exists(self.charts_path):
+            os.makedirs(self.charts_path, exist_ok=True)
+            # Prepare the Kubernetes Secret template
+            template = self.get_template("config_map")
+            template["kind"] = "Secret"
+            template["metadata"]["name"] = "secrets"
+            template["metadata"]["labels"] = {"environment": "production"}
+            template["type"] = "Opaque"
+            template["data"] = {
+                secret["name"]: self.helm_value(".Values.secrets." + secret_name + ".password") # "{{ .Values.secrets." + secret_name + ".password }}"
+            }
+
+            # Remove all None values from the template
+            template = remove_none_values(template)
+
+            self._save_yaml(template, secrets_path)
+
+            self.logger.info(f"Secret created: {secrets_path}")
+        else:
+            # Load existing secrets content
+            with open(secrets_path, "r") as file:
+                existing_data = yaml.safe_load(file) or {}
+
+            # Update or add the secret entry
+            existing_data.setdefault("data", {})
+            existing_data["data"].update(
+                {secret["name"]:  self.helm_value(".Values.secrets." + secret_name + ".password")}#"{{ .Values.secrets." + secret_name + ".password }}"}
+            )
+
+            # Write the updated content back to the secrets file
+            self._save_yaml(existing_data, secrets_path)
+            self.logger.info(f"Secret updated: {secrets_path}")
 
     def build_config_map_yaml(self, config_map: dict) -> None:
         """Build a YAML file from the template and data."""
@@ -216,37 +274,56 @@ class ManifestBuilder:
         # Remove all None values from the config map entry
         config_map_entry = remove_none_values(config_map_entry)
 
-        config_values = f".Values.config.{config_map_name}"
-        # Prepare the Kubernetes ConfigMap template
-        template = self.get_template("config_map")
-        template["kind"] = "ConfigMap"
-        template["metadata"]["name"] = f"{config_map_name}"
-        template["data"] = {
-            config_map['name']: "{{ "+ config_values + ".value }}"}
         # Convert the template to YAML string
         config_map_path = os.path.join(
-            self.manifests_path,
-            "config_maps",
+            self.helm_templates_path,
+            "config_map.yaml",
         )
 
-        self._save_yaml(
-            template,
-            os.path.join(config_map_path, f"{config_map_name}-config_map.yaml"),
-        )
+        config_values = f".Values.config.{config_map_name}"
+
+        if not os.path.exists(config_map_path):
+            os.makedirs(self.charts_path, exist_ok=True)
+            # Prepare the Kubernetes ConfigMap template
+            template = self.get_template("config_map")
+            template["kind"] = "ConfigMap"
+            template["metadata"]["name"] = f"config"
+            template["metadata"]["labels"] = {"environment": "production"}
+            template["data"] = {config_map["name"]: self.helm_value(config_values + ".value")} # "{{ " + config_values + ".value }}"}
+
+            self._save_yaml(
+                template,
+                config_map_path,
+            )
+
+        else:
+            # Load existing config map content
+            with open(config_map_path, "r") as file:
+                existing_data = yaml.safe_load(file) or {}
+
+            # Update or add the config map entry
+            existing_data.setdefault("data", {})
+            existing_data["data"].update(
+                {config_map["name"]: self.helm_value(config_values + ".value")} #"{{ " + config_values + ".value }}"}
+            )
+
+            # Write the updated content back to the config map file
+            self._save_yaml(existing_data, config_map_path)
+            self.logger.info(f"Config map updated: {config_map_path}")
 
     def build_deployment_yaml(self, deployment: dict) -> None:
         """Build a YAML file from the template and data."""
 
         service_name = to_snake(deployment["name"])
 
-        deployment_entry: Dict[str,Any] = {
+        deployment_entry: Dict[str, Any] = {
             "name": deployment["name"],
             "labels": deployment["labels"],
             "command": deployment["command"],
             "args": deployment.get("args"),
             "volumes": deployment.get("volumes"),
             "volume_mounts": deployment.get("volume_mounts"),
-            "ports": {"containerPort":port for port in deployment.get("ports", [])},
+            "ports": {"containerPort": port for port in deployment.get("ports", [])},
             "workdir": deployment.get("workdir"),
             "liveness_probe": deployment.get("liveness_probe"),
             "user": deployment.get("user"),
@@ -274,62 +351,63 @@ class ManifestBuilder:
         # Prepare the Kubernetes Deployment template
         deployment_values = f".Values.deployment.{service_name}"
         template = self.get_template("deployment")
-        template["metadata"]["name"] = "{{ " + deployment_values + ".name }}"
-        template["metadata"]["labels"] = "{{ " + deployment_values + ".labels }}"
+        template["metadata"]["name"] = self.helm_value(deployment_values + ".name") #"{{ " + deployment_values + ".name }}"
+        template["metadata"]["labels"] = self.indent_value(f"{deployment_values}.labels", 4)
 
         if "annotations" in deployment:
-            template["metadata"]["annotations"] = (
-                "{{ " + deployment_values + ".annotations }}"
+            template["metadata"]["annotations"] = self.indent_value(
+                f"{deployment_values}.annotations", 4
             )
 
-        template["spec"]["selector"]["matchLabels"] = (
-            "{{ " + deployment_values + ".labels }}"
+        template["spec"]["selector"]["matchLabels"] = self.indent_value(
+            f"{deployment_values}.labels", 6
         )
 
-        template["spec"]["template"]["metadata"]["labels"] = (
-            "{{ " + deployment_values + ".labels }}"
+        template["spec"]["template"]["metadata"]["labels"] = self.indent_value(
+            f"{deployment_values}.labels", 8
         )
-        
+
         template["spec"]["template"]["spec"]["containers"][0]["name"] = (
-            "{{ " + deployment_values + ".name }}"
+            self.helm_value(deployment_values + ".name") #"{{ " + deployment_values + ".name }}"
         )
 
-        template["spec"]["template"]["spec"]["containers"][0]["command"] = (
-            "{{ " + deployment_values + ".command }}"
+        template["spec"]["template"]["spec"]["containers"][0]["command"] = self.indent_value(
+            f"{deployment_values}.command", 10
         )
 
         if "args" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["args"] = (
-                "{{ " + deployment_values + ".args }}"
+            template["spec"]["template"]["spec"]["containers"][0]["args"] = self.indent_value(
+                f"{deployment_values}.args", 10
             )
 
         if "user" in deployment:
             template["spec"]["template"]["spec"]["containers"][0]["securityContext"] = {
-                "runAsUser": "{{ " + deployment_values + ".user }}"
+                "runAsUser": self.helm_value(deployment_values + ".user") #"{{ " + deployment_values + ".user }}"
             }
 
         # Load volumes and their mounts
         if "volumes" in deployment:
             template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = (
-                "{{ " + deployment_values + ".volume_mounts }}"
+                self.helm_value(deployment_values + ".volume_mounts") #"{{ " + deployment_values + ".volume_mounts }}"
             )
-            template["spec"]["template"]["spec"]["volumes"] = (
-                "{{ " + deployment_values + ".volumes }}"
+            template["spec"]["template"]["spec"]["volumes"] = self.indent_value(
+                f"{deployment_values}.volumes", 8
             )
 
         if "ports" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["ports"] = (
-                "{{ " + deployment_values + ".ports }}"
+            template["spec"]["template"]["spec"]["containers"][0]["ports"] = self.indent_value(
+                f"{deployment_values}.ports", 10
             )
+
 
         if "workdir" in deployment:
             template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
-                "{{ " + deployment_values + ".workdir }}"
+               self.helm_value(deployment_values + ".workdir") # "{{ " + deployment_values + ".workdir }}"
             )
 
         if "liveness_probe" in deployment:
             template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = (
-                "{{ " + deployment_values + ".liveness_probe }}"
+               self.helm_value(deployment_values + ".liveness_probe") #"{{ " + deployment_values + ".liveness_probe }}"
             )
 
         if "env" in deployment:
@@ -367,7 +445,7 @@ class ManifestBuilder:
 
         # Convert the template to YAML string
         deployment_path = os.path.join(
-            self.manifests_path,
+            self.helm_templates_path,
             "deployments",
         )
 
@@ -420,56 +498,61 @@ class ManifestBuilder:
         # Prepare the Kubernetes StatefulSet template
         stateful_set_values = f".Values.stateful-set.{stateful_set_name}"
         template = self.get_template("statefullset")
-        template["metadata"]["name"] = "{{ " + stateful_set_values + ".name }}"
-        template["metadata"]["labels"] = "{{ " + stateful_set_values + ".labels }}"
-        template["spec"]["selector"]["matchLabels"] = (
-            "{{ " + stateful_set_values + ".labels }}"
+        template["metadata"]["name"] = self.helm_value(stateful_set_values + ".name") #"{{ " + stateful_set_values + ".name }}"
+        template["metadata"]["labels"] = self.indent_value(
+            f"{stateful_set_values}.labels", 4
         )
 
-        template["spec"]["template"]["metadata"]["labels"] = (
-            "{{ " + stateful_set_values + ".labels }}"
+        if "annotations" in stateful_set:
+            template["metadata"]["annotations"] = self.indent_value(
+                f"{stateful_set_values}.annotations", 4
+            )
+        
+        template["spec"]["selector"]["matchLabels"] = self.indent_value(
+            f"{stateful_set_values}.labels", 6
+        )
+
+        template["spec"]["template"]["metadata"]["labels"] = self.indent_value(
+            f"{stateful_set_values}.labels", 8
         )
 
         template["spec"]["template"]["spec"]["containers"][0]["name"] = (
-            "{{ " + stateful_set_values + ".name }}"
+            self.helm_value(stateful_set_values + ".name") #"{{ " + stateful_set_values + ".name }}"
         )
 
-        template["spec"]["template"]["spec"]["containers"][0]["command"] = (
-            "{{ " + stateful_set_values + ".command }}"
+        template["spec"]["template"]["spec"]["containers"][0]["command"] = self.indent_value(
+            f"{stateful_set_values}.command", 10
         )
 
         if "args" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["args"] = (
-                "{{ " + stateful_set_values + ".args }}"
+            template["spec"]["template"]["spec"]["containers"][0]["args"] = self.indent_value(
+                f"{stateful_set_values}.args", 10
             )
 
         if "user" in stateful_set:
             template["spec"]["template"]["spec"]["containers"][0]["securityContext"] = {
-                "runAsUser": "{{ " + stateful_set_values + ".user }}"
+                "runAsUser": self.helm_value(stateful_set_values + ".user")# {{ " + stateful_set_values + ".user }}"
             }
 
-        template["spec"]["template"]["spec"]["containers"][0]["env"] = (
-            "{{ " + stateful_set_values + ".env }}"
-        )
-
         if "volumes" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = (
-                "{{ " + stateful_set_values + ".volume_mounts }}"
+            template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = self.indent_value(
+                f"{stateful_set_values}.volume_mounts", 10
             )
 
-            template["spec"]["template"]["spec"]["volumes"] = (
-                "{{ " + stateful_set_values + ".volumes }}"
+            template["spec"]["template"]["spec"]["volumes"] = self.indent_value(
+                f"{stateful_set_values}.volumes", 8
             )
 
         if "ports" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["ports"] = (
-                "{{ " + stateful_set_values + ".ports }}"
+            template["spec"]["template"]["spec"]["containers"][0]["ports"] = self.indent_value(
+                f"{stateful_set_values}.ports", 10
             )
 
         if "workdir" in stateful_set:
             template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
-                "{{ " + stateful_set_values + ".workdir }}"
+               self.helm_value(stateful_set_values + ".workdir") # "{{ " + stateful_set_values + ".workdir }}"
             )
+
         if "liveness_probe" in stateful_set:
             template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = (
                 "{{ " + stateful_set_values + ".liveness_probe }}"
@@ -501,16 +584,13 @@ class ManifestBuilder:
                             },
                         }
                     )
-                
 
             template["spec"]["template"]["spec"]["containers"][0]["env"] = env_vars
         # Remove all None values from the template
         template = remove_none_values(template)
         # Convert the template to YAML string
         stateful_set_path = os.path.join(
-            os.path.dirname(__file__),
-            self.target_path,
-            self.manifests_path,
+            self.helm_templates_path,
             "stateful_sets",
         )
 
@@ -563,17 +643,26 @@ class ManifestBuilder:
         # Prepare the Kubernetes Service template
         service_values = f".Values.service.{service_name}"
         template = self.get_template("service")
-        template["metadata"]["name"] = "{{ " + service_values + ".name }}"
-        template["metadata"]["labels"] = "{{ " + service_values + ".labels }}"
-        template["spec"]["selector"] = "{{ " + service_values + ".labels }}"
-        template["spec"]["ports"] = "{{ " + service_values + ".ports }}"
-        template["spec"]["type"] = "{{ " + service_values + ".type }}"
+        template["metadata"]["name"] = self.helm_value(service_values + ".name") #"{{ " + service_values + ".name }}"
+        template["metadata"]["labels"] = self.indent_value(
+            f"{service_values}.labels", 4
+        )
+        
+        template["spec"]["selector"] = self.indent_value(
+            f"{service_values}.labels", 4
+        )
+
+        template["spec"]["ports"] = self.indent_value(
+            f"{service_values}.ports", 4
+        )
+
+        template["spec"]["type"] = self.helm_value(service_values + ".type") #"{{ " + service_values + ".type }}"
         # Remove all None values from the template
         template = remove_none_values(template)
 
         # Convert the template to YAML string
         service_path = os.path.join(
-            self.manifests_path,
+            self.helm_templates_path,
             "services",
         )
 
@@ -616,12 +705,15 @@ class ManifestBuilder:
         # Prepare the Kubernetes PVC template
         pvc_values = f".Values.pvc.{pvc_name}"
         template = self.get_template("pvc")
-        template["metadata"]["name"] = "{{ " + pvc_values + ".name }}"
-        template["metadata"]["labels"] = "{{ " + pvc_values + ".labels }}"
-        template["spec"]["storageClassName"] = "{{ " + pvc_values + ".storage_class }}"
-        template["spec"]["accessModes"] = "{{ " + pvc_values + ".access_modes }}"
+        template["metadata"]["name"] =  self.helm_value(pvc_values + ".name") #"{{ " + pvc_values + ".name }}"
+        template["metadata"]["labels"] = self.indent_value(
+            f"{pvc_values}.labels", 4
+        )
+
+        template["spec"]["storageClassName"] = self.helm_value(pvc_values + ".storage_class") #"{{ " + pvc_values + ".storage_class }}"
+        template["spec"]["accessModes"] = self.helm_value(pvc_values + ".access_modes") #"{{ " + pvc_values + ".access_modes }}"
         template["spec"]["resources"]["requests"]["storage"] = (
-            "{{ " + pvc_values + ".resources }}"
+           self.helm_value(pvc_values + ".resources") # "{{ " + pvc_values + ".resources }}"
         )
 
         # Remove all None values from the template
@@ -629,7 +721,7 @@ class ManifestBuilder:
 
         # Convert the template to YAML string
         pvc_path = os.path.join(
-            self.manifests_path,
+            self.charts_path,
             "pvcs",
         )
 
@@ -746,15 +838,36 @@ class ManifestBuilder:
         port_names = {80: "http", 443: "https"}
         return port_names.get(port, f"port-{port}")
 
+    def indent_value(self, value: str, indent: int) -> str:        
+        """Indent a value with spaces."""
+        return "{{- toYaml " + value + " | nindent " + str(indent) + " }}"
+    
+    def helm_value(self, value_path: str) -> str:
+        """
+        Creates a simple Helm value placeholder string, wrapped in HelmTemplateValue
+        to prevent quoting by PyYAML.
+        Example: {{ .Values.some.path }}
+        """
+        return "{{ " + value_path + " }}"
+    
+    
     def _save_yaml(self, template: dict, path: str) -> None:
         """Save the template as a YAML file."""
 
-        # Create a custom dumper that ignores aliases
-        class NoAliasDumper(yaml.SafeDumper):
+            # Create a custom dumper that handles Helm templates correctly
+        class HelmTemplateDumper(yaml.SafeDumper):
             def ignore_aliases(self, _):
                 return True
+        
+        # # Add a custom representer for strings that look like Helm templates
+        # def helm_template_representer(dumper, data:HelmTemplateValue):
+        #     return dumper.represent_scalar('tag:yaml.org,2002:str', str(data), style=None)
+        
+        # # Register the custom representer
+        # HelmTemplateDumper.add_representer(HelmTemplateValue, helm_template_representer)
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
+
         with open(path, "w") as file:
-            yaml.dump(template, file, Dumper=NoAliasDumper, sort_keys=False)
+            yaml.dump(template, file, Dumper=HelmTemplateDumper, sort_keys=False, default_flow_style=False)
         print(f"YAML file saved to {path}")
