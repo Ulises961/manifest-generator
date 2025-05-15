@@ -47,8 +47,8 @@ class PromptBuilder:
         # Strong role assignment and formatting constraint for small models
         self.prompt = (
             "You are a strict Kubernetes YAML generator.\n"
-            "You only output valid raw Kubernetes YAML manifests.\n"
-            "Do not explain, do not reason, do not output markdown or comments.\n\n"
+            "You only output valid raw Kubernetes YAML manifests starting off from a set of microservices described next.\n"
+            "The set of microservices are interrelated and compose an application. Your task is to generate the manifests in YAML format.\n"
         )
 
         self.prompt += "Here is the schema for all microservices in this system:\n\n"
@@ -62,6 +62,9 @@ class PromptBuilder:
         self.prompt += (
             "Use the above to understand context and infer common configurations "
             "or interdependencies between services, but do not explain them.\n"
+            "You are not allowed to output any explanations, reasoning, or comments.\n"
+            "You are not allowed to output any markdown or comments.\n"
+            "You are not allowed to output any other text than valid raw Kubernetes YAML.\n"
         )
 
         return self.prompt
@@ -91,7 +94,7 @@ class PromptBuilder:
         prompt += "- Separate each manifest with '---' if multiple objects are required.\n"
         prompt += "- The result must be directly usable with `kubectl apply -f` or in CI/CD pipelines.\n"
         prompt += " **Immediately output only valid Kubernetes YAML for the service below.**\n"
-        prompt += "**Begin directly with `apiVersion:`. No other output is allowed.**\n"
+        prompt += "**No other output is allowed. Do not explain, do not reason, do not output markdown or comments.**\n"
 
 
         self.logger.info(
