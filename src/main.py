@@ -101,8 +101,8 @@ if __name__ == "__main__":
     prompt_builder = PromptBuilder(enriched_services)
 
     inference_config = {
-        "max_new_tokens": 512,  # Limit output length to avoid rambling
-        "temperature": 0.2,  # Lower temperature = more deterministic
+        "max_new_tokens": 1024,  # Limit output length to avoid rambling
+        "temperature": 0.01,  # Lower temperature = more deterministic
         "top_p": 0.85,  # Reduce sampling pool
         "do_sample": True,  # Keep on for diversity, but limit randomness
         "repetition_penalty": 1.1,  # Avoid loops

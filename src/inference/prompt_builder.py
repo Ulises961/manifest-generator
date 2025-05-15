@@ -90,11 +90,12 @@ class PromptBuilder:
         prompt += "- Output ONLY valid raw Kubernetes YAML — no explanations, no markdown, no comments.\n"
         prompt += "- Separate each manifest with '---' if multiple objects are required.\n"
         prompt += "- The result must be directly usable with `kubectl apply -f` or in CI/CD pipelines.\n"
+        prompt += " **Immediately output only valid Kubernetes YAML for the service below.**\n"
+        prompt += "**Begin directly with `apiVersion:`. No other output is allowed.**\n"
 
-        prompt += "\nBegin YAML output now:\n"
 
         self.logger.info(
-            f"Prompt generated for the {microservice['name']} microservice:\n {prompt}"
+            f"Prompt generated for the {microservice['name']} microservice:\n{prompt}"
         )
         return prompt
 

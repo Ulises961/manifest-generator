@@ -45,6 +45,8 @@ class InferenceEngine:
             "temperature": 0.7,
             "top_p": 0.9,
             "do_sample": True,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "pad_token_id": self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
         }
 
         config = {**default_config, **(generation_config or {})}
