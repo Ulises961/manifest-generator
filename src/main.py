@@ -139,9 +139,6 @@ if __name__ == "__main__":
 
             logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
 
-            # Clear prompt to reduce prompt size. Whole microservices tree is shown once.
-            prompt_builder.clear_prompt()
-
     ### Phase 4: Refine the generated manifests ###
 
     # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones
