@@ -48,14 +48,15 @@ class PromptBuilder:
         self.prompt = (
             "You are a strict Kubernetes YAML generator.\n"
             "You only output valid raw Kubernetes YAML manifests starting off from a set of microservices described next.\n"
-            "The set of microservices are interrelated and compose an application. Your task is to generate the manifests in YAML format.\n"
+            "The set of microservices are interrelated and compose an application. Your task is to generate the manifests in YAML format one microservice at the time.\n"
         )
 
         self.prompt += "Here is the schema for all microservices in this system:\n\n"
         for service in services:
+            print(f"Microservice: {service}")
             self.prompt += f"Microservice: {service['name']}\n"
             for key, value in service.items():
-                if key != "attached_files":
+                if key != "attached_files" and key != "manifests":
                     self.prompt += f"  {key}: {value}\n"
             self.prompt += "\n"
 
@@ -75,23 +76,23 @@ class PromptBuilder:
 
         prompt += f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
 
-        prompt += "Microservice details:\n"
+        # prompt += "Microservice details:\n"
         
-        for key, value in microservice.items():
-            if key != "attached_files":
-                prompt += f"  {key}: {value}\n"
-        prompt += "For reference, here is also a yaml schema of the microservice:\n"
+        # for key, value in microservice.items():
+        #     if key != "attached_files":
+        #         prompt += f"  {key}: {value}\n"
 
-        for service, paths in microservice["templates"].items():
-            for path in paths:
-                with open(path, "r") as file:
-                    content = file.read()
-                    prompt += f"{service}:\n{content}\n"
+        prompt += "\nFor reference, here are also the microservice's yaml drafts:\n"
+
+        for service, path in microservice["manifests"].items():
+            with open(path, "r") as file:
+                content = file.read()
+                prompt += f"{content}\n"
 
         prompt += "Guidelines:\n"
         prompt += "- Use production-ready Kubernetes best practices.\n"
-        prompt += "- Include at minimum a Deployment or StatefulSet and a Service.\n"
-        prompt += "- If needed, add ConfigMap, Secret, or PVC.\n"
+        prompt += "- Include at minimum a Deployment or StatefulSet.\n"
+        prompt += "- If needed, add Service, ConfigMap, Secret, or PVC.\n"
         prompt += "- Use labels like `app`, `tier`, `role`, and `environment`.\n"
         prompt += "- Use TODO placeholders for values that cannot be confidently inferred.\n"
         prompt += "- Output ONLY valid raw Kubernetes YAML — no explanations, no markdown, no comments.\n"

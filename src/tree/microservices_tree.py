@@ -27,6 +27,7 @@ class MicroservicesTree:
         service_classifier: ServiceClassifier,
         label_classifier: LabelClassifier,
     ):
+        self.logger = logging.getLogger(__name__)
         self.root_path = root_path
         self.embeddings_engine: EmbeddingsEngine = embeddings_engine
         self.secret_classifier = secret_classifier
@@ -50,8 +51,8 @@ class MicroservicesTree:
             "bash": [".sh"],
             "env": [".env"],
         }
+        self.is_dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
 
-        self.logger = logging.getLogger(__name__)
 
     def build(self) -> Node:
         root_node = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
@@ -279,7 +280,7 @@ class MicroservicesTree:
             microservice.setdefault("workdir", None)
             microservice["workdir"] = workdirs[0].value
 
-        if node.attached_files is not None:
+        if node.attached_files is not None and not self.is_dev_mode:
             # Attach files to the microservice node
             for file_name, file in node.attached_files.items():
                 microservice.setdefault("attached_files", {})

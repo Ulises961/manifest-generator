@@ -110,30 +110,47 @@ class ManifestBuilder:
 
     def generate_manifests(self, microservice: Dict[str, Any]) -> None:
         """Generate manifests for the microservice and its dependencies."""
+
+        microservice.setdefault("manifests",{})
+
         if microservice.get("workload", None):
             if microservice["workload"] == "StatefulSet":
-                self.build_stateful_set_yaml(microservice)
+                saved = self.build_stateful_set_yaml(microservice)
+                microservice["manifests"].update(
+                    {"stateful_set": saved}
+                )
+
             elif microservice["workload"] == "Deployment":
-                self.build_deployment_yaml(microservice)
+                saved = self.build_deployment_yaml(microservice)
+                microservice["manifests"].update(
+                    {"deployment": saved}
+                )
         else:
-            self.build_deployment_yaml(microservice)
+            saved = self.build_deployment_yaml(microservice)
+            microservice["manifests"].update(
+               {"deployment": saved}
+            )
 
         if microservice.get("ports", None):
-            self.build_service_yaml(microservice)
+            saved = self.build_service_yaml(microservice)
+            microservice["manifests"].update({"service": saved})
 
         if microservice.get("persistent_volumes", None):
             for pvc in microservice["persistent_volumes"]:
-                self.build_pvc_yaml(pvc)
+                saved = self.build_pvc_yaml(pvc)
+                microservice["manifests"].update({"pvc": saved})
 
         if microservice.get("secrets", None):
             for secret in microservice["secrets"]:
-                self.build_secrets_yaml(secret)
+                saved = self.build_secrets_yaml(secret)
+                microservice["manifests"].update( {"secret": saved})
 
         if microservice.get("env", None):
             for env in microservice["env"]:
-                self.build_config_map_yaml(env)
+                saved = self.build_config_map_yaml(env)
+                microservice["manifests"].update({"config_map": saved})
 
-    def build_secrets_yaml(self, secret: dict) -> None:
+    def build_secrets_yaml(self, secret: dict) -> str:
         """Build a YAML file from the template and data."""
 
         secrets_path = os.path.join(
@@ -141,9 +158,8 @@ class ManifestBuilder:
             "secrets.yaml",
         )
 
-        secret.setdefault("templates", {secret["name"]: []})
-        secret["templates"][secret["name"]].append(secrets_path)
-        
+        secret.setdefault("manifests", {secret["name"]: {"secret": []}})
+        secret["manifests"][secret["name"]].update({"secret": secrets_path})
 
         if not os.path.exists(secrets_path):
             # Prepare the Kubernetes Secret template
@@ -169,13 +185,13 @@ class ManifestBuilder:
             existing_data.setdefault("data", {})
             existing_data["data"].update({secret["name"]: secret["value"]})
 
-
-
             # Write the updated content back to the secrets file
             self._save_yaml(existing_data, secrets_path)
             self.logger.info(f"Secret updated: {secrets_path}")
 
-    def build_config_map_yaml(self, config_map: dict) -> None:
+        return secrets_path
+
+    def build_config_map_yaml(self, config_map: dict) -> str:
         """Build a YAML file from the template and data."""
         # Convert the template to YAML string
         config_map_path = os.path.join(
@@ -208,12 +224,11 @@ class ManifestBuilder:
             # Write the updated content back to the config map file
             self._save_yaml(existing_data, config_map_path)
 
-            config_map.setdefault("templates", {config_map["name"]: []})
-            config_map["templates"][config_map["name"]].append(config_map_path)
-                        
             self.logger.info(f"Config map updated: {config_map_path}")
 
-    def build_deployment_yaml(self, deployment: dict) -> None:
+        return config_map_path
+
+    def build_deployment_yaml(self, deployment: dict) -> str:
         """Build a YAML file from the template and data."""
 
         deployment_entry: Dict[str, Any] = {
@@ -267,13 +282,19 @@ class ManifestBuilder:
             ]
 
         if "ports" in deployment_entry:
-            template["spec"]["template"]["spec"]["containers"][0]["ports"] = deployment_entry["ports"]
+            template["spec"]["template"]["spec"]["containers"][0]["ports"] = (
+                deployment_entry["ports"]
+            )
 
         if "workdir" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = deployment_entry["workdir"]
+            template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
+                deployment_entry["workdir"]
+            )
 
         if "liveness_probe" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = deployment_entry["liveness_probe"]
+            template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = (
+                deployment_entry["liveness_probe"]
+            )
 
         if "env" in deployment:
             env_vars = []
@@ -312,17 +333,14 @@ class ManifestBuilder:
         deployment_path = os.path.join(
             self.manual_manifests_path,
             "deployments",
-            f"{deployment['name']}-deployment.yaml"
+            f"{deployment['name']}-deployment.yaml",
         )
 
-        deployment.setdefault("templates", {deployment["name"]:[]})
-        deployment["templates"][deployment["name"]].append(deployment_path)        
-        self._save_yaml(
-            template,
-            deployment_path
-        )
+        self._save_yaml(template, deployment_path)
 
-    def build_stateful_set_yaml(self, stateful_set: dict) -> None:
+        return deployment_path
+
+    def build_stateful_set_yaml(self, stateful_set: dict) -> str:
         """Build a YAML file from the template and data."""
 
         # Prepare the stateful set entry
@@ -349,13 +367,21 @@ class ManifestBuilder:
             template["metadata"]["annotations"] = stateful_set["annotations"]
         template["spec"]["selector"]["matchLabels"] = stateful_set_entry["labels"]
 
-        template["spec"]["template"]["metadata"]["labels"] = stateful_set_entry["labels"]
+        template["spec"]["template"]["metadata"]["labels"] = stateful_set_entry[
+            "labels"
+        ]
 
-        template["spec"]["template"]["spec"]["containers"][0]["name"] = stateful_set_entry["name"]
-        template["spec"]["template"]["spec"]["containers"][0]["command"] = stateful_set_entry["command"]
+        template["spec"]["template"]["spec"]["containers"][0]["name"] = (
+            stateful_set_entry["name"]
+        )
+        template["spec"]["template"]["spec"]["containers"][0]["command"] = (
+            stateful_set_entry["command"]
+        )
 
         if "args" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["args"] = stateful_set_entry["args"]
+            template["spec"]["template"]["spec"]["containers"][0]["args"] = (
+                stateful_set_entry["args"]
+            )
 
         if "user" in stateful_set:
             template["spec"]["template"]["spec"]["containers"][0]["securityContext"] = {
@@ -363,24 +389,28 @@ class ManifestBuilder:
             }
 
         if "volumes" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = stateful_set_entry[
-                "volume_mounts"
-            ]
+            template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = (
+                stateful_set_entry["volume_mounts"]
+            )
 
             template["spec"]["template"]["spec"]["volumes"] = stateful_set_entry[
                 "volumes"
             ]
 
         if "ports" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["ports"] = stateful_set_entry[
-                "ports"
-            ]
+            template["spec"]["template"]["spec"]["containers"][0]["ports"] = (
+                stateful_set_entry["ports"]
+            )
 
         if "workdir" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = stateful_set_entry["workdir"]
+            template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
+                stateful_set_entry["workdir"]
+            )
 
         if "liveness_probe" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] =  stateful_set_entry["liveness_probe"]
+            template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = (
+                stateful_set_entry["liveness_probe"]
+            )
 
         if "env" in stateful_set:
             env_vars = []
@@ -417,18 +447,14 @@ class ManifestBuilder:
         stateful_set_path = os.path.join(
             self.manual_manifests_path,
             "stateful_sets",
-            f"{stateful_set['name']}-stateful_set.yaml"
+            f"{stateful_set['name']}-stateful_set.yaml",
         )
 
-        stateful_set.setdefault("templates", {stateful_set["name"]: []})
-        stateful_set["templates"][stateful_set["name"]].append(stateful_set_path)
+        self._save_yaml(template, stateful_set_path)
 
-        self._save_yaml(
-            template,
-            stateful_set_path
-        )
+        return stateful_set_path
 
-    def build_service_yaml(self, service: dict) -> None:
+    def build_service_yaml(self, service: dict) -> str:
         """Build a YAML file from the template and data."""
 
         port_mappings = self._get_port_mappings(service)
@@ -442,7 +468,6 @@ class ManifestBuilder:
         }
 
         service_entry = remove_none_values(service_entry)
-
 
         template = self.get_template("service")
         template["metadata"]["name"] = service_entry["name"]
@@ -458,20 +483,14 @@ class ManifestBuilder:
 
         # Convert the template to YAML string
         service_path = os.path.join(
-            self.manual_manifests_path,
-            "services",
-            f"{service['name']}-service.yaml"
+            self.manual_manifests_path, "services", f"{service['name']}-service.yaml"
         )
 
-        service.setdefault("templates", {service["name"]: []})
-        service["templates"][service["name"]].append(service_path)
+        self._save_yaml(template, service_path)
 
-        self._save_yaml(
-            template, 
-            service_path
-        )
+        return service_path
 
-    def build_pvc_yaml(self, pvc: dict) -> None:
+    def build_pvc_yaml(self, pvc: dict) -> str:
         """Build a YAML file from the template and data."""
         # Prepare the PVC entry
         pvc_entry = {
@@ -489,7 +508,7 @@ class ManifestBuilder:
         template["metadata"]["name"] = pvc_entry["name"]
         template["metadata"]["labels"] = pvc_entry["labels"]
 
-        template["spec"]["storageClassName"] =pvc_entry["storage_class"]
+        template["spec"]["storageClassName"] = pvc_entry["storage_class"]
         template["spec"]["accessModes"] = pvc_entry["access_modes"]
         template["spec"]["resources"]["requests"]["storage"] = pvc_entry["resources"]
         # Remove all None values from the template
@@ -497,14 +516,12 @@ class ManifestBuilder:
 
         # Convert the template to YAML string
         pvc_path = os.path.join(
-            self.manual_manifests_path,
-            "pvcs",
-            f"{pvc['name']}-pvc.yaml")
-
-        pvc.setdefault("templates", {pvc["name"]: []})
-        pvc["templates"][pvc["name"]].append(pvc_path)
+            self.manual_manifests_path, "pvcs", f"{pvc['name']}-pvc.yaml"
+        )
 
         self._save_yaml(template, pvc_path)
+
+        return pvc_path
 
     def _get_port_mappings(self, service_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate port mappings between service ports and container ports.
@@ -616,7 +633,6 @@ class ManifestBuilder:
         port_names = {80: "http", 443: "https"}
         return port_names.get(port, f"port-{port}")
 
-   
     def _save_yaml(self, template: dict, path: str) -> None:
         """Save the template as a YAML file."""
 
@@ -624,7 +640,6 @@ class ManifestBuilder:
         class NoAliasDumper(yaml.SafeDumper):
             def ignore_aliases(self, _):
                 return True
-
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
