@@ -141,6 +141,10 @@ class ManifestBuilder:
             "secrets.yaml",
         )
 
+        secret.setdefault("templates", {secret["name"]: []})
+        secret["templates"][secret["name"]].append(secrets_path)
+        
+
         if not os.path.exists(secrets_path):
             # Prepare the Kubernetes Secret template
             template = self.get_template("config_map")
@@ -164,6 +168,8 @@ class ManifestBuilder:
             # Update or add the secret entry
             existing_data.setdefault("data", {})
             existing_data["data"].update({secret["name"]: secret["value"]})
+
+
 
             # Write the updated content back to the secrets file
             self._save_yaml(existing_data, secrets_path)
@@ -201,12 +207,14 @@ class ManifestBuilder:
 
             # Write the updated content back to the config map file
             self._save_yaml(existing_data, config_map_path)
+
+            config_map.setdefault("templates", {config_map["name"]: []})
+            config_map["templates"][config_map["name"]].append(config_map_path)
+                        
             self.logger.info(f"Config map updated: {config_map_path}")
 
     def build_deployment_yaml(self, deployment: dict) -> None:
         """Build a YAML file from the template and data."""
-
-        service_name = to_snake(deployment["name"])
 
         deployment_entry: Dict[str, Any] = {
             "name": deployment["name"],
@@ -220,7 +228,7 @@ class ManifestBuilder:
             "liveness_probe": deployment.get("liveness_probe"),
             "user": deployment.get("user"),
         }
-        print(f"Deployment entry: {deployment_entry}")
+
         deployment_entry = remove_none_values(deployment_entry)
 
         template = self.get_template("deployment")
@@ -304,13 +312,14 @@ class ManifestBuilder:
         deployment_path = os.path.join(
             self.manual_manifests_path,
             "deployments",
+            f"{deployment['name']}-deployment.yaml"
         )
 
-        os.path.join(deployment_path, f"{deployment['name']}-deployment.yaml")
-
+        deployment.setdefault("templates", {deployment["name"]:[]})
+        deployment["templates"][deployment["name"]].append(deployment_path)        
         self._save_yaml(
             template,
-            os.path.join(deployment_path, f"{deployment['name']}-deployment.yaml"),
+            deployment_path
         )
 
     def build_stateful_set_yaml(self, stateful_set: dict) -> None:
@@ -408,15 +417,15 @@ class ManifestBuilder:
         stateful_set_path = os.path.join(
             self.manual_manifests_path,
             "stateful_sets",
+            f"{stateful_set['name']}-stateful_set.yaml"
         )
 
-        os.path.join(stateful_set_path, f"{stateful_set['name']}-stateful_set.yaml")
+        stateful_set.setdefault("templates", {stateful_set["name"]: []})
+        stateful_set["templates"][stateful_set["name"]].append(stateful_set_path)
 
         self._save_yaml(
             template,
-            os.path.join(
-                stateful_set_path, f"{stateful_set['name']}-stateful_set.yaml"
-            ),
+            stateful_set_path
         )
 
     def build_service_yaml(self, service: dict) -> None:
@@ -451,11 +460,15 @@ class ManifestBuilder:
         service_path = os.path.join(
             self.manual_manifests_path,
             "services",
+            f"{service['name']}-service.yaml"
         )
 
-        os.path.join(service_path, f"{service['name']}-service.yaml")
+        service.setdefault("templates", {service["name"]: []})
+        service["templates"][service["name"]].append(service_path)
+
         self._save_yaml(
-            template, os.path.join(service_path, f"{service['name']}-service.yaml")
+            template, 
+            service_path
         )
 
     def build_pvc_yaml(self, pvc: dict) -> None:
@@ -486,10 +499,12 @@ class ManifestBuilder:
         pvc_path = os.path.join(
             self.manual_manifests_path,
             "pvcs",
-        )
+            f"{pvc['name']}-pvc.yaml")
 
-        os.path.join(pvc_path, f"{pvc['name']}-pvc.yaml")
-        self._save_yaml(template, os.path.join(pvc_path, f"{pvc['name']}-pvc.yaml"))
+        pvc.setdefault("templates", {pvc["name"]: []})
+        pvc["templates"][pvc["name"]].append(pvc_path)
+
+        self._save_yaml(template, pvc_path)
 
     def _get_port_mappings(self, service_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate port mappings between service ports and container ports.

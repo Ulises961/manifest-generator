@@ -80,11 +80,15 @@ class PromptBuilder:
         for key, value in microservice.items():
             if key != "attached_files":
                 prompt += f"  {key}: {value}\n"
+        prompt += "For reference, here is also a yaml schema of the microservice:\n"
 
-        if self.is_prod_mode and microservice.get("attached_files"):
-            prompt += f"\nAttached files for additional context:\n  {microservice['attached_files']}\n"
+        for service, paths in microservice["templates"].items():
+            for path in paths:
+                with open(path, "r") as file:
+                    content = file.read()
+                    prompt += f"{service}:\n{content}\n"
 
-        prompt += "\nGuidelines:\n"
+        prompt += "Guidelines:\n"
         prompt += "- Use production-ready Kubernetes best practices.\n"
         prompt += "- Include at minimum a Deployment or StatefulSet and a Service.\n"
         prompt += "- If needed, add ConfigMap, Secret, or PVC.\n"

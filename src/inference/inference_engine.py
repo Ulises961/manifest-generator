@@ -52,7 +52,8 @@ class InferenceEngine:
         config = {**default_config, **(generation_config or {})}
 
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self.device)
-
+        self.logger.info(f"Input tokens: {len(inputs.input_ids[0])}")
+        
         with torch.no_grad():
             output = self._model.generate(**inputs, **config)
 
@@ -75,7 +76,7 @@ class InferenceEngine:
         manifests = [manifest.strip() for manifest in manifests if manifest.strip()]
         named_manifests: List[Dict[str, Any]] = []
         for manifest in manifests:
-            res = re.search(r"^kind:\s*(.*)$", manifest, re.MULTILINE)
+            res = re.search(r"^[kK]ind:\s*(.*)$", manifest, re.MULTILINE)
             if res:
                 name = res.group(1).strip()
             else:
