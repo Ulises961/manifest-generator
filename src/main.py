@@ -98,12 +98,12 @@ if __name__ == "__main__":
     inference_engine = InferenceEngine(inference_model, tokenizer, device)
 
     # Load the prompt builder
-    prompt_builder = PromptBuilder(enriched_services)
+    prompt_builder = PromptBuilder()
 
     inference_config = {
-        "max_new_tokens": 1024,  # Limit output length to avoid rambling
+        "max_new_tokens": 2048,  # Limit output length to avoid rambling
         "temperature": 0.01,  # Lower temperature = more deterministic
-        "top_p": 0.85,  # Reduce sampling pool
+        "top_p": 0.9,  # Reduce sampling pool
         "do_sample": True,  # Keep on for diversity, but limit randomness
         "repetition_penalty": 1.1,  # Avoid loops
         "no_repeat_ngram_size": 3,  # Prevent local repetition
@@ -131,15 +131,15 @@ if __name__ == "__main__":
 
             os.makedirs(target_dir, exist_ok=True)
 
-            # Save the response to a file
-            manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
+             # Save the response to a file
+             manifest_path = os.path.join(target_dir, f"{manifest['name']}.json")
 
-            with open(manifest_path, "w") as f:
-                f.write(manifest["manifest"])
+             with open(manifest_path, "w") as f:
+                 f.write(manifest["manifest"])
 
-            logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
+             logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.json")
 
-    ### Phase 4: Refine the generated manifests ###
+    # ### Phase 4: Refine the generated manifests ###
 
     # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones
 
@@ -155,12 +155,12 @@ if __name__ == "__main__":
 
     for root, dirs, files in os.walk(generated_manifests_dir):
         for file in files:
-            if file.endswith(".yaml") or file.endswith(".yml"):
+            if file.endswith(".json"):
                 file_path = os.path.join(root, file)
                 with open(file_path, "r") as f:
                     attached_file = AttachedFile(
                         name=file,
-                        type="yaml",
+                        type="json",
                         size=os.path.getsize(file_path),
                         content=f.read(),
                     )
@@ -170,7 +170,7 @@ if __name__ == "__main__":
 
     prompt_builder.include_attached_files()
     # Generate the response
-    response = inference_engine.generate(prompt_builder.get_prompt())
+    response = inference_engine.generate(prompt_builder.get_prompt(), inference_config)
     # Process the response
     processed_response = inference_engine.process_response(response)
 
