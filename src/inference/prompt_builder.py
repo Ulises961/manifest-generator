@@ -1,11 +1,7 @@
 import os
 from typing import Any, Dict, List
 import logging
-
-import yaml
-
 from tree.attached_file import AttachedFile
-
 
 class PromptBuilder:
     def __init__(
@@ -48,9 +44,9 @@ class PromptBuilder:
 
         # Strong role assignment and formatting constraint for small models
         self.prompt = (
-            "You are a strict Kubernetes YAML generator.\n"
-            "You only output valid raw Kubernetes YAML manifests starting off from a set of microservices described next.\n"
-            "The set of microservices are interrelated and compose an application. Your task is to generate the manifests in YAML format one microservice at the time.\n"
+            "You are a strict Kubernetes manifests generator.\n"
+            "You only output valid raw Kubernetes JSON manifests starting off from a set of microservices described next.\n"
+            "The set of microservices are interrelated and compose an application.\n"
         )
 
         self.prompt += "Here is the schema for all microservices in this system:\n\n"
@@ -67,7 +63,7 @@ class PromptBuilder:
             "or interdependencies between services, but do not explain them.\n"
             "You are not allowed to output any explanations, reasoning, or comments.\n"
             "You are not allowed to output any markdown or comments.\n"
-            "You are not allowed to output any other text than valid raw Kubernetes YAML.\n"
+            "You are not allowed to output any other text than valid raw Kubernetes JSON.\n"
         )
 
         return self.prompt
@@ -76,7 +72,7 @@ class PromptBuilder:
         """Generate a Kubernetes manifest generation prompt for a specific microservice."""
         prompt = self.prompt + "\n"
 
-        prompt += f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
+        prompt += f"Now generate Kubernetes manifests in JSON format for the microservice '{microservice['name']}'.\n\n"
 
         # prompt += "Microservice details:\n"
         
@@ -87,7 +83,7 @@ class PromptBuilder:
         prompt += "\nFor reference, here are also the microservice's yaml drafts:\n"
 
         for service in microservice["manifests"].values():
-                prompt += f"{yaml.dump(service)}\n"
+                prompt += f"{service}\n"
 
         prompt += "Guidelines:\n"
         prompt += "- Use production-ready Kubernetes best practices.\n"
@@ -95,17 +91,18 @@ class PromptBuilder:
         prompt += "- If needed, add Service, ConfigMap, Secret, or PVC.\n"
         prompt += "- Use labels like `app`, `tier`, `role`, and `environment`.\n"
         prompt += "- Use TODO placeholders for values that cannot be confidently inferred.\n"
-        prompt += "- Output ONLY valid raw Kubernetes YAML — no explanations, no markdown, no comments.\n"
         prompt += "- Separate each manifest with '---' if multiple objects are required.\n"
         prompt += "- The result must be directly usable with `kubectl apply -f` or in CI/CD pipelines.\n"
-        prompt += " **Immediately output only valid Kubernetes YAML for the service below.**\n"
         prompt += "**No other output is allowed. Do not explain, do not reason, do not output markdown or comments.**\n"
+        prompt += "**Immediately output only valid Kubernetes json for the service.**\n"
+        prompt += "Output:\n"
 
 
         self.logger.info(
             f"Prompt generated for the {microservice['name']} microservice:\n{prompt}"
         )
-        return prompt
+        return f"<s>[INST]{prompt}[\INST]"
+
 
     def clear_prompt(self):
         """Clear the prompt."""
@@ -130,7 +127,7 @@ class PromptBuilder:
             "- DO NOT guess unknown values. Use '# TODO' where needed.\n"
             "- DO NOT explain anything or include markdown/comments.\n"
             "- DO NOT regenerate unchanged content unless improvement is necessary.\n"
-            "- Output ONLY valid raw Kubernetes YAML.\n"
-            "- If returning multiple manifests, separate with '---' and prefix with a YAML comment of the object type (e.g., '# Deployment').\n\n"
-            "Begin improved YAML output now:\n"
+            "- Output ONLY valid raw Kubernetes JSON.\n"
+            "- If returning multiple manifests, separate with '---' and prefix with a JSON comment of the object type (e.g., '# Deployment').\n\n"
+            "Begin improved JSON output now:\n"
         )

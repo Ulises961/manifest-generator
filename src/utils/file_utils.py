@@ -113,8 +113,7 @@ def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any, str]:
         # Use 8-bit quantization to reduce memory footprint
         quantization_config = BitsAndBytesConfig(
             load_in_8bit=True,
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=True,  
+            llm_int8_threshold=6.0
         )
 
     else:

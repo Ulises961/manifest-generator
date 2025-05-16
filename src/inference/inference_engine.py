@@ -56,10 +56,14 @@ class InferenceEngine:
         
         with torch.no_grad():
             output = self._model.generate(**inputs, **config)
-
-        return self._tokenizer.decode(
-            output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
-        )
+            
+            torch.cuda.synchronize()
+            
+            decoded = self._tokenizer.decode(
+                output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
+            )
+            self.logger.info(f"Generated output: {decoded}")
+            return decoded
 
     def process_response(self, response: str) -> List[Dict[str, str]]:
         """Process the model's response.
