@@ -5,7 +5,7 @@ from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file, remove_none_values
 from caseutil import to_snake
 import yaml
-
+import copy
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
@@ -41,7 +41,7 @@ class ManifestBuilder:
         }
 
         assert template_name in templates, f"Template {template_name} not found"
-        return templates[template_name]
+        return copy.deepcopy(templates[template_name])
 
     def _load_template(self, path: str) -> dict:
         """Load a template from the given path."""
@@ -150,7 +150,7 @@ class ManifestBuilder:
                 saved = self.build_config_map_yaml(env)
                 microservice["manifests"].update({"config_map": saved})
 
-    def build_secrets_yaml(self, secret: dict) -> str:
+    def build_secrets_yaml(self, secret: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
 
         secrets_path = os.path.join(
@@ -189,9 +189,9 @@ class ManifestBuilder:
             self._save_yaml(existing_data, secrets_path)
             self.logger.info(f"Secret updated: {secrets_path}")
 
-        return secrets_path
+        return self.get_template("config_map")
 
-    def build_config_map_yaml(self, config_map: dict) -> str:
+    def build_config_map_yaml(self, config_map: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
         # Convert the template to YAML string
         config_map_path = os.path.join(
@@ -226,9 +226,9 @@ class ManifestBuilder:
 
             self.logger.info(f"Config map updated: {config_map_path}")
 
-        return config_map_path
+        return self.get_template("config_map")
 
-    def build_deployment_yaml(self, deployment: dict) -> str:
+    def build_deployment_yaml(self, deployment: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
 
         deployment_entry: Dict[str, Any] = {
@@ -338,9 +338,9 @@ class ManifestBuilder:
 
         self._save_yaml(template, deployment_path)
 
-        return deployment_path
+        return self.get_template("deployment")
 
-    def build_stateful_set_yaml(self, stateful_set: dict) -> str:
+    def build_stateful_set_yaml(self, stateful_set: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
 
         # Prepare the stateful set entry
@@ -359,7 +359,7 @@ class ManifestBuilder:
 
         stateful_set_entry = remove_none_values(stateful_set_entry)
 
-        template = self.get_template("statefullset")
+        template = self.get_template("stateful_set")
         template["metadata"]["name"] = stateful_set_entry["name"]
         template["metadata"]["labels"] = stateful_set_entry["labels"]
 
@@ -452,9 +452,9 @@ class ManifestBuilder:
 
         self._save_yaml(template, stateful_set_path)
 
-        return stateful_set_path
+        return self.get_template("stateful_set")
 
-    def build_service_yaml(self, service: dict) -> str:
+    def build_service_yaml(self, service: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
 
         port_mappings = self._get_port_mappings(service)
@@ -488,9 +488,9 @@ class ManifestBuilder:
 
         self._save_yaml(template, service_path)
 
-        return service_path
+        return self.get_template("service")
 
-    def build_pvc_yaml(self, pvc: dict) -> str:
+    def build_pvc_yaml(self, pvc: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
         # Prepare the PVC entry
         pvc_entry = {
@@ -521,7 +521,7 @@ class ManifestBuilder:
 
         self._save_yaml(template, pvc_path)
 
-        return pvc_path
+        return self.get_template("pvc")
 
     def _get_port_mappings(self, service_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate port mappings between service ports and container ports.
