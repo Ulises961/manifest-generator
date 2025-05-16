@@ -2,6 +2,8 @@ import os
 from typing import Any, Dict, List
 import logging
 
+import yaml
+
 from tree.attached_file import AttachedFile
 
 
@@ -84,10 +86,8 @@ class PromptBuilder:
 
         prompt += "\nFor reference, here are also the microservice's yaml drafts:\n"
 
-        for service, path in microservice["manifests"].items():
-            with open(path, "r") as file:
-                content = file.read()
-                prompt += f"{content}\n"
+        for service in microservice["manifests"].values():
+                prompt += f"{yaml.dump(service)}\n"
 
         prompt += "Guidelines:\n"
         prompt += "- Use production-ready Kubernetes best practices.\n"
