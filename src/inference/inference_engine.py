@@ -73,7 +73,7 @@ class InferenceEngine:
         self.logger.info(f"Processing response {response}")
         response.strip()
         manifests = response.split("---")
-        manifests = [manifest.strip() for manifest in manifests if manifest.strip()]
+        manifests = [manifest.strip() for manifest in manifests]
         named_manifests: List[Dict[str, Any]] = []
         for manifest in manifests:
             res = re.search(r"^[kK]ind:\s*(.*)$", manifest, re.MULTILINE)
