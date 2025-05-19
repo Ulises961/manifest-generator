@@ -50,7 +50,7 @@ class InferenceEngine:
         }
 
         config = {**default_config, **(generation_config or {})}
-
+      
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self.device)
         self.logger.info(f"Input tokens: {len(inputs.input_ids[0])}")
         

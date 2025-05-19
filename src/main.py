@@ -23,6 +23,7 @@ import logging
 import subprocess
 import os
 import sys
+from accelerate import Accelerator
 
 # Get module-specific logger
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ if __name__ == "__main__":
     target_repository = os.getenv("TARGET_REPOSITORY", "")
 
     logger.info("Starting microservices manifest generator")
-
+    
     # Load the SentenceTransformer model
     embeddings_model: SentenceTransformer = setup_sentence_transformer()
 
@@ -69,7 +70,8 @@ if __name__ == "__main__":
     treebuilder.print_tree(repository_tree)  # Print the tree structure
 
     ### Phase 2: Generate the manifests from the repository tree ###
-    manifest_builder = ManifestBuilder()
+    accelerator = Accelerator()
+    manifest_builder = ManifestBuilder(accelerator)
     enriched_services: List[Dict[str, Any]] = []
     for child in repository_tree.children:
         logging.info(f"Generating manifests for child... {child.name}")
@@ -101,7 +103,7 @@ if __name__ == "__main__":
     prompt_builder = PromptBuilder()
 
     inference_config = {
-        "max_new_tokens": 2048,  # Limit output length to avoid rambling
+        "max_new_tokens": 3000,  # Limit output length to avoid rambling
         "temperature": 0.01,  # Lower temperature = more deterministic
         "top_p": 0.9,  # Reduce sampling pool
         "do_sample": True,  # Keep on for diversity, but limit randomness
@@ -111,7 +113,7 @@ if __name__ == "__main__":
 
     for microservice in enriched_services:
         logging.info(f"Generating manifests for child... {microservice['name']}")
-        prompt = prompt_builder.generate_prompt(microservice)
+        prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
         # Generate the response
         response = inference_engine.generate(prompt, inference_config)
@@ -131,20 +133,20 @@ if __name__ == "__main__":
 
             os.makedirs(target_dir, exist_ok=True)
 
-             # Save the response to a file
-             manifest_path = os.path.join(target_dir, f"{manifest['name']}.json")
+            # Save the response to a file
+            manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
 
-             with open(manifest_path, "w") as f:
-                 f.write(manifest["manifest"])
+            with open(manifest_path, "w") as f:
+                f.write(manifest["manifest"])
 
-             logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.json")
+            logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
 
     # ### Phase 4: Refine the generated manifests ###
 
     # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones
 
     # Second pass on the generated manifests.
-    prompt_builder.generate_second_pass_prompt()
+    prompt = prompt_builder.generate_second_pass_prompt()
 
     generated_manifests_dir = os.path.join(
         os.getenv("TARGET_PATH", "target"),
@@ -155,12 +157,12 @@ if __name__ == "__main__":
 
     for root, dirs, files in os.walk(generated_manifests_dir):
         for file in files:
-            if file.endswith(".json"):
+            if file.endswith(".yaml"):
                 file_path = os.path.join(root, file)
                 with open(file_path, "r") as f:
                     attached_file = AttachedFile(
                         name=file,
-                        type="json",
+                        type="yaml",
                         size=os.path.getsize(file_path),
                         content=f.read(),
                     )
@@ -168,9 +170,9 @@ if __name__ == "__main__":
                     logging.info(f"Attached file: {file_path}")
                     # Attach the file to the prompt
 
-    prompt_builder.include_attached_files()
+    prompt += prompt_builder.include_attached_files(prompt)
     # Generate the response
-    response = inference_engine.generate(prompt_builder.get_prompt(), inference_config)
+    response = inference_engine.generate(prompt, inference_config)
     # Process the response
     processed_response = inference_engine.process_response(response)
 

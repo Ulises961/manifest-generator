@@ -23,7 +23,8 @@ setup(
         'accelerate>=0.26.0',
         'dotenv',
         'bitsandbytes',
-        'transformers>=4.30.0',],
+        'transformers>=4.30.0'
+    ],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",
     python_requires=">=3.6",

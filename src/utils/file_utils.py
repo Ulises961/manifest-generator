@@ -103,6 +103,11 @@ def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any, str]:
     # Check if in development or production mode
     is_dev_mode = os.getenv("DEV_MODE", "true").lower() == "true"
 
+    quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0
+        )
+    
     if is_dev_mode:
         # Development mode - use smaller model with quantization
         model_name, model_path = _get_model_paths(
@@ -110,24 +115,17 @@ def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any, str]:
         )
         logger.info("Running in DEVELOPMENT mode with smaller model: %s", model_name)
 
-        # Use 8-bit quantization to reduce memory footprint
-        quantization_config = BitsAndBytesConfig(
-            load_in_8bit=True,
-            llm_int8_threshold=6.0
-        )
-
     else:
         # Production mode - use full-size model
         model_name, model_path = _get_model_paths(
             "PRODUCTION_INFERENCE_MODEL",     "deepseek-ai/deepseek-coder-33b-instruct",
         )
         logger.info("Running in PRODUCTION mode with model: %s", model_name)
-        quantization_config = None
-
+        
     try:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map=device,
+            device_map="auto",
             quantization_config=quantization_config if is_dev_mode else None,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,

@@ -6,11 +6,12 @@ from utils.file_utils import load_file, remove_none_values
 from caseutil import to_snake
 import yaml
 import copy
+from accelerate import Accelerator
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
-    def __init__(self) -> None:
+    def __init__(self, accelerator: Accelerator) -> None:
         """Initialize the tree builder with the manifest templates."""
         self.logger = logging.getLogger(__name__)
         self._config_map_template = self._get_config_map_template()
@@ -29,6 +30,8 @@ class ManifestBuilder:
         )
 
         os.makedirs(os.path.dirname(self.target_path), exist_ok=True)
+        
+        self.accelerator = accelerator
 
     def get_template(self, template_name: str) -> Dict[str, Any]:
         """Get the template by name."""
@@ -109,10 +112,9 @@ class ManifestBuilder:
         )
 
     def generate_manifests(self, microservice: Dict[str, Any]) -> None:
-        """Generate manifests for the microservice and its dependencies."""
-
+        """Generate manifests for the microservice and its dependencies."""        
         microservice.setdefault("manifests",{})
-
+        
         if microservice.get("workload", None):
             if microservice["workload"] == "StatefulSet":
                 saved = self.build_stateful_set_yaml(microservice)
@@ -643,13 +645,18 @@ class ManifestBuilder:
                 return True
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        
+        self.accelerator.wait_for_everyone()
+        
+        if self.accelerator.is_main_process:
+            with open(path, "w") as file:
+                yaml.dump(
+                    template,
+                    file,
+                    Dumper=NoAliasDumper,
+                    sort_keys=False,
+                    default_flow_style=False,
+                )
+            print(f"YAML file saved to {path}")
 
-        with open(path, "w") as file:
-            yaml.dump(
-                template,
-                file,
-                Dumper=NoAliasDumper,
-                sort_keys=False,
-                default_flow_style=False,
-            )
-        print(f"YAML file saved to {path}")
+        self.accelerator.wait_for_everyone()
