@@ -1,8 +1,5 @@
-import gc
-import time
 from typing import Any, Dict, List
 from sentence_transformers import SentenceTransformer
-import torch
 from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
@@ -21,6 +18,7 @@ from utils.file_utils import (
 from utils.logging_utils import setup_logging
 import logging
 import os
+from accelerate import Accelerator
 
 # Get module-specific logger
 logger = logging.getLogger(__name__)
@@ -67,22 +65,14 @@ if __name__ == "__main__":
     treebuilder.print_tree(repository_tree)  # Print the tree structure
 
     ### Phase 2: Generate the manifests from the repository tree ###
-    manifest_builder = ManifestBuilder()
+    accelerator = Accelerator()
+    manifest_builder = ManifestBuilder(accelerator)
     enriched_services: List[Dict[str, Any]] = []
     for child in repository_tree.children:
         logging.info(f"Generating manifests for child... {child.name}")
         microservice = treebuilder.prepare_microservice(child)
         enriched_services.append(microservice)
         manifest_builder.generate_manifests(microservice)
-
-    # Unload the model
-    del treebuilder
-    del manifest_builder
-    del secret_classifier
-    del service_classifier
-    del label_classifier
-    del embeddings_engine
-    del embeddings_model
 
     ### Phase 3: Generate inferred manifests from the repository tree ###
     # Load the inference models
@@ -93,23 +83,23 @@ if __name__ == "__main__":
         raise RuntimeError("Inference model or tokenizer not loaded.")
 
     # Load the inference engine
-    inference_engine = InferenceEngine(inference_model, tokenizer, device)
+    inference_engine = InferenceEngine(
+        inference_model, tokenizer, embeddings_engine, device
+    )
 
     # Load the prompt builder
-    prompt_builder = PromptBuilder(enriched_services)
+    prompt_builder = PromptBuilder()
 
     inference_config = {
-        "max_new_tokens": 1024,  # Limit output length to avoid rambling
-        "temperature": 0.01,  # Lower temperature = more deterministic
-        "top_p": 0.85,  # Reduce sampling pool
-        "do_sample": True,  # Keep on for diversity, but limit randomness
-        "repetition_penalty": 1.1,  # Avoid loops
-        "no_repeat_ngram_size": 3,  # Prevent local repetition
+        "max_new_tokens": 3000,  # Limit output length to avoid rambling
+        "num_beams": 5,  # No beam search
+        "num_return_sequences": 5,  # Only one response
+        "early_stopping": True,  # Stop when the model is confident
     }
 
     for microservice in enriched_services:
         logging.info(f"Generating manifests for child... {microservice['name']}")
-        prompt = prompt_builder.generate_prompt(microservice)
+        prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
         # Generate the response
         response = inference_engine.generate(prompt, inference_config)
@@ -137,12 +127,12 @@ if __name__ == "__main__":
 
             logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
 
-    ### Phase 4: Refine the generated manifests ###
+    # ### Phase 4: Refine the generated manifests ###
 
     # Compile the helm charts generated in phase 2 and compare the generated manifests with the original ones
 
     # Second pass on the generated manifests.
-    prompt_builder.generate_second_pass_prompt()
+    prompt = prompt_builder.generate_second_pass_prompt()
 
     generated_manifests_dir = os.path.join(
         os.getenv("TARGET_PATH", "target"),
@@ -153,7 +143,7 @@ if __name__ == "__main__":
 
     for root, dirs, files in os.walk(generated_manifests_dir):
         for file in files:
-            if file.endswith(".yaml") or file.endswith(".yml"):
+            if file.endswith(".yaml"):
                 file_path = os.path.join(root, file)
                 with open(file_path, "r") as f:
                     attached_file = AttachedFile(
@@ -166,9 +156,9 @@ if __name__ == "__main__":
                     logging.info(f"Attached file: {file_path}")
                     # Attach the file to the prompt
 
-    prompt_builder.include_attached_files()
+    prompt += prompt_builder.include_attached_files(prompt)
     # Generate the response
-    response = inference_engine.generate(prompt_builder.get_prompt())
+    response = inference_engine.generate(prompt, inference_config)
     # Process the response
     processed_response = inference_engine.process_response(response)
 

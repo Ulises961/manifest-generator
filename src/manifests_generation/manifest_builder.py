@@ -6,11 +6,12 @@ from utils.file_utils import load_file, remove_none_values
 from caseutil import to_snake
 import yaml
 import copy
+from accelerate import Accelerator
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
-    def __init__(self) -> None:
+    def __init__(self, accelerator: Accelerator) -> None:
         """Initialize the tree builder with the manifest templates."""
         self.logger = logging.getLogger(__name__)
         self._config_map_template = self._get_config_map_template()
@@ -29,6 +30,8 @@ class ManifestBuilder:
         )
 
         os.makedirs(os.path.dirname(self.target_path), exist_ok=True)
+        
+        self.accelerator = accelerator
 
     def get_template(self, template_name: str) -> Dict[str, Any]:
         """Get the template by name."""
@@ -109,10 +112,9 @@ class ManifestBuilder:
         )
 
     def generate_manifests(self, microservice: Dict[str, Any]) -> None:
-        """Generate manifests for the microservice and its dependencies."""
-
+        """Generate manifests for the microservice and its dependencies."""        
         microservice.setdefault("manifests",{})
-
+        
         if microservice.get("workload", None):
             if microservice["workload"] == "StatefulSet":
                 saved = self.build_stateful_set_yaml(microservice)
@@ -189,9 +191,9 @@ class ManifestBuilder:
             self._save_yaml(existing_data, secrets_path)
             self.logger.info(f"Secret updated: {secrets_path}")
 
-        return self.get_template("config_map")
+        return template
 
-    def build_config_map_yaml(self, config_map: dict) -> Dict[str, Any]:
+    def build_config_map_yaml(self, config_map: dict) -> str:
         """Build a YAML file from the template and data."""
         # Convert the template to YAML string
         config_map_path = os.path.join(
@@ -211,7 +213,8 @@ class ManifestBuilder:
                 template,
                 config_map_path,
             )
-
+            
+            return template 
         else:
             # Load existing config map content
             with open(config_map_path, "r") as file:
@@ -226,9 +229,9 @@ class ManifestBuilder:
 
             self.logger.info(f"Config map updated: {config_map_path}")
 
-        return self.get_template("config_map")
+            return existing_data
 
-    def build_deployment_yaml(self, deployment: dict) -> Dict[str, Any]:
+    def build_deployment_yaml(self, deployment: dict) -> str:
         """Build a YAML file from the template and data."""
 
         deployment_entry: Dict[str, Any] = {
@@ -338,9 +341,9 @@ class ManifestBuilder:
 
         self._save_yaml(template, deployment_path)
 
-        return self.get_template("deployment")
+        return template
 
-    def build_stateful_set_yaml(self, stateful_set: dict) -> Dict[str, Any]:
+    def build_stateful_set_yaml(self, stateful_set: dict) -> str:
         """Build a YAML file from the template and data."""
 
         # Prepare the stateful set entry
@@ -452,9 +455,9 @@ class ManifestBuilder:
 
         self._save_yaml(template, stateful_set_path)
 
-        return self.get_template("stateful_set")
+        return template
 
-    def build_service_yaml(self, service: dict) -> Dict[str, Any]:
+    def build_service_yaml(self, service: dict) -> str:
         """Build a YAML file from the template and data."""
 
         port_mappings = self._get_port_mappings(service)
@@ -488,9 +491,9 @@ class ManifestBuilder:
 
         self._save_yaml(template, service_path)
 
-        return self.get_template("service")
+        return template
 
-    def build_pvc_yaml(self, pvc: dict) -> Dict[str, Any]:
+    def build_pvc_yaml(self, pvc: dict) -> str:
         """Build a YAML file from the template and data."""
         # Prepare the PVC entry
         pvc_entry = {
@@ -521,7 +524,7 @@ class ManifestBuilder:
 
         self._save_yaml(template, pvc_path)
 
-        return self.get_template("pvc")
+        return template
 
     def _get_port_mappings(self, service_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate port mappings between service ports and container ports.
@@ -642,13 +645,18 @@ class ManifestBuilder:
                 return True
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        
+        self.accelerator.wait_for_everyone()
+        
+        if self.accelerator.is_main_process:
+            with open(path, "w") as file:
+                yaml.dump(
+                    template,
+                    file,
+                    Dumper=NoAliasDumper,
+                    sort_keys=False,
+                    default_flow_style=False,
+                )
+            print(f"YAML file saved to {path}")
 
-        with open(path, "w") as file:
-            yaml.dump(
-                template,
-                file,
-                Dumper=NoAliasDumper,
-                sort_keys=False,
-                default_flow_style=False,
-            )
-        print(f"YAML file saved to {path}")
+        self.accelerator.wait_for_everyone()

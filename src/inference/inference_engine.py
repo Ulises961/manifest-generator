@@ -53,16 +53,20 @@ class InferenceEngine:
         }
 
         config = {**default_config, **(generation_config or {})}
-
+      
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self.device)
         self.logger.info(f"Input tokens: {len(inputs.input_ids[0])}")
         
         with torch.no_grad():
             output = self._model.generate(**inputs, **config)
-
-        return self._tokenizer.decode(
-            output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
-        )
+            
+            torch.cuda.synchronize()
+            
+            decoded = self._tokenizer.decode(
+                output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
+            )
+            self.logger.info(f"Generated output: {decoded}")
+            return decoded
 
     
 
