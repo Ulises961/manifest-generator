@@ -4,10 +4,12 @@ import torch
 from typing import Dict, Any, List, Optional
 import logging
 
+from embeddings.embeddings_engine import EmbeddingsEngine
+
 class InferenceEngine:
     """Engine for LLM text generation using local models."""
 
-    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, device: str="cpu") -> None:
+    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, device: str="cpu", embeddings_engine: EmbeddingsEngine) -> None:
         """Initialize the language model and tokenizer.
 
         Args:
@@ -17,6 +19,7 @@ class InferenceEngine:
         self._model = model
         self._tokenizer = tokenizer
         self.device = device
+        self.embeddings_engine = embeddings_engine
 
     @property
     def model(self) -> AutoModelForCausalLM:
@@ -60,6 +63,8 @@ class InferenceEngine:
         return self._tokenizer.decode(
             output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
         )
+
+    
 
     def process_response(self, response: str) -> List[Dict[str, str]]:
         """Process the model's response.

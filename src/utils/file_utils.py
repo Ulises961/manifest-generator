@@ -11,6 +11,7 @@ import shlex
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import logging
 from transformers import BitsAndBytesConfig
+from utils.hugging_face import HUGGING_FACE_TOKEN
 
 logger = logging.getLogger(__name__)
 
@@ -132,11 +133,12 @@ def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any, str]:
             quantization_config=quantization_config if is_dev_mode else None,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
+            token=HUGGING_FACE_TOKEN,
         )
 
         model.eval()
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, token=HUGGING_FACE_TOKEN)
 
         if not os.path.exists(model_path):
             model.save_pretrained(model_path)
