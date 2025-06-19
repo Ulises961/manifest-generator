@@ -71,10 +71,6 @@ class PromptBuilder:
             if key != "attached_files" and key != "manifests":
                 prompt += f"  {key}: {value}\n"
 
-        # prompt += "\nStarter template(s):\n"
-
-        # for service in microservice["manifests"].values():
-        #         prompt += f"{yaml.dump(service)}\n---\n"
 
         prompt += "Guidelines:\n"
         prompt += "- Use production-ready Kubernetes best practices.\n"

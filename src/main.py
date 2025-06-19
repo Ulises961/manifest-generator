@@ -38,7 +38,7 @@ if __name__ == "__main__":
     target_repository = os.getenv("TARGET_REPOSITORY", "")
 
     logger.info("Starting microservices manifest generator")
-
+    
     # Load the SentenceTransformer model
     embeddings_model: SentenceTransformer = setup_sentence_transformer()
 
@@ -83,26 +83,27 @@ if __name__ == "__main__":
         raise RuntimeError("Inference model or tokenizer not loaded.")
 
     # Load the inference engine
-    inference_engine = InferenceEngine(
-        inference_model, tokenizer, embeddings_engine, device
-    )
+    inference_engine = InferenceEngine(inference_model, tokenizer, embeddings_engine, device)
 
     # Load the prompt builder
     prompt_builder = PromptBuilder()
 
     inference_config = {
         "max_new_tokens": 3000,  # Limit output length to avoid rambling
-        "num_beams": 5,  # No beam search
-        "num_return_sequences": 5,  # Only one response
-        "early_stopping": True,  # Stop when the model is confident
+        "num_beams": 5,
+        "early_stopping": True
     }
 
     for microservice in enriched_services:
         logging.info(f"Generating manifests for child... {microservice['name']}")
+        for manifest in microservice["manifests"]:
+            # Attach the files to the prompt            
+            for attached_file in microservice.get("attached_files", {}):
+                prompt_builder.attach_file(attached_file)
         prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
         # Generate the response
-        response = inference_engine.generate(prompt, inference_config)
+        response = inference_engine.generate(prompt, inference_config, )
         # Process the response
         processed_response = inference_engine.process_response(response)
 

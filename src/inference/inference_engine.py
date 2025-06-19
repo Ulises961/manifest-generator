@@ -9,7 +9,7 @@ from embeddings.embeddings_engine import EmbeddingsEngine
 class InferenceEngine:
     """Engine for LLM text generation using local models."""
 
-    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer, device: str="cpu", embeddings_engine: EmbeddingsEngine) -> None:
+    def __init__(self, model: AutoModelForCausalLM, tokenizer: AutoTokenizer,  embeddings_engine: EmbeddingsEngine, device: str="cpu") -> None:
         """Initialize the language model and tokenizer.
 
         Args:
@@ -44,10 +44,7 @@ class InferenceEngine:
             str: Generated text response
         """
         default_config = {
-            "max_new_tokens": 1024,
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "do_sample": True,
+            "max_new_tokens": 3000,
             "eos_token_id": self.tokenizer.eos_token_id,
             "pad_token_id": self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
         }
@@ -59,14 +56,16 @@ class InferenceEngine:
         
         with torch.no_grad():
             output = self._model.generate(**inputs, **config)
-            
+
+        if self.device == "cuda":
             torch.cuda.synchronize()
-            
-            decoded = self._tokenizer.decode(
-                output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
-            )
-            self.logger.info(f"Generated output: {decoded}")
-            return decoded
+        
+        
+        decoded = self._tokenizer.decode(
+            output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
+        )
+        self.logger.info(f"Generated output: {decoded}")
+        return decoded
 
     
 
@@ -84,13 +83,15 @@ class InferenceEngine:
         manifests = response.split("---")
         manifests = [manifest.strip() for manifest in manifests]
         named_manifests: List[Dict[str, Any]] = []
+        manifest_number = 0 
         for manifest in manifests:
             res = re.search(r"^[kK]ind:\s*(.*)$", manifest, re.MULTILINE)
             if res:
                 name = res.group(1).strip()
             else:
-                name = "default"
-            
+                name = "default" + "-" + str(manifest_number)
+                manifest_number += 1
+                
             named_manifest = {
                 "name": name,
                 "manifest": manifest,

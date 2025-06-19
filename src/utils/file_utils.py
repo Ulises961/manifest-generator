@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-from typing import Any, List, Optional, cast, Tuple
+from typing import Any, Dict, List, Optional, cast, Tuple
 import torch
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
@@ -22,7 +22,7 @@ def load_file(path: str) -> Any:
         return json.load(file)
 
 
-def remove_none_values(d):
+def remove_none_values(d) -> Optional[Dict[str, Any]] | Any:
     """Recursively remove all None values from dictionary"""
     if not isinstance(d, dict):
         return d
