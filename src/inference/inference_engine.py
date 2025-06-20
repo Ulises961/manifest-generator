@@ -3,6 +3,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from typing import Dict, Any, List, Optional
 import logging
+from embeddings.embeddings_engine import EmbeddingsEngine
 
 from embeddings.embeddings_engine import EmbeddingsEngine
 
@@ -44,9 +45,14 @@ class InferenceEngine:
             str: Generated text response
         """
         default_config = {
+            "num_beams": 5,
+            "early_stopping": True,
             "max_new_tokens": 3000,
+            "do_sample": False,
             "eos_token_id": self.tokenizer.eos_token_id,
             "pad_token_id": self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
+            "temperature": None,
+            "top_p": None
         }
 
         config = {**default_config, **(generation_config or {})}
@@ -59,16 +65,13 @@ class InferenceEngine:
 
         if self.device == "cuda":
             torch.cuda.synchronize()
-        
-        
-        decoded = self._tokenizer.decode(
-            output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
-        )
-        self.logger.info(f"Generated output: {decoded}")
-        return decoded
-
+            
+            decoded = self._tokenizer.decode(
+                output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
+            )
+            self.logger.info(f"Generated output: {decoded}")
+            return decoded
     
-
     def process_response(self, response: str) -> List[Dict[str, str]]:
         """Process the model's response.
 

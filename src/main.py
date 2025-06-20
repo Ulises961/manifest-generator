@@ -88,11 +88,7 @@ if __name__ == "__main__":
     # Load the prompt builder
     prompt_builder = PromptBuilder()
 
-    inference_config = {
-        "max_new_tokens": 3000,  # Limit output length to avoid rambling
-        "num_beams": 5,
-        "early_stopping": True
-    }
+
 
     for microservice in enriched_services:
         logging.info(f"Generating manifests for child... {microservice['name']}")
@@ -103,7 +99,7 @@ if __name__ == "__main__":
         prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
         # Generate the response
-        response = inference_engine.generate(prompt, inference_config, )
+        response = inference_engine.generate(prompt)
         # Process the response
         processed_response = inference_engine.process_response(response)
 
@@ -157,25 +153,25 @@ if __name__ == "__main__":
                     logging.info(f"Attached file: {file_path}")
                     # Attach the file to the prompt
 
-    prompt += prompt_builder.include_attached_files(prompt)
+    # prompt += prompt_builder.include_attached_files(prompt)
     # Generate the response
-    response = inference_engine.generate(prompt, inference_config)
+    # response = inference_engine.generate(prompt)
     # Process the response
-    processed_response = inference_engine.process_response(response)
+    # processed_response = inference_engine.process_response(response)
 
-    for manifest in processed_response:
-        logging.info(f"Generated manifest: {manifest['name']}")
+    # for manifest in processed_response:
+    #     logging.info(f"Generated manifest: {manifest['name']}")
 
-        target_dir = os.path.join(
-            os.getenv("TARGET_PATH", "target"),
-            os.getenv("MANIFESTS_PATH", "manifests"),
-            os.getenv("LLM_MANIFESTS_PATH", "llm"),
-            "second_pass",
-        )
+    #     target_dir = os.path.join(
+    #         os.getenv("TARGET_PATH", "target"),
+    #         os.getenv("MANIFESTS_PATH", "manifests"),
+    #         os.getenv("LLM_MANIFESTS_PATH", "llm"),
+    #         "second_pass",
+    #     )
 
-        os.makedirs(target_dir, exist_ok=True)
-        # Save the response to a file
-        manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
-        with open(manifest_path, "w") as f:
-            f.write(manifest["manifest"])
-        logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
+    #     os.makedirs(target_dir, exist_ok=True)
+    #     # Save the response to a file
+    #     manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
+    #     with open(manifest_path, "w") as f:
+    #         f.write(manifest["manifest"])
+    #     logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
