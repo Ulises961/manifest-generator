@@ -13,7 +13,7 @@ class Node:
         parent: Optional["Node"] = None,
         metadata: Dict[str, Any] = {},
         is_persistent: bool = False,
-        attached_files: Optional[Dict[str, AttachedFile]] = None,
+        attached_files: Optional[Dict[str, AttachedFile]] = None
 
     ):
         """
@@ -26,12 +26,12 @@ class Node:
         """
         self.name: str = name
         self.type: NodeType = type
-        self.value: Optional[str] | Optional[List[str]] = value
+        self._value: Optional[str] | Optional[List[str]] | Optional[bytes]  = value
         self.parent: Optional["Node"] = parent
         self.children: List[Node] = []
         self.is_persistent: bool = is_persistent
-        self.metadata: Optional[dict] = metadata
-        self.attached_files: Optional[Dict[str, AttachedFile]] = attached_files
+        self._metadata: Dict[str, Any] = metadata
+        self._attached_files: Optional[Dict[str, AttachedFile]] = attached_files
 
     def add_child(self, child: "Node") -> None:
         self.children.append(child)
@@ -66,7 +66,7 @@ class Node:
         if isinstance(metadata, dict):
             self._metadata = metadata
         elif metadata is None:
-            self._metadata = None
+            self._metadata = {}
         else:
             raise ValueError("Metadata must be a dictionary or None.")
 
@@ -90,7 +90,7 @@ class Node:
             self.attached_files = {name: file}
 
     def __repr__(self):
-        return f"Node(name={self.name}, type={self.type}, value={self._value}, parent={self.parent.name} ,children={self.children})"
+        return f"Node(name={self.name}, type={self.type}, value={self._value}, parent={self.parent.name if self.parent else None} ,children={self.children})"
 
     def __str__(self):
         return f"Node(name={self.name}, type={self.type}, value={self._value} parent={self.parent.name if self.parent else None}, children={self.children})"
@@ -118,7 +118,7 @@ class Node:
             "children": [child.to_dict() for child in self.children],
         }
 
-    def from_dict(data):
+    def from_dict(self, data):
         node = Node(data["name"], data["type"])
         return node
 

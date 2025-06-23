@@ -56,7 +56,9 @@ class MicroservicesTree:
 
     def build(self) -> Node:
         root_node = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
+
         self.logger.info(f"Scanning directory: {self.root_path}")
+
         # Only scan top-level directories
         for item in os.listdir(self.root_path):
             item_path = os.path.join(self.root_path, item)
@@ -67,9 +69,11 @@ class MicroservicesTree:
                 else:
                     self.logger.info(f"Scanning directory: {item_path}")
                     self._scan_helper(item_path, root_node, item)
+
         self.logger.info(
             f"Finished scanning directory: {self.root_path}, found {len(root_node.children)} microservices."
         )
+
         return root_node
 
     def _scan_helper(
@@ -80,6 +84,7 @@ class MicroservicesTree:
         preferred_name: Optional[str] = None,
     ) -> None:
         """Scan the directory for microservices and find Dockerfile."""
+        
         # Only check files in the current directory, not recursively
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
 
@@ -90,14 +95,15 @@ class MicroservicesTree:
         for file in files:
             if file == "Dockerfile":
                 dockerfile_found = True
-                self.logger.info(f"Found Dockerfile in {os.path.join(path, file)}")
+                dockerfile_path = os.path.join(path, file)
+                self.logger.info(f"Found Dockerfile in {dockerfile_path}")
                 # Generate a new node parent
                 if preferred_name is not None:
                     # Use the preferred name if provided
                     dir_name = preferred_name
 
                 microservice_node = Node(
-                    name=dir_name, type=NodeType.MICROSERVICE, parent=parent
+                    name=dir_name, type=NodeType.MICROSERVICE, parent=parent, metadata={"dockerfile_path": path}
                 )
 
                 # Add the microservice node to the parent node
@@ -151,6 +157,7 @@ class MicroservicesTree:
         # Generate manifests for the microservice
         microservice: Dict[str, Any] = {"name": node.name}
         microservice.setdefault("labels", {"app": node.name})
+        microservice.setdefault("metadata", {"dockerfile": node.metadata.get("dockerfile_path","")})
 
         if len(labels := node.get_children_by_type(NodeType.LABEL)) > 0:
 
