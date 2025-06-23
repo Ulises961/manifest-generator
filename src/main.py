@@ -74,6 +74,9 @@ if __name__ == "__main__":
         enriched_services.append(microservice)
         manifest_builder.generate_manifests(microservice)
 
+    # Add Skaffold config to build its image
+    manifest_builder.generate_skaffold_config(enriched_services)
+    
     ### Phase 3: Generate inferred manifests from the repository tree ###
     # Load the inference models
     inference_model, tokenizer, device = setup_inference_models()
