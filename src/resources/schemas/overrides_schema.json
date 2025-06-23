@@ -1,0 +1,65 @@
+ {
+        "type": "object",
+        "required": ["version", "project", "services"],
+        "properties": {
+            "version": {"type": "string"},
+            "project": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "namespace": {"type": "string"}
+                }
+            },
+            "global": {
+                "type": "object",
+                "properties": {
+                    "environment": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["name"],
+                            "properties": {
+                                "name": {"type": "string"},
+                                "value": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            },
+            "services": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "replicas": {"type": "integer"},
+                        "environment": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["name"],
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "value": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "dependencies": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["service"],
+                        "properties": {
+                            "service": {"type": "string"},
+                            "port": {"type": "integer"}
+                        }
+                    }
+                }
+            }
+        }
+    }
