@@ -7,6 +7,7 @@ setup(
     package_dir={"": "src"},
     install_requires=[
         'sentence-transformers',
+        'kubernetes',
         'scikit-learn',
         'numpy',
         'dockerfile-parse',
