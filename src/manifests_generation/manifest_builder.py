@@ -1,15 +1,16 @@
 import logging
 import os
 from typing import Any, Dict, List, Optional, cast
-from embeddings.embeddings_engine import EmbeddingsEngine
-from utils.file_utils import load_file, remove_none_values
-from caseutil import to_kebab
+from manifests_generation.configmap_builder import ConfigMapBuilder
+from manifests_generation.deployment_builder import DeploymentBuilder
+from manifests_generation.pvc_builder import PVCBuilder
+from manifests_generation.secret_builder import SecretBuilder
+from manifests_generation.service_builder import ServiceBuilder
+from manifests_generation.skaffold_config_builder import SkaffoldConfigBuilder
+from manifests_generation.statefulset_builder import StatefulSetBuilder
 import yaml
-import copy
 from accelerate import Accelerator
-
 from validation.overrides_validator import OverridesValidator
-
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
@@ -17,11 +18,6 @@ class ManifestBuilder:
     def __init__(self, accelerator: Accelerator) -> None:
         """Initialize the tree builder with the manifest templates."""
         self.logger = logging.getLogger(__name__)
-        self._config_map_template = self._get_config_map_template()
-        self.deployment_template = self._get_deployment_template()
-        self._service_template = self._get_service_template()
-        self._stateful_set_template = self._get_stateful_set_template()
-        self._pvc_template = self._get_pvc_template()
 
         self.target_path = os.getenv("TARGET_PATH", "target")
         self.manifests_path = os.path.join(
@@ -38,86 +34,16 @@ class ManifestBuilder:
 
         os.makedirs(os.path.dirname(self.target_path), exist_ok=True)
 
+        self._configmap_builder = ConfigMapBuilder(self.k8s_manifests_path)
+        self._servicebuilder = ServiceBuilder()
+        self._deployment_builder = DeploymentBuilder()
+        self.statefulset_builder = StatefulSetBuilder()
+        self.pvc_builder = PVCBuilder()
+        self._secret_builder = SecretBuilder(self.k8s_manifests_path)
         self.accelerator = accelerator
         self.overrides_validator = OverridesValidator()
+        self.skaffold_builder = SkaffoldConfigBuilder(self.manual_manifests_path, self.k8s_manifests_path)        
 
-    def get_template(self, template_name: str) -> Dict[str, Any]:
-        """Get the template by name."""
-        templates = {
-            "config_map": self._config_map_template,
-            "deployment": self.deployment_template,
-            "service": self._service_template,
-            "stateful_set": self._stateful_set_template,
-            "pvc": self._pvc_template,
-        }
-
-        assert template_name in templates, f"Template {template_name} not found"
-        return copy.deepcopy(templates[template_name])
-
-    def _load_template(self, path: str) -> dict:
-        """Load a template from the given path."""
-        template = load_file(path)
-        return cast(dict, template)
-
-    def _get_config_map_template(self) -> dict:
-        """Get the config map template."""
-        return self._load_template(
-            os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                os.getenv(
-                    "CONFIG_MAP_TEMPLATE_PATH", "resources/k8s_templates/configmap.json"
-                ),
-            )
-        )
-
-    def _get_deployment_template(self) -> dict:
-        """Get the deployment template."""
-        return self._load_template(
-            os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                os.getenv(
-                    "DEPLOYMENT_TEMPLATE_PATH",
-                    "resources/k8s_templates/deployment.json",
-                ),
-            )
-        )
-
-    def _get_service_template(self) -> dict:
-        """Get the service template."""
-        return self._load_template(
-            os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                os.getenv(
-                    "SERVICES_TEMPLATE_PATH", "resources/k8s_templates/services.json"
-                ),
-            )
-        )
-
-    def _get_stateful_set_template(self) -> dict:
-        """Get the stateful set template."""
-        return self._load_template(
-            os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                os.getenv(
-                    "STATEFULSET_TEMPLATE_PATH",
-                    "resources/k8s_templates/statefulset.json",
-                ),
-            )
-        )
-
-    def _get_pvc_template(self) -> dict:
-        """Get the PVC template."""
-        return self._load_template(
-            os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                os.getenv("PVC_TEMPLATE_PATH", "resources/k8s_templates/pvc.json"),
-            )
-        )
 
     def generate_manifests(self, microservice: Dict[str, Any]) -> None:
         """Generate manifests for the microservice and its dependencies."""
@@ -162,184 +88,34 @@ class ManifestBuilder:
             "secrets.yaml",
         )
 
-        secret.setdefault("manifests", {secret["name"]: {"secret": []}})
-        secret["manifests"][secret["name"]].update({"secret": secrets_path})
+        template = self._secret_builder.build_template(secret)
 
-        if not os.path.exists(secrets_path):
-            # Prepare the Kubernetes Secret template
-            template = self.get_template("config_map")
-            template["kind"] = "Secret"
-            template["metadata"]["name"] = "secrets"
-            template["metadata"]["labels"] = {"environment": "production"}
-            template["type"] = "Opaque"
-            template["data"] = {secret["name"]: secret["value"]}
+        self._save_yaml(template, secrets_path)
+        self.logger.info(f"Secret updated: {secrets_path}")
 
-            # Remove all None values from the template
-            template = remove_none_values(template)
-
-            self._save_yaml(template, secrets_path)
-
-            self.logger.info(f"Secret created: {secrets_path}")
-        else:
-            # Load existing secrets content
-            with open(secrets_path, "r") as file:
-                existing_data = yaml.safe_load(file) or {}
-
-            # Update or add the secret entry
-            existing_data.setdefault("data", {})
-            existing_data["data"].update({secret["name"]: secret["value"]})
-
-            # Write the updated content back to the secrets file
-            self._save_yaml(existing_data, secrets_path)
-            self.logger.info(f"Secret updated: {secrets_path}")
-
-        return template
+        return cast(Dict[str, Any], template)
 
     def build_config_map_yaml(self, config_map: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
-        # Convert the template to YAML string
+
+        # Prepare the Kubernetes ConfigMap template
+        template = self._configmap_builder.build_template(config_map)
+
+        # Write the updated content back to the config map file
         config_map_path = os.path.join(
             self.k8s_manifests_path,
             "config_map.yaml",
         )
+        self._save_yaml(template, config_map_path)
 
-        if not os.path.exists(config_map_path):
-            # Prepare the Kubernetes ConfigMap template
-            template = self.get_template("config_map")
-            template["kind"] = "ConfigMap"
-            template["metadata"]["name"] = f"config"
-            template["metadata"]["labels"] = {"environment": "production"}
-            template["data"] = {config_map["name"]: config_map["value"]}
+        self.logger.info(f"Config map updated: {config_map_path}")
 
-            self._save_yaml(
-                template,
-                config_map_path,
-            )
-
-            return template
-        else:
-            # Load existing config map content
-            with open(config_map_path, "r") as file:
-                existing_data = yaml.safe_load(file) or {}
-
-            # Update or add the config map entry
-            existing_data.setdefault("data", {})
-            existing_data["data"].update({config_map["name"]: config_map["value"]})
-
-            # Write the updated content back to the config map file
-            self._save_yaml(existing_data, config_map_path)
-
-            self.logger.info(f"Config map updated: {config_map_path}")
-
-            return existing_data
+        return cast(Dict[str, Any], template)
 
     def build_deployment_yaml(self, deployment: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
 
-        deployment_entry: Dict[str, Any] = {
-            "name": deployment["name"],
-            "labels": deployment["labels"],
-            "command": deployment["command"],
-            "args": deployment.get("args"),
-            "image": deployment["name"],
-            "volumes": deployment.get("volumes"),
-            "volume_mounts": deployment.get("volume_mounts"),
-            "ports": {"containerPort": port for port in deployment.get("ports", [])},
-            "workdir": deployment.get("workdir"),
-            "liveness_probe": deployment.get("liveness_probe"),
-            "user": deployment.get("user"),
-        }
-
-        deployment_entry = remove_none_values(deployment_entry)
-
-        template = self.get_template("deployment")
-        template["metadata"]["name"] = deployment_entry["name"]
-        template["metadata"]["labels"] = deployment_entry["labels"]
-
-        if "annotations" in deployment:
-            template["metadata"]["annotations"] = deployment["annotations"]
-
-        template["spec"]["selector"]["matchLabels"] = deployment_entry["labels"]
-        template["spec"]["template"]["metadata"]["labels"] = deployment_entry["labels"]
-        template["spec"]["template"]["spec"]["containers"][0]["name"] = (
-            deployment_entry["name"]
-        )
-
-        template["spec"]["template"]["spec"]["containers"][0]["image"] = (
-            deployment_entry["image"]
-        )
-
-        template["spec"]["template"]["spec"]["containers"][0]["command"] = (
-            deployment_entry["command"]
-        )
-
-        if "args" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["args"] = (
-                deployment_entry["args"]
-            )
-        if "user" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["securityContext"] = {
-                "runAsUser": deployment_entry["user"]
-            }
-
-        # Load volumes and their mounts
-        if "volumes" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = (
-                deployment_entry["volume_mounts"]
-            )
-
-            template["spec"]["template"]["spec"]["volumes"] = deployment_entry[
-                "volumes"
-            ]
-
-        if "ports" in deployment_entry:
-            template["spec"]["template"]["spec"]["containers"][0]["ports"] = [
-                deployment_entry["ports"]
-            ]
-
-        if "workdir" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
-                deployment_entry["workdir"]
-            )
-
-        if "liveness_probe" in deployment:
-            template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = (
-                deployment_entry["liveness_probe"]
-            )
-
-        if "env" in deployment:
-            env_vars = []
-            for entry in deployment["env"]:
-                if entry.get("key") == "password":
-                    env_vars.append(
-                        {
-                            "name": entry["name"],
-                            "valueFrom": {
-                                "secretKeyRef": {
-                                    "name": "config",
-                                    "key": entry["name"],
-                                }
-                            },
-                        }
-                    )
-                else:
-                    env_vars.append(
-                        {
-                            "name": entry["name"],
-                            "valueFrom": {
-                                "configMapKeyRef": {
-                                    "name": "config",
-                                    "key": entry["name"],
-                                }
-                            },
-                        }
-                    )
-
-            template["spec"]["template"]["spec"]["containers"][0]["env"] = env_vars
-
-        # Remove all None values from the template
-        template = remove_none_values(template)
-
+        template = self._deployment_builder.build_template(deployment)
         # Convert the template to YAML string
         deployment_path = os.path.join(
             self.k8s_manifests_path,
@@ -349,115 +125,13 @@ class ManifestBuilder:
 
         self._save_yaml(template, deployment_path)
 
-        return template
+        return cast(Dict[str, Any], template)
 
     def build_stateful_set_yaml(self, stateful_set: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
 
         # Prepare the stateful set entry
-        stateful_set_entry = {
-            "name": stateful_set["name"],
-            "labels": stateful_set["labels"],
-            "image": stateful_set["name"],
-            "command": stateful_set["command"],
-            "args": stateful_set.get("args", None),
-            "volumes": stateful_set.get("volumes", None),
-            "volume_mounts": stateful_set.get("volume_mounts", None),
-            "ports": stateful_set.get("ports", None),
-            "workdir": stateful_set.get("workdir", None),
-            "liveness_probe": stateful_set.get("liveness_probe", None),
-            "user": stateful_set.get("user", None),
-        }
-
-        template = self.get_template("stateful_set")
-        template["metadata"]["name"] = stateful_set_entry["name"]
-        template["metadata"]["labels"] = stateful_set_entry["labels"]
-
-        if "annotations" in stateful_set:
-            template["metadata"]["annotations"] = stateful_set["annotations"]
-        template["spec"]["selector"]["matchLabels"] = stateful_set_entry["labels"]
-
-        template["spec"]["template"]["metadata"]["labels"] = stateful_set_entry[
-            "labels"
-        ]
-
-        template["spec"]["template"]["spec"]["containers"][0]["name"] = (
-            stateful_set_entry["name"]
-        )
-
-        template["spec"]["template"]["spec"]["containers"][0]["image"] = (
-            stateful_set_entry["image"]
-        )
-
-        template["spec"]["template"]["spec"]["containers"][0]["command"] = (
-            stateful_set_entry["command"]
-        )
-
-        if "args" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["args"] = (
-                stateful_set_entry["args"]
-            )
-
-        if "user" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["securityContext"] = {
-                "runAsUser": stateful_set_entry["user"]
-            }
-
-        if "volumes" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] = (
-                stateful_set_entry["volume_mounts"]
-            )
-
-            template["spec"]["template"]["spec"]["volumes"] = stateful_set_entry[
-                "volumes"
-            ]
-
-        if "ports" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["ports"] = [
-                stateful_set_entry["ports"]
-            ]
-
-        if "workdir" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
-                stateful_set_entry["workdir"]
-            )
-
-        if "liveness_probe" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["livenessProbe"] = (
-                stateful_set_entry["liveness_probe"]
-            )
-
-        if "env" in stateful_set:
-            env_vars = []
-            for entry in stateful_set["env"]:
-                if entry.get("key") == "password":
-                    env_vars.append(
-                        {
-                            "name": entry["name"],
-                            "valueFrom": {
-                                "secretKeyRef": {
-                                    "name": "config",
-                                    "key": entry["name"],
-                                }
-                            },
-                        }
-                    )
-                else:
-                    env_vars.append(
-                        {
-                            "name": entry["name"],
-                            "valueFrom": {
-                                "configMapKeyRef": {
-                                    "name": "config",
-                                    "key": entry["name"],
-                                }
-                            },
-                        }
-                    )
-
-            template["spec"]["template"]["spec"]["containers"][0]["env"] = env_vars
-        # Remove all None values from the template
-        template = remove_none_values(template)
+        template = self.statefulset_builder.build_template(stateful_set)
         # Convert the template to YAML string
         stateful_set_path = os.path.join(
             self.k8s_manifests_path,
@@ -467,33 +141,12 @@ class ManifestBuilder:
 
         self._save_yaml(template, stateful_set_path)
 
-        return template
+        return cast(Dict[str, Any], template)
 
     def build_service_yaml(self, service: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
 
-        port_mappings = self._get_port_mappings(service)
-
-        # Prepare the service entry
-        service_entry = {
-            "name": service["name"],
-            "labels": service["labels"],
-            "ports": port_mappings,
-            "type": service.get("type", "ClusterIP"),
-        }
-
-        template = self.get_template("service")
-        template["metadata"]["name"] = service_entry["name"]
-        template["metadata"]["labels"] = service_entry["labels"]
-
-        template["spec"]["selector"] = service_entry["labels"]
-
-        template["spec"]["ports"] = service_entry["ports"]
-
-        template["spec"]["type"] = service_entry["type"]
-        # Remove all None values from the template
-        template = remove_none_values(template)
-
+        template = self._servicebuilder.build_template(service)
         # Convert the template to YAML string
         service_path = os.path.join(
             self.k8s_manifests_path, "services", f"{service['name']}-service.yaml"
@@ -501,28 +154,11 @@ class ManifestBuilder:
 
         self._save_yaml(template, service_path)
 
-        return template
+        return cast(Dict[str, Any], template)
 
     def build_pvc_yaml(self, pvc: dict) -> Dict[str, Any]:
         """Build a YAML file from the template and data."""
-        # Prepare the PVC entry
-        pvc_entry = {
-            "name": pvc["name"],
-            "labels": pvc.get("labels", []),
-            "storage_class": pvc.get("storage_class", None),
-            "access_modes": pvc.get("access_modes", None),
-            "resources": pvc.get("resources", None),
-        }
-
-        template = self.get_template("pvc")
-        template["metadata"]["name"] = pvc_entry["name"]
-        template["metadata"]["labels"] = pvc_entry["labels"]
-
-        template["spec"]["storageClassName"] = pvc_entry["storage_class"]
-        template["spec"]["accessModes"] = pvc_entry["access_modes"]
-        template["spec"]["resources"]["requests"]["storage"] = pvc_entry["resources"]
-        # Remove all None values from the template
-        template = remove_none_values(template)
+        template = self.pvc_builder.build_template(pvc)
 
         # Convert the template to YAML string
         pvc_path = os.path.join(
@@ -531,33 +167,12 @@ class ManifestBuilder:
 
         self._save_yaml(template, pvc_path)
 
-        return template
+        return cast(Dict[str, Any], template)
 
     def generate_skaffold_config(self, microservices: List[Dict[str, Any]]) -> str:
         """Generate a Skaffold configuration file."""
 
-        # First, generate the kustomization file to include all manifests
-        self.generate_kustomization_file()
-
-        # Create the Skaffold config with kustomize support
-        skaffold_config: Dict[str, Any] = {
-            "apiVersion": "skaffold/v3",
-            "kind": "Config",
-            "metadata": {"name": "app"},
-            "build": {"platforms": ["linux/amd64"], "artifacts": []},
-            # Use kustomize for manifests
-            "manifests": {"kustomize": {"paths": [self.manual_manifests_path]}},
-            "deploy": {"kubectl": {}},
-        }
-
-        # Add artifacts for each service
-        for service in microservices:
-            service_name = service.get("name", "").lower()
-            context_path = f"{service['metadata']['dockerfile']}"
-
-            artifact = {"image": service_name, "context": context_path}
-
-            skaffold_config["build"]["artifacts"].append(artifact)
+        skaffold_config = self.skaffold_builder.build_template(microservices)
 
         # Write the Skaffold config
         skaffold_path = os.path.join(self.manual_manifests_path, "skaffold.yaml")
@@ -568,72 +183,9 @@ class ManifestBuilder:
         return skaffold_path
 
     def generate_kustomization_file(self, output_dir: Optional[str] = None):
-        """Generate a kustomization.yaml file for the manifests in the output directory.
-
-        Args:
-            output_dir: Directory to place the kustomization.yaml file. Defaults to the manual_manifests_path.
-        """
-        output_dir = output_dir or self.k8s_manifests_path
-
-        self.logger.info(f"Generating kustomization file in {output_dir}")
-
-        # Find all YAML files in the deployments and services subdirectories
-        resources = []
-
-        # Add deployments
-        deployments_dir = os.path.join(output_dir, "deployments")
-        if os.path.exists(deployments_dir):
-            for file in os.listdir(deployments_dir):
-                if file.endswith(".yaml"):
-                    resources.append(f"deployments/{file}")
-
-        # Add services
-        services_dir = os.path.join(output_dir, "services")
-        if os.path.exists(services_dir):
-            for file in os.listdir(services_dir):
-                if file.endswith(".yaml"):
-                    resources.append(f"services/{file}")
-
-        # Add config maps
-        if os.path.exists(os.path.join(output_dir, "config_map.yaml")):
-            resources.append("config_map.yaml")
-
-        # Add secrets
-        if os.path.exists(os.path.join(output_dir, "secrets.yaml")):
-            resources.append("secrets.yaml")
-
-        # Add any stateful sets
-        statefulsets_dir = os.path.join(output_dir, "stateful_sets")
-        if os.path.exists(statefulsets_dir):
-            for file in os.listdir(statefulsets_dir):
-                if file.endswith(".yaml"):
-                    resources.append(f"stateful_sets/{file}")
-
-        # Add PVCs
-        pvcs_dir = os.path.join(output_dir, "pvcs")
-        if os.path.exists(pvcs_dir):
-            for file in os.listdir(pvcs_dir):
-                if file.endswith(".yaml"):
-                    resources.append(f"pvcs/{file}")
-
-        # Add root level files
-        for file in os.listdir(output_dir):
-            if (
-                file.endswith(".yaml")
-                and os.path.isfile(os.path.join(output_dir, file))
-                and file != "kustomization.yaml"
-            ):
-                if file not in resources:
-                    resources.append(file)
-
-        # Create the kustomization.yaml content
-        kustomization = {
-            "apiVersion": "kustomize.config.k8s.io/v1beta1",
-            "kind": "Kustomization",
-            "metadata": {"name": "manifests"},
-            "resources": sorted(resources),
-            "commonLabels": {"app.kubernetes.io/managed-by": "kustomize"},
-        }
+        """Generate a kustomization.yaml file for the manifests in the output directory."""
+       
+        kustomization = self.skaffold_builder.build_kustomization_template()
 
         # Write the kustomization file
         kustomization_path = os.path.join(
@@ -645,43 +197,43 @@ class ManifestBuilder:
 
         return kustomization_path
 
+
     def apply_config_overrides(
-        self, config_path: str, microservices: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, config_path: str, microservice: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Apply configuration overrides from a YAML file to microservices."""
         try:
+            with open(config_path, "r") as file:
+                # Load the configuration file
+                self.logger.info(f"Loading configuration overrides from {config_path}")
+                config = yaml.safe_load(file)
 
-            config = load_file(config_path)
-            # Validate the configuration file
-            if self.overrides_validator.validate(config):
+                # Validate the configuration file
+                if self.overrides_validator.validate(config):
 
-                # Apply global environment variables
-                global_env = config.get("global", {}).get("environment", [])
+                    # Apply global environment variables
+                    global_env = config.get("global", {}).get("environment", [])
 
-                # Make a copy of microservices to update
-                updated_services = copy.deepcopy(microservices)
-
-                for service in updated_services:
-                    service_name = service["name"]
+                    service_name = microservice["name"]
 
                     # Skip if service isn't in the configuration
                     if service_name not in config["services"]:
-                        continue
+                        return microservice
 
                     service_config = config["services"][service_name]
 
                     # Apply service-specific replicas
                     if "replicas" in service_config:
-                        service["replicas"] = service_config["replicas"]
+                        microservice["replicas"] = service_config["replicas"]
 
                     # Merge environment variables
                     if "environment" in service_config:
                         # Initialize env if not exists
-                        service.setdefault("env", [])
+                        microservice.setdefault("env", [])
 
                         # Add global environment variables
                         for env in global_env:
-                            service["env"].append(
+                            microservice["env"].append(
                                 {
                                     "name": env["name"],
                                     "key": "config",
@@ -693,183 +245,41 @@ class ManifestBuilder:
                         for env in service_config["environment"]:
                             # Check if the environment variable already exists
                             existing = False
-                            for i, existing_env in enumerate(service["env"]):
+                            for i, existing_env in enumerate(microservice["env"]):
                                 if existing_env["name"] == env["name"]:
                                     # Update existing environment variable
-                                    service["env"][i]["value"] = env["value"]
+                                    microservice["env"][i]["value"] = env["value"]
                                     existing = True
                                     break
 
                             if not existing:
                                 # Add new environment variable
-                                service["env"].append(
+                                microservice["env"].append(
                                     {
                                         "name": env["name"],
                                         "key": "config",
                                         "value": env["value"],
                                     }
                                 )
+                    return microservice
+                else:
+                    self.logger.error(f"Invalid configuration file: {config_path}")
 
-                    # Apply dependency-derived environment variables
-                    if (
-                        "dependencies" in config
-                        and service_name in config["dependencies"]
-                    ):
-                        for dep in config["dependencies"][service_name]:
-                            dep_service = dep["service"]
-                            dep_port = dep["port"]
-
-                            # Create an environment variable for the dependent service
-                            env_name = f"{dep_service.upper()}_SERVICE_ADDR"
-
-                            # Check if it already exists
-                            existing = False
-                            for i, env in enumerate(service["env"]):
-                                if env["name"] == env_name:
-                                    # Update existing environment variable
-                                    service["env"][i][
-                                        "value"
-                                    ] = f"{dep_service}:{dep_port}"
-                                    existing = True
-                                    break
-
-                            if not existing:
-                                # Add new environment variable
-                                service["env"].append(
-                                    {
-                                        "name": env_name,
-                                        "key": "config",
-                                        "value": f"{dep_service}:{dep_port}",
-                                    }
-                                )
-
-                return updated_services
-            else:
-                self.logger.error(f"Invalid configuration file: {config_path}")
-
-                # If validation fails, return the original microservices list
-                return microservices
-
+                    # If validation fails, return the original microservices list
+                    return microservice
+        except FileNotFoundError:
+            self.logger.error(f"Configuration file not found: {config_path}")
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
         except Exception as e:
             self.logger.error(f"Error applying config overrides: {e}")
-            return microservices
-
-    def _get_port_mappings(self, service_info: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Generate port mappings between service ports and container ports.
-
-        Args:
-            service_info: Service information from ontology
-            container_ports: Container ports detected from Dockerfile (optional)
-
-        Returns:
-            List of port mapping dictionaries
-        """
-
-        container_ports = service_info.get("ports", [])
-        service_ports = service_info.get("service-ports", [])
-        protocol = service_info.get("protocol", "TCP")
-
-        # If we have different numbers of ports, we need to be careful
-        if len(service_ports) != len(container_ports):
-            # Special case: Service ports are a subset of container ports
-            if all(port in container_ports for port in service_ports):
-                return [
-                    {
-                        "port": sport,
-                        "targetPort": sport,
-                        "name": f"port-{sport}",
-                        "protocol": protocol,
-                    }
-                    for sport in service_ports
-                ]
-            # For mismatched ports, use common port conventions
-            return self._map_ports_by_convention(
-                service_ports, container_ports, protocol
-            )
-
-        # Simple 1:1 mapping when port counts match
-        return [
-            {
-                "port": sport,
-                "targetPort": cport,
-                "name": self._get_port_name(sport),
-                "protocol": protocol,
-            }
-            for sport, cport in zip(service_ports, container_ports)
-        ]
-
-    def _map_ports_by_convention(
-        self, service_ports: List[int], container_ports: List[int], protocol: str
-    ) -> List[Dict[str, Any]]:
-        """Map ports using common conventions."""
-        mappings = []
-
-        # Common port conventions
-        conventions = {
-            80: [8080, 3000, 4200, 5000, 8000],
-            443: [8443, 8080, 3000],
-        }
-
-        # Try to map each service port
-        for sport in service_ports:
-            # Direct match
-            if sport in container_ports:
-                mappings.append(
-                    {
-                        "port": sport,
-                        "targetPort": sport,
-                        "name": self._get_port_name(sport),
-                        "protocol": protocol,
-                    }
-                )
-                continue
-
-            # Look for conventional mappings
-            mapped = False
-            for standard, alternatives in conventions.items():
-                if sport == standard and any(
-                    alternative in container_ports for alternative in alternatives
-                ):
-                    # Find the first matching alternative
-                    for alternative in alternatives:
-                        if alternative in container_ports:
-                            mappings.append(
-                                {
-                                    "port": sport,
-                                    "targetPort": alternative,
-                                    "name": self._get_port_name(sport),
-                                    "protocol": protocol,
-                                }
-                            )
-                            mapped = True
-                            break
-                    if mapped:
-                        break
-
-            # No mapping found, use the service port directly
-            if not mapped:
-                mappings.append(
-                    {
-                        "port": sport,
-                        "targetPort": sport,
-                        "name": f"port-{sport}",
-                        "protocol": protocol,
-                    }
-                )
-
-        return mappings
-
-    def _get_port_name(self, port):
-        """Get a canonical name for well-known ports."""
-        port_names = {80: "http", 443: "https"}
-        return port_names.get(port, f"port-{port}")
+            raise e
 
     def _save_yaml(self, template: dict, path: str) -> None:
         """Save the template as a YAML file."""
 
         # Create a custom dumper that handles Helm templates correctly
         class NoAliasDumper(yaml.SafeDumper):
-            def ignore_aliases(self, _):
+            def ignore_aliases(self, _): # type: ignore
                 return True
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
