@@ -91,7 +91,7 @@ def setup_sentence_transformer(force_cpu: bool = False) -> Any:
     os.makedirs(model_path, exist_ok=True)
 
     model = SentenceTransformer(model_name_or_path=model_name, device=device)  # type: ignore
-    model.save(model_path)
+    model.save(model_path) # type: ignore
 
     return model
 
@@ -182,7 +182,7 @@ def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
 
         # Raw string command: detect shell logic
         return (
-            ["/bin/sh -c", field] if needs_shell_parsing(field) else shlex.split(field)
+            ["/bin/sh", "-c", field] if needs_shell_parsing(field) else shlex.split(field)
         )
 
     return []

@@ -50,17 +50,7 @@ def setup_logging(
     )
     size_handler.setFormatter(formatter)
     root_logger.addHandler(size_handler)
-    
-    # Time-based rotation handler
-    time_handler = TimedRotatingFileHandler(
-        log_file_path,
-        when="D",  # Daily rotation
-        interval=1,
-        backupCount=time_backup_days,
-    )
-    time_handler.setFormatter(formatter)
-    root_logger.addHandler(time_handler)
-    
+        
     # Console handler (optional)
     if console_output:
         console_handler = logging.StreamHandler()
