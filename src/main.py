@@ -71,6 +71,7 @@ if __name__ == "__main__":
     for child in repository_tree.children:
         logging.info(f"Generating manifests for child... {child.name}")
         microservice = treebuilder.prepare_microservice(child)
+        microservice = manifest_builder.apply_config_overrides(os.getenv("OVERRIDES_FILE_PATH", ""),microservice)
         enriched_services.append(microservice)
         manifest_builder.generate_manifests(microservice)
 
