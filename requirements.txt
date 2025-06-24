@@ -16,3 +16,4 @@ dotenv
 accelerate>=0.26.0
 bitsandbytes
 transformers
+kubernetes>=24.0.0
