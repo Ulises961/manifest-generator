@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List, Optional, cast
 from manifests_generation.configmap_builder import ConfigMapBuilder
 from manifests_generation.deployment_builder import DeploymentBuilder
+from manifests_generation.overrider import Overrider
 from manifests_generation.pvc_builder import PVCBuilder
 from manifests_generation.secret_builder import SecretBuilder
 from manifests_generation.service_builder import ServiceBuilder
@@ -12,10 +13,11 @@ import yaml
 from accelerate import Accelerator
 from validation.overrides_validator import OverridesValidator
 
+
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
-    def __init__(self, accelerator: Accelerator) -> None:
+    def __init__(self, accelerator: Accelerator, config_path) -> None:
         """Initialize the tree builder with the manifest templates."""
         self.logger = logging.getLogger(__name__)
 
@@ -41,9 +43,10 @@ class ManifestBuilder:
         self.pvc_builder = PVCBuilder()
         self._secret_builder = SecretBuilder(self.k8s_manifests_path)
         self.accelerator = accelerator
-        self.overrides_validator = OverridesValidator()
-        self.skaffold_builder = SkaffoldConfigBuilder(self.manual_manifests_path, self.k8s_manifests_path)        
-
+        self.skaffold_builder = SkaffoldConfigBuilder(
+            self.manual_manifests_path, self.k8s_manifests_path
+        )
+        self.overrider = Overrider(config_path)
 
     def generate_manifests(self, microservice: Dict[str, Any]) -> None:
         """Generate manifests for the microservice and its dependencies."""
@@ -184,7 +187,7 @@ class ManifestBuilder:
 
     def generate_kustomization_file(self, output_dir: Optional[str] = None):
         """Generate a kustomization.yaml file for the manifests in the output directory."""
-       
+
         kustomization = self.skaffold_builder.build_kustomization_template()
 
         # Write the kustomization file
@@ -197,89 +200,18 @@ class ManifestBuilder:
 
         return kustomization_path
 
-
     def apply_config_overrides(
         self, config_path: str, microservice: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Apply configuration overrides from a YAML file to microservices."""
-        try:
-            with open(config_path, "r") as file:
-                # Load the configuration file
-                self.logger.info(f"Loading configuration overrides from {config_path}")
-                config = yaml.safe_load(file)
-
-                # Validate the configuration file
-                if self.overrides_validator.validate(config):
-
-                    # Apply global environment variables
-                    global_env = config.get("global", {}).get("environment", [])
-
-                    service_name = microservice["name"]
-
-                    # Skip if service isn't in the configuration
-                    if service_name not in config["services"]:
-                        return microservice
-
-                    service_config = config["services"][service_name]
-
-                    # Apply service-specific replicas
-                    if "replicas" in service_config:
-                        microservice["replicas"] = service_config["replicas"]
-
-                    # Merge environment variables
-                    if "environment" in service_config:
-                        # Initialize env if not exists
-                        microservice.setdefault("env", [])
-
-                        # Add global environment variables
-                        for env in global_env:
-                            microservice["env"].append(
-                                {
-                                    "name": env["name"],
-                                    "key": "config",
-                                    "value": env["value"],
-                                }
-                            )
-
-                        # Add service-specific environment variables
-                        for env in service_config["environment"]:
-                            # Check if the environment variable already exists
-                            existing = False
-                            for i, existing_env in enumerate(microservice["env"]):
-                                if existing_env["name"] == env["name"]:
-                                    # Update existing environment variable
-                                    microservice["env"][i]["value"] = env["value"]
-                                    existing = True
-                                    break
-
-                            if not existing:
-                                # Add new environment variable
-                                microservice["env"].append(
-                                    {
-                                        "name": env["name"],
-                                        "key": "config",
-                                        "value": env["value"],
-                                    }
-                                )
-                    return microservice
-                else:
-                    self.logger.error(f"Invalid configuration file: {config_path}")
-
-                    # If validation fails, return the original microservices list
-                    return microservice
-        except FileNotFoundError:
-            self.logger.error(f"Configuration file not found: {config_path}")
-            raise FileNotFoundError(f"Configuration file not found: {config_path}")
-        except Exception as e:
-            self.logger.error(f"Error applying config overrides: {e}")
-            raise e
+        return cast(Dict[str, Any], self.overrider.apply_overrides(microservice))
 
     def _save_yaml(self, template: dict, path: str) -> None:
         """Save the template as a YAML file."""
 
         # Create a custom dumper that handles Helm templates correctly
         class NoAliasDumper(yaml.SafeDumper):
-            def ignore_aliases(self, _): # type: ignore
+            def ignore_aliases(self, _):  # type: ignore
                 return True
 
         os.makedirs(os.path.dirname(path), exist_ok=True)

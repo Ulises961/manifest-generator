@@ -17,9 +17,9 @@ class BashScriptParser:
         self,
         secret_classifier: SecretClassifier,
         env_parser: EnvParser,
-        embeddings_engine: EmbeddingsEngine,
+        embeddings_client: EmbeddingsClient,
     ):
-        self._engine = embeddings_engine
+        self.embeddings_client = embeddings_client
         self.secret_classifier = secret_classifier
         self.startup_script_names = ["start.sh", "entrypoint.sh", "run.sh", "serve.sh"]
         self.env_parser = env_parser
@@ -86,13 +86,17 @@ class BashScriptParser:
         # Then try semantic matching
         for file in files:
             if file.endswith(".sh"):
-                file_name = self._engine.encode(file)
-                for script in self.startup_script_names:
-                    script_name = self._engine.encode(script)
-                    similarity = self._engine.compute_similarity(file_name, script_name)
-                    if similarity > 0.8:
-                        # Assuming the script is a potential startup script
-                        return os.path.join(root, file)
+                for script_name in self.startup_script_names:
+                    if (
+                        result := self.embeddings_client.get_similarity(
+                            file, script_name
+                        )
+                    ) is not None:
+                        result = cast(Dict[str, float], result)
+                        similarity = float(result.get("similarity", 0))
+                        if similarity > 0.8:
+                            # Assuming the script is a potential startup script
+                            return os.path.join(root, file)
         return None
 
     def parse_script(
@@ -260,7 +264,7 @@ class BashScriptParser:
         full_path = os.path.join(os.path.basename(dockerfile_path), path)
 
         # The source command is a script and we have not found any entrypoint or cmd
-        return self.parse_script(full_path,None, None, parent)
+        return self.parse_script(full_path, None, None, parent)
 
     def _parse_command_pair(
         self,
@@ -271,8 +275,8 @@ class BashScriptParser:
     ) -> None:
         """Parse ENTRYPOINT + CMD combination."""
         # Check if the entrypoint is a script
-        for command in entrypoint.value:
-            if command.endswith(".sh"):
+        if entrypoint.value and isinstance(entrypoint.value, str):
+            if entrypoint.value.endswith(".sh"):
                 self.parse_script(
                     os.path.join(root, entrypoint.value), entrypoint, cmd, parent
                 )
@@ -299,7 +303,8 @@ class BashScriptParser:
             original_cmd = None
 
         if original_entrypoint:
-            for value in original_entrypoint.value:
+            if isinstance(original_entrypoint.value, str):
+                value = original_entrypoint.value
 
                 if value.endswith(".sh"):
                     original_entrypoint.metadata["parser_hint"] = (
@@ -341,4 +346,3 @@ class BashScriptParser:
         return any(
             re.match(self.patterns[pattern], line) for pattern in ["kubectl", "docker"]
         )
-

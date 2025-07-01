@@ -1,62 +1,17 @@
-import os
-from typing import Dict
+from typing import Optional, cast
 
-from numpy import ndarray
-from torch import Tensor
-from embeddings.embeddings_engine import EmbeddingsEngine
-from utils.file_utils import load_file
+from embeddings.embeddings_client import EmbeddingsClient
 
 
 class LabelClassifier:
-    def __init__(self, embeddings_engine: EmbeddingsEngine) -> None:
-        self._engine: EmbeddingsEngine = embeddings_engine
-        self._label_embeddings: Dict[str, Dict[str, Tensor]] = self._encode_labels()
+    def __init__(self, embeddings_client: EmbeddingsClient) -> None:
+        self.embeddings_client: EmbeddingsClient = embeddings_client
 
-    def classify_label(self, label_key, threshold=0.8) -> str | None:
-        key_embedding = self._engine.encode(label_key)
-
-        # Compute cosine similarity with known labels
-        label_similarities = {
-            k: self._engine.compute_similarity(key_embedding, v) for k, v in self._label_embeddings['labels'].items()
-        }
-        annotation_similarities = {
-            k: self._engine.compute_similarity(key_embedding, v) for k, v in self._label_embeddings['annotations'].items()
-        }
-
-        label_similarities = {
-            k: v for k, v in label_similarities.items() if v >= threshold
-        }
-
-        annotation_similarities = {
-            k: v for k, v in annotation_similarities.items() if v >= threshold
-        }
-
-
-        # Find best match
-        if len(label_similarities) == 0 and len(annotation_similarities) == 0:
-            return None
-        elif len(label_similarities) == 0:
-            best_label = None
-            best_annotation = max(annotation_similarities.items(), key=lambda x: x[1])[0]
-            return "annotation" if annotation_similarities[best_annotation] >= threshold else None
+    def classify_label(
+        self,
+        label_key,
+    ) -> Optional[str]:
+        if (result := self.embeddings_client.classify_label(label_key)) is not None:
+            return cast(str, result.get("decision", "unknown"))
         else:
-            best_annotation = None
-            best_label = max(label_similarities.items(), key=lambda x: x[1])[0]
-            return "label" if label_similarities[best_label] >= threshold else None
-      
-    
-    def _encode_labels(self) -> Dict[str, Dict[str, Tensor]]:
-        """Encode labels using the SentenceTransformer model."""
-
-        labels_path = os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            os.getenv("LABELS_PATH", "resources/knowledge_base/docker_labels.json")
-        )
-        
-        labels: Dict[str, Dict[str, str]] = load_file(labels_path)
-
-        return {
-            category_name: {label: self._engine.encode(label) for label in label_dict.keys()}
-            for category_name, label_dict in labels.items()
-        }
+            return None
