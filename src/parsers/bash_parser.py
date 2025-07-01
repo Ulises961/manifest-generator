@@ -1,7 +1,7 @@
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, cast
 import re
 import os
-from embeddings.embeddings_engine import EmbeddingsEngine
+from embeddings.embeddings_client import EmbeddingsClient
 from parsers.env_parser import EnvParser
 from tree.node import Node
 from tree.node_types import NodeType

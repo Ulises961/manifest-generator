@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 import yaml
-from embeddings.embeddings_engine import EmbeddingsEngine
+from embeddings.embeddings_comparator import EmbeddingsEngine
 from manifests_generation.manifest_builder import ManifestBuilder
 from utils.file_utils import load_environment
 

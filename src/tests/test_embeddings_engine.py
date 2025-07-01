@@ -1,7 +1,7 @@
 import pytest
 from sentence_transformers import SentenceTransformer
 from numpy import ndarray, array
-from embeddings.embeddings_engine import EmbeddingsEngine
+from embeddings.embeddings_comparator import EmbeddingsEngine
 from utils.file_utils import setup_sentence_transformer
 
 @pytest.fixture

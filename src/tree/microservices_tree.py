@@ -1,10 +1,9 @@
-import json
 import os
 from typing import Any, Dict, Optional, List, cast
 from parsers.env_parser import EnvParser
 from tree.attached_file import AttachedFile
 from tree.command_mapper import CommandMapper
-from embeddings.embeddings_engine import EmbeddingsEngine
+from embeddings.embeddings_client import EmbeddingsClient
 
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
@@ -22,14 +21,14 @@ class MicroservicesTree:
     def __init__(
         self,
         root_path: str,
-        embeddings_engine: EmbeddingsEngine,
+        embeddings_client: EmbeddingsClient,
         secret_classifier: SecretClassifier,
         service_classifier: ServiceClassifier,
         label_classifier: LabelClassifier,
     ):
         self.logger = logging.getLogger(__name__)
         self.root_path = root_path
-        self.embeddings_engine: EmbeddingsEngine = embeddings_engine
+        self.embeddings_client: EmbeddingsClient = embeddings_client
         self.secret_classifier = secret_classifier
         self.service_classifier = service_classifier
         self.env_parser: EnvParser = EnvParser(secret_classifier)
@@ -38,7 +37,7 @@ class MicroservicesTree:
         )
 
         self.bash_parser: BashScriptParser = BashScriptParser(
-            secret_classifier, self.env_parser, embeddings_engine
+            secret_classifier, self.env_parser, embeddings_client
         )
 
         self.file_extensions = {
@@ -52,7 +51,6 @@ class MicroservicesTree:
             "env": [".env"],
         }
         self.is_dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-
 
     def build(self) -> Node:
         root_node = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
@@ -84,7 +82,7 @@ class MicroservicesTree:
         preferred_name: Optional[str] = None,
     ) -> None:
         """Scan the directory for microservices and find Dockerfile."""
-        
+
         # Only check files in the current directory, not recursively
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
 
@@ -103,7 +101,10 @@ class MicroservicesTree:
                     dir_name = preferred_name
 
                 microservice_node = Node(
-                    name=dir_name, type=NodeType.MICROSERVICE, parent=parent, metadata={"dockerfile_path": path}
+                    name=dir_name,
+                    type=NodeType.MICROSERVICE,
+                    parent=parent,
+                    metadata={"dockerfile_path": path},
                 )
 
                 # Add the microservice node to the parent node
@@ -157,18 +158,20 @@ class MicroservicesTree:
         # Generate manifests for the microservice
         microservice: Dict[str, Any] = {"name": node.name}
         microservice.setdefault("labels", {"app": node.name})
-        microservice.setdefault("metadata", {"dockerfile": node.metadata.get("dockerfile_path","")})
+        microservice.setdefault(
+            "metadata", {"dockerfile": node.metadata.get("dockerfile_path", "")}
+        )
 
         if len(labels := node.get_children_by_type(NodeType.LABEL)) > 0:
 
             for label in labels:
-                parsed_labels = parse_key_value_string(label.value)
+                parsed_labels = parse_key_value_string(cast(str, label.value))
                 microservice["labels"].update(parsed_labels)  # type: ignore
 
         if len(annotations := node.get_children_by_type(NodeType.ANNOTATION)) > 0:
             microservice.setdefault("annotations", {})
             for annotation in annotations:
-                parsed_annotations = parse_key_value_string(annotation.value)
+                parsed_annotations = parse_key_value_string(cast(str, annotation.value))
                 microservice["annotations"].update(parsed_annotations)  # type: ignore
 
         if (
@@ -192,8 +195,10 @@ class MicroservicesTree:
             len(ports := node.get_children_by_type(NodeType.PORT, must_be_active=True))
             > 0
         ):
-            microservice["ports"] = [int(port.value) for port in ports]
-            microservice["service-ports"] = [int(port.value) for port in ports]
+            microservice["ports"] = [int(cast(str, port.value)) for port in ports]
+            microservice["service-ports"] = [
+                int(cast(str, port.value)) for port in ports
+            ]
             microservice["type"] = "ClusterIP"
             microservice["protocol"] = "TCP"
             microservice["workload"] = "Deployment"
@@ -260,7 +265,7 @@ class MicroservicesTree:
                             "name": f"volume-{index}",
                             "labels": {
                                 "app": microservice["labels"]["app"],
-                                "storage-type": "persistent"
+                                "storage-type": "persistent",
                             },
                             "storage_class": "standard",
                             "access_modes": ["ReadWriteOnce"],
@@ -292,7 +297,6 @@ class MicroservicesTree:
             for file_name, file in node.attached_files.items():
                 microservice.setdefault("attached_files", {})
                 microservice["attached_files"][file_name] = file.__to_dict__()
-                
 
         # Enrich microservice
         container_ports = microservice.get("ports", [])
@@ -352,10 +356,8 @@ class MicroservicesTree:
 
         for command in commands:
             # Classify the command
-            nodes: List[Node] = (
-                self.command_parser.generate_node_from_command(
-                    command, microservice_node
-                )
+            nodes: List[Node] = self.command_parser.generate_node_from_command(
+                command, microservice_node
             )
 
             for node in nodes:
@@ -398,15 +400,15 @@ class MicroservicesTree:
                         with open(file_path, "r") as f:
                             content = f.read()
                             file_size_kb = os.path.getsize(file_path) / 1024
-                            
+
                             # Make sure the file size is an integer
                             file_size_int = int(file_size_kb)
-                            
+
                             attachment = AttachedFile(
                                 file_name,
                                 file_type,
                                 file_size_int,  # Use integer size instead of float
-                                content
+                                content,
                             )
 
                             node.attach_file(name, attachment)

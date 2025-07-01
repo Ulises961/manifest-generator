@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 
 from sentence_transformers import SentenceTransformer
-from embeddings.embeddings_engine import EmbeddingsEngine
+from embeddings.embeddings_comparator import EmbeddingsEngine
 from embeddings.secret_classifier import SecretClassifier
 from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper

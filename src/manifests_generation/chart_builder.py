@@ -1,7 +1,7 @@
 import logging
 import os
 from typing import Any, Dict, List, cast
-from embeddings.embeddings_engine import EmbeddingsEngine
+from embeddings.embeddings_comparator import EmbeddingsEngine
 from utils.file_utils import load_file, remove_none_values
 from caseutil import to_snake
 import yaml

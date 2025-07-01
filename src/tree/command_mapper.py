@@ -4,6 +4,7 @@ import re
 import shlex
 from typing import Any, Dict, List, Optional
 from dockerfile_parse import DockerfileParser
+from embeddings.embeddings_client import EmbeddingsClient
 from embeddings.label_classifier import LabelClassifier
 from parsers.env_parser import EnvParser
 

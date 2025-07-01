@@ -35,4 +35,3 @@ class HelmRenderer:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Helm template failed: {e.output}")
 
-        return f"Rendered manifest from {self.chart_path} with values from {self.values_path}"
