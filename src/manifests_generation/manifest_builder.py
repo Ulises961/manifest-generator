@@ -10,14 +10,13 @@ from manifests_generation.service_builder import ServiceBuilder
 from manifests_generation.skaffold_config_builder import SkaffoldConfigBuilder
 from manifests_generation.statefulset_builder import StatefulSetBuilder
 import yaml
-from accelerate import Accelerator
 from validation.overrides_validator import OverridesValidator
 
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
-    def __init__(self, accelerator: Accelerator, config_path) -> None:
+    def __init__(self, config_path) -> None:
         """Initialize the tree builder with the manifest templates."""
         self.logger = logging.getLogger(__name__)
 
@@ -42,7 +41,6 @@ class ManifestBuilder:
         self.statefulset_builder = StatefulSetBuilder()
         self.pvc_builder = PVCBuilder()
         self._secret_builder = SecretBuilder(self.k8s_manifests_path)
-        self.accelerator = accelerator
         self.skaffold_builder = SkaffoldConfigBuilder(
             self.manual_manifests_path, self.k8s_manifests_path
         )
@@ -216,17 +214,13 @@ class ManifestBuilder:
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
-        self.accelerator.wait_for_everyone()
+        with open(path, "w") as file:
+            yaml.dump(
+                template,
+                file,
+                Dumper=NoAliasDumper,
+                sort_keys=False,
+                default_flow_style=False,
+            )
+        print(f"YAML file saved to {path}")
 
-        if self.accelerator.is_main_process:
-            with open(path, "w") as file:
-                yaml.dump(
-                    template,
-                    file,
-                    Dumper=NoAliasDumper,
-                    sort_keys=False,
-                    default_flow_style=False,
-                )
-            print(f"YAML file saved to {path}")
-
-        self.accelerator.wait_for_everyone()

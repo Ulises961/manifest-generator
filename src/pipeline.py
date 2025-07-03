@@ -12,7 +12,6 @@ from utils.file_utils import (
 from utils.logging_utils import setup_logging
 import logging
 import os
-from accelerate import Accelerator
 from huggingface_hub import InferenceClient
 # Get module-specific logger
 logger = logging.getLogger(__name__)
@@ -55,10 +54,7 @@ def run():
     treebuilder.print_tree(repository_tree)  # Print the tree structure
 
     ### Phase 2: Generate the manifests from the repository tree ###
-    accelerator = Accelerator()
-    manifest_builder = ManifestBuilder(
-        accelerator, os.getenv("OVERRIDES_FILE_PATH", "")
-    )
+    manifest_builder = ManifestBuilder(os.getenv("OVERRIDES_FILE_PATH", ""))
     enriched_services: List[Dict[str, Any]] = []
     for child in repository_tree.children:
         logging.info(f"Generating manifests for child... {child.name}")
@@ -75,10 +71,11 @@ def run():
     # ### Phase 3: Generate inferred manifests from the repository tree ###
 
     # Prepare a http client to query the LLM
-    endpoint = os.getenv("LLM_ENDPOINT", "http://localhost:8000/v1/chat/completions")
+    base_url = "http://localhost:8080"
+    endpoint = os.getenv("LLM_ENDPOINT", f"{base_url}/v1/chat/completions")
 
     inference_client = InferenceClient(
-        model=endpoint,
+        model=base_url,
         token=os.getenv("LLM_API_KEY", ""),
         headers={"Content-Type": "application/json"},
     )
@@ -94,32 +91,32 @@ def run():
         prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
         print(prompt)
-        # ## Generate the response
-        # response = inference_client.text_generation(
-        #     prompt,
-        #     do_sample=False,
-        #     max_new_tokens=3000,
-        #     model=os.getenv("PRODUCTION_INFERENCE_MODEL", "codellama/CodeLlama-13b-Instruct-hf"))
-        # ## Process the response
-        # processed_response = response
-        # logger.info(f"Received response for {microservice['name']}: {processed_response}")
-        # for manifest in processed_response:
-        #     logging.info(f"Generated manifest: {microservice['name']}")
+        ## Generate the response
+        response = inference_client.text_generation(
+            prompt,
+            do_sample=False,
+            max_new_tokens=3000,
+            model=os.getenv("PRODUCTION_INFERENCE_MODEL", "codellama/CodeLlama-7b-Instruct-hf"))
+        ## Process the response
+        processed_response = response
+        logger.info(f"Received response for {microservice['name']}: {processed_response}")
+        for manifest in processed_response:
+            logging.info(f"Generated manifest: {microservice['name']}")
 
-        #     target_dir = os.path.join(
-        #         os.getenv("TARGET_PATH", "target"),
-        #         os.getenv("MANIFESTS_PATH", "manifests"),
-        #         os.getenv("LLM_MANIFESTS_PATH", "llm"),
-        #         "first_pass",
-        #         microservice["name"],
-        #     )
+            target_dir = os.path.join(
+                os.getenv("TARGET_PATH", "target"),
+                os.getenv("MANIFESTS_PATH", "manifests"),
+                os.getenv("LLM_MANIFESTS_PATH", "llm"),
+                "first_pass",
+                microservice["name"],
+            )
 
-        #     os.makedirs(target_dir, exist_ok=True)
+            os.makedirs(target_dir, exist_ok=True)
 
-        #     # Save the response to a file
-        #     manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
+            # Save the response to a file
+            manifest_path = os.path.join(target_dir, f"{manifest['name']}.yaml")
 
-        #     with open(manifest_path, "w") as f:
-        #         f.write(manifest["manifest"])
+            with open(manifest_path, "w") as f:
+                f.write(manifest["manifest"])
 
-        #     logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
+            logging.info(f"Saved manifest to {target_dir}/{manifest['name']}.yaml")
