@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 from pipeline import run
 from utils.file_utils import load_environment
-import click_completion
+import json
 
 
 @click.group()
@@ -12,6 +12,18 @@ def cli():
     pass
 
 @cli.command()
+@click.option('--config-file', '-c', type=click.Path(exists=True, file_okay=True, dir_okay=False),
+              help='Path to a config file (optional) '
+              'Shape: {' \
+              '"repository_path": "/path/to/repo", ' \
+              '"llm_model": "model_name",' \
+              '"llm_endpoint": "http://localhost:8000/v1/chat/completions", ' \
+              '"llm_token": "your_token", ' \
+                '"embeddings_model": "sentence-transformers/all-MiniLM-L6-v2", ' \
+                '"embeddings_endpoint": "http://localhost:8000/v1/embeddings", ' \
+                '"embeddings_token": "your_embeddings_token", ' \
+                '"overrides_file": "/path/to/overrides.json"}')
+
 @click.option('--interactive', '-i', is_flag=True, default=False, 
               help='Run in interactive mode to configure all options')
 @click.option('--repository-path', '-r', type=click.Path(exists=True, file_okay=False, dir_okay=True),
@@ -26,7 +38,7 @@ def cli():
 @click.option('--embeddings-token', help='Embeddings API token')
 @click.option('--overrides-file', type=click.Path(exists=True, file_okay=True, dir_okay=False),
               help='Path to configuration overrides file')
-def main(interactive: bool, repository_path: Optional[str], skaffold_file: Optional[str],
+def main(config_file:Optional[str] ,interactive: bool, repository_path: Optional[str], skaffold_file: Optional[str],
          llm_model: Optional[str], llm_endpoint: Optional[str], llm_token: Optional[str],
          embeddings_model: Optional[str], embeddings_endpoint: Optional[str], 
          embeddings_token: Optional[str], overrides_file: Optional[str]):
@@ -35,12 +47,35 @@ def main(interactive: bool, repository_path: Optional[str], skaffold_file: Optio
     
     Generate Kubernetes manifests from microservices repositories using AI.
     """
+     
+    # Load environment variables
+    load_environment()
+
     config = {}
+    if config_file is not None:
+        # Load configuration from file
+        if not Path(config_file).is_file():
+            click.echo(click.style(f"❌ Error: Config file '{config_file}' does not exist.", fg='red'))
+            return
+        
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        except json.JSONDecodeError as e:
+            click.echo(click.style(f"❌ Error parsing config file: {e}", fg='red'))
+            return
+
+        # Validate required fields
+        required_fields = ['repository_path', 'llm_model', 'llm_endpoint']
+        for field in required_fields:
+            if field not in config or not config[field]:
+                click.echo(click.style(f"❌ Missing required field in config: {field}", fg='red'))
+                return
     
-    if interactive or not all([repository_path, llm_model or llm_endpoint]):
+    elif interactive or not all([repository_path, llm_model or llm_endpoint]):
         config = interactive_setup(repository_path, skaffold_file, llm_model, 
-                                 llm_endpoint, llm_token, embeddings_model,
-                                 embeddings_endpoint, embeddings_token, overrides_file)
+                                llm_endpoint, llm_token, embeddings_model,
+                                embeddings_endpoint, embeddings_token, overrides_file)
     else:
         config = {
             'repository_path': repository_path,
@@ -53,10 +88,7 @@ def main(interactive: bool, repository_path: Optional[str], skaffold_file: Optio
             'embeddings_token': embeddings_token,
             'overrides_file': overrides_file
         }
-    
-    # Load environment variables
-    load_environment()
-
+   
     # Set environment variables based on configuration
     set_environment_variables(config)
     
@@ -71,6 +103,7 @@ def interactive_setup(repository_path=None, skaffold_file=None, llm_model=None,
     click.echo(click.style("🚀 Microservices Manifest Generator Setup", fg='blue', bold=True))
     click.echo("Let's configure your project step by step.\n")
     
+
     config = {}
     
     # Repository path (required)
@@ -257,12 +290,6 @@ def set_environment_variables(config):
 
 cli.add_command(main)
 
-@cli.command()
-def install_completion():
-    """Print shell completion script for your shell."""
-    click_completion.init()
-    shell = click_completion.get_auto_shell()
-    click.echo(click_completion.get_code(shell, 'python -m src.main'))
 
 if __name__ == '__main__':
     cli()
