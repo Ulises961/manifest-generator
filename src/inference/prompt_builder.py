@@ -56,7 +56,7 @@ class PromptBuilder:
 
         return prompt
 
-    def generate_prompt(self, microservice: Dict[str, Any], microservices: List[Dict[str,Any]]) -> str:
+    def generate_prompt(self, microservice: Dict[str, Any], microservices: List[Dict[str,Any]]) -> List[Dict[str, str]]:
         """Generate a Kubernetes manifest generation prompt for a specific microservice."""
         
         prompt = self._generate_base_prompt(microservices)
@@ -87,4 +87,4 @@ class PromptBuilder:
         self.logger.info(
             f"Prompt generated for the {microservice['name']} microservice:\n{prompt}"
         )
-        return prompt
+        return [{"role": "user", "content": prompt}]

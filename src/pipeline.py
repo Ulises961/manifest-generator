@@ -4,6 +4,7 @@ from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
 from inference.prompt_builder import PromptBuilder
+from inference.inference_processor import InferenceProcessor
 from manifests_generation.manifest_builder import ManifestBuilder
 from tree.microservices_tree import MicroservicesTree
 from utils.file_utils import (
@@ -72,16 +73,15 @@ def run():
 
     # Prepare a http client to query the LLM
     base_url = "http://localhost:8080"
-    endpoint = os.getenv("LLM_ENDPOINT", f"{base_url}/v1/chat/completions")
+    endpoint = "https://stivo.disi.unitn.it/user/ulisesemiliano.sosa/code-server/proxy/8080/" #os.getenv("LLM_ENDPOINT", f"{base_url}/v1/chat/completions")
 
     inference_client = InferenceClient(
         model=base_url,
-        token=os.getenv("LLM_API_KEY", ""),
         headers={"Content-Type": "application/json"},
     )
 
     prompt_builder = PromptBuilder()
-
+    inference_processor = InferenceProcessor()
     for microservice in enriched_services:
         logging.info(f"Generating manifests for child... {microservice['name']}")
         for manifest in microservice["manifests"]:
@@ -90,15 +90,18 @@ def run():
                 prompt_builder.attach_file(attached_file)
         prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
-        print(prompt)
         ## Generate the response
-        response = inference_client.text_generation(
-            prompt,
-            do_sample=False,
-            max_new_tokens=3000,
-            model=os.getenv("PRODUCTION_INFERENCE_MODEL", "codellama/CodeLlama-7b-Instruct-hf"))
+        try:
+            response = inference_client.chat_completion(
+                messages= prompt,   
+                max_tokens=3000)
         ## Process the response
-        processed_response = response
+        except Exception as e:
+            logging.error(e)
+            exit(0)
+
+        processed_response = inference_processor.process_response(response.choices[0]['message']['content'])
+        
         logger.info(f"Received response for {microservice['name']}: {processed_response}")
         for manifest in processed_response:
             logging.info(f"Generated manifest: {microservice['name']}")
