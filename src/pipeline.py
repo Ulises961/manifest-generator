@@ -7,13 +7,12 @@ from inference.prompt_builder import PromptBuilder
 from inference.inference_processor import InferenceProcessor
 from manifests_generation.manifest_builder import ManifestBuilder
 from tree.microservices_tree import MicroservicesTree
-from utils.file_utils import (
-    load_environment
-)
 from utils.logging_utils import setup_logging
 import logging
 import os
 from huggingface_hub import InferenceClient
+import anthropic
+
 # Get module-specific logger
 logger = logging.getLogger(__name__)
 
@@ -73,12 +72,13 @@ def run():
 
     # Prepare a http client to query the LLM
     base_url = "http://localhost:8080"
-    endpoint = "https://stivo.disi.unitn.it/user/ulisesemiliano.sosa/code-server/proxy/8080/" #os.getenv("LLM_ENDPOINT", f"{base_url}/v1/chat/completions")
+    endpoint = os.getenv("LLM_ENDPOINT", f"{base_url}/v1/chat/completions")
 
     inference_client = InferenceClient(
-        model=base_url,
+        model=endpoint,
         headers={"Content-Type": "application/json"},
     )
+    inference_client = anthropic.Anthropic()
 
     prompt_builder = PromptBuilder()
     inference_processor = InferenceProcessor()
@@ -91,16 +91,16 @@ def run():
         prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
         ## Generate the response
-        try:
-            response = inference_client.chat_completion(
-                messages= prompt,   
-                max_tokens=3000)
-        ## Process the response
-        except Exception as e:
-            logging.error(e)
-            exit(0)
-
-        processed_response = inference_processor.process_response(response.choices[0]['message']['content'])
+        response = inference_client.messages.create(
+            model="claude-3-5-haiku-latest",
+            max_tokens=3000,
+            temperature=0,
+            system=prompt_builder._generate_system_prompt(),  # type: ignore
+            messages=prompt # type: ignore
+            )
+   
+        logging.info(f"Response from LLM: {response.content}")
+        processed_response = inference_processor.process_response(response.content) # type: ignore
         
         logger.info(f"Received response for {microservice['name']}: {processed_response}")
         for manifest in processed_response:

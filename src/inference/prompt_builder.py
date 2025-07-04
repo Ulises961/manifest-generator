@@ -28,7 +28,7 @@ class PromptBuilder:
                 prompt += f" {file.name}: {file}"
         return prompt
 
-    def _generate_base_prompt(self, services: List[Dict[str, Any]]) -> str:
+    def _generate_system_prompt(self) -> List[Dict[str, Any]]:
         """Generate the base prompt for all microservices, providing context for interdependencies."""
         self.logger.info("Generating base prompt for microservices.")
 
@@ -37,6 +37,16 @@ class PromptBuilder:
             "You are a strict Kubernetes manifests generator.\n"
             "You only output valid raw Kubernetes YAML manifests starting off from a set of microservices described next.\n"
             "The set of microservices are interrelated and compose an application.\n"
+            "Guidelines:\n"
+            "- Use production-ready Kubernetes best practices.\n"
+            "- If needed, add Service, ConfigMap, Secret, or PVC.\n"
+            "- Use labels like `app`, `tier`, `role`, and `environment`.\n"
+            "- Use TODO placeholders for values that cannot be confidently inferred.\n"
+            "- Image name must be the same as the microservice name.\n"
+            "- Separate each manifest with '---' if multiple objects are required.\n"
+            "- The result must be directly usable with `kubectl apply -f` or in CI/CD pipelines.\n"
+            "**No other output is allowed. Do not explain, do not reason, do not output markdown or comments.**\n"
+            "**Immediately output only valid Kubernetes YAML for the service.**\n"
         )
 
         # prompt += "Here is the schema for all microservices in this system:\n\n"
@@ -54,16 +64,12 @@ class PromptBuilder:
         #     "or interdependencies between services, but do not explain them.\n"
         # )
 
-        return prompt
+        return [{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}]
 
     def generate_prompt(self, microservice: Dict[str, Any], microservices: List[Dict[str,Any]]) -> List[Dict[str, str]]:
         """Generate a Kubernetes manifest generation prompt for a specific microservice."""
         
-        prompt = self._generate_base_prompt(microservices)
-
-        prompt += prompt + "\n"
-
-        prompt += f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
+        prompt = f"Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n\n"
 
         prompt += "Microservice details:\n"
         
@@ -71,17 +77,6 @@ class PromptBuilder:
             if key != "attached_files" and key != "manifests":
                 prompt += f"  {key}: {value}\n"
 
-
-        prompt += "Guidelines:\n"
-        prompt += "- Use production-ready Kubernetes best practices.\n"
-        prompt += "- Fill in extra fields but keep coherence with the templates provided.\n"
-        prompt += "- If needed, add Service, ConfigMap, Secret, or PVC.\n"
-        prompt += "- Use labels like `app`, `tier`, `role`, and `environment`.\n"
-        prompt += "- Use TODO placeholders for values that cannot be confidently inferred.\n"
-        prompt += "- Separate each manifest with '---' if multiple objects are required.\n"
-        prompt += "- The result must be directly usable with `kubectl apply -f` or in CI/CD pipelines.\n"
-        prompt += "**No other output is allowed. Do not explain, do not reason, do not output markdown or comments.**\n"
-        prompt += "**Immediately output only valid Kubernetes YAML for the service.**\n"
         prompt += "Output:\n"
 
         self.logger.info(
