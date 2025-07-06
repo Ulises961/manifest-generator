@@ -1,14 +1,16 @@
 {
     "llm_model": "codellama/CodeLlama-13b-Instruct-hf",
-    "llm_endpoint": "http://0.0.0.0:8080/v1/chat/completions",
+    "llm_endpoint": "https://stivo.disi.unitn.it/user/ulisesemiliano.sosa/code-server/proxy/8080/",
     "llm_token": "",
     "embeddings_model": "sentence-transformers/all-MiniLM-L6-v2",
     "embeddings_endpoint": "http://0.0.0.0:8000/v1",
     "embeddings_token": "",
-    "repository_path": "/home/ulisesemiliano.sosa/microservices-demo/src",
+    "repository_path": "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/microservices-demo/src",
     "skaffold_file": "skaffold.yaml",
-    "overrides_file_path": "",
+    "overrides_file": "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/Tool/overrides.yaml",
     "default_config": true,
     "interactive": false,
-    "hugging_face_token": ""
+    "hugging_face_token": "",
+    "dry_run": true,
+    "verbose": true
 }

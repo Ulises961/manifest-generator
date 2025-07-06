@@ -185,12 +185,12 @@ class ManifestBuilder:
 
     def generate_kustomization_file(self, output_dir: Optional[str] = None):
         """Generate a kustomization.yaml file for the manifests in the output directory."""
-
+        output_dir = output_dir or self.k8s_manifests_path
         kustomization = self.skaffold_builder.build_kustomization_template()
 
         # Write the kustomization file
         kustomization_path = os.path.join(
-            self.manual_manifests_path, "kustomization.yaml"
+            output_dir, "kustomization.yaml"
         )
         self._save_yaml(kustomization, kustomization_path)
 

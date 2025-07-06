@@ -1,3 +1,4 @@
+import sys
 import click
 import os
 from pathlib import Path
@@ -22,7 +23,10 @@ def cli():
                 '"embeddings_model": "sentence-transformers/all-MiniLM-L6-v2", ' \
                 '"embeddings_endpoint": "http://localhost:8000/v1/embeddings", ' \
                 '"embeddings_token": "your_embeddings_token", ' \
-                '"overrides_file": "/path/to/overrides.json"}')
+                '"overrides_file": "/path/to/overrides.json",' \
+                '"dry_run": false, ' \
+                '"verbose": false, ' \
+              '"skaffold_file": "/path/to/skaffold.yaml"}')
 
 @click.option('--interactive', '-i', is_flag=True, default=False, 
               help='Run in interactive mode to configure all options')
@@ -38,10 +42,15 @@ def cli():
 @click.option('--embeddings-token', help='Embeddings API token')
 @click.option('--overrides-file', type=click.Path(exists=True, file_okay=True, dir_okay=False),
               help='Path to configuration overrides file')
+@click.option('--dry-run', is_flag=True, default=False,
+              help='Run in dry-run mode, generating only heuristics based manifests without LLM inference')
+@click.option('--verbose', is_flag=True, default=False,
+              help='Enable verbose logging for detailed output')
+
 def main(config_file:Optional[str] ,interactive: bool, repository_path: Optional[str], skaffold_file: Optional[str],
          llm_model: Optional[str], llm_endpoint: Optional[str], llm_token: Optional[str],
          embeddings_model: Optional[str], embeddings_endpoint: Optional[str], 
-         embeddings_token: Optional[str], overrides_file: Optional[str]):
+         embeddings_token: Optional[str], overrides_file: Optional[str], dry_run: bool = False, verbose = False):
     """
     Microservices Manifest Generator CLI
     
@@ -56,26 +65,29 @@ def main(config_file:Optional[str] ,interactive: bool, repository_path: Optional
         # Load configuration from file
         if not Path(config_file).is_file():
             click.echo(click.style(f"❌ Error: Config file '{config_file}' does not exist.", fg='red'))
-            return
+            sys.exit(1)
+
         
         try:
             with open(config_file, 'r') as f:
                 config = json.load(f)
         except json.JSONDecodeError as e:
             click.echo(click.style(f"❌ Error parsing config file: {e}", fg='red'))
-            return
+            sys.exit(1)
+
 
         # Validate required fields
         required_fields = ['repository_path', 'llm_model', 'llm_endpoint']
         for field in required_fields:
             if field not in config or not config[field]:
                 click.echo(click.style(f"❌ Missing required field in config: {field}", fg='red'))
-                return
+                sys.exit(1)
+
     
     elif interactive or not all([repository_path, llm_model or llm_endpoint]):
         config = interactive_setup(repository_path, skaffold_file, llm_model, 
                                 llm_endpoint, llm_token, embeddings_model,
-                                embeddings_endpoint, embeddings_token, overrides_file)
+                                embeddings_endpoint, embeddings_token, overrides_file, dry_run, verbose)
     else:
         config = {
             'repository_path': repository_path,
@@ -86,7 +98,9 @@ def main(config_file:Optional[str] ,interactive: bool, repository_path: Optional
             'embeddings_model': embeddings_model,
             'embeddings_endpoint': embeddings_endpoint,
             'embeddings_token': embeddings_token,
-            'overrides_file': overrides_file
+            'overrides_file': overrides_file,
+            'dry_run': dry_run,
+            'verbose': verbose
         }
    
     # Set environment variables based on configuration
@@ -97,7 +111,7 @@ def main(config_file:Optional[str] ,interactive: bool, repository_path: Optional
 
 def interactive_setup(repository_path=None, skaffold_file=None, llm_model=None,
                      llm_endpoint=None, llm_token=None, embeddings_model=None,
-                     embeddings_endpoint=None, embeddings_token=None, overrides_file=None):
+                     embeddings_endpoint=None, embeddings_token=None, overrides_file=None, dry_run=False, verbose=False):
     """Interactive setup for configuration"""
     
     click.echo(click.style("🚀 Microservices Manifest Generator Setup", fg='blue', bold=True))
@@ -179,6 +193,20 @@ def interactive_setup(repository_path=None, skaffold_file=None, llm_model=None,
             show_default=False
         )
     
+    # Dry run option
+    if dry_run or click.confirm("\n🤖 Do you want to generate only heuristics based manifests (dry-run)?", default=False):
+        config['dry_run'] = True
+        click.echo(click.style("ℹ️ Running in dry-run mode. No LLM inference will be performed.", fg='yellow'))
+    else:
+        config['dry_run'] = False
+
+    # Verbose mode
+    if verbose or click.confirm("\n🔍 Do you want to enable verbose logging?", default = False):
+        config['verbose'] = True
+        click.echo(click.style("🔍 Verbose mode enabled. Detailed logs will be printed.", fg='yellow'))
+    else:
+        config['verbose'] = False
+
     # Embeddings Configuration
     click.echo(click.style("\n🔍 Embeddings Configuration", fg='yellow', bold=True))
     
@@ -249,7 +277,8 @@ def interactive_setup(repository_path=None, skaffold_file=None, llm_model=None,
         click.echo(f"🔍 Embeddings Endpoint: {config['embeddings_endpoint']}")
     if config.get('overrides_file'):
         click.echo(f"⚙️  Overrides file: {config['overrides_file']}")
-    
+    if config.get('dry_run'):
+        click.echo(click.style("ℹ️ Running in dry-run mode. No LLM inference will be performed.", fg='yellow'))
     if not click.confirm("\nProceed with this configuration?", default=True):
         click.echo("Setup cancelled.")
         raise click.Abort()
@@ -278,6 +307,16 @@ def set_environment_variables(config):
     if config.get('overrides_file'):
         os.environ['OVERRIDES_FILE_PATH'] = config['overrides_file']
     
+    os.environ['DRY_RUN'] = 'false'
+    
+    if config.get('dry_run'):
+        os.environ['DRY_RUN'] = 'true' 
+    
+    if config.get('verbose'):
+        os.environ['VERBOSE'] = 'true'
+    else:
+        os.environ['VERBOSE'] = 'false'
+
     # Set default paths if not already set
     if 'TARGET_PATH' not in os.environ:
         os.environ['TARGET_PATH'] = 'target'
