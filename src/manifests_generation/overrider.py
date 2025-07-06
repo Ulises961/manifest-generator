@@ -1,8 +1,10 @@
+from enum import Enum
 import logging
 import traceback
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 import yaml
 
+from manifests_generation.pvc_builder import PVCBuilder
 from validation.overrides_validator import OverridesValidator
 
 
@@ -37,119 +39,164 @@ class Overrider:
                     )
                     return None
         except FileNotFoundError:
-            self.logger.error(
-                f"Configuration file not found: {config_path}. Ignoring overrides."
+            self.logger.exception(
+                f"Configuration file not found: {config_path}. Ignoring overrides.",
+                exc_info=True,
+                stack_info=True,
             )
             return None
 
-    def apply_overrides(self, microservice: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_overrides(self, microservice: Dict[str, Any], microservice_name: str) -> Dict[str, Any]:
         """Apply configuration overrides from a YAML file to microservices."""
 
         if self.override_config is not None:
-
             # Apply global environment variables
-            global_env = self.override_config.get("global", {}).get(
-                "environment", []
-            )
-
-            service_name = microservice["name"]
 
             # Skip if service isn't in the configuration
-            if service_name not in self.override_config["services"]:
+            if microservice_name not in self.override_config["services"]:
+                self.logger.warning(
+                    f"Service {microservice_name} not found in overrides configuration. Skipping overrides."
+                )
                 return microservice
 
-            service_config = self.override_config["services"][service_name]
+            service_config = self.override_config["services"][microservice_name]
+
+            self.logger.debug(
+                f"Applying overrides for service {microservice_name}: {service_config}"
+            )
+            
+            manifests = microservice.get("manifests", {})
+            if manifests.get("deployment", None) is not None:
+                self.override_deployment(microservice, service_config)
+            if manifests.get("stateful_set", None) is not None:
+                self.override_deployment(microservice, service_config)
+            if manifests.get("service", None) is not None:
+                self.override_service(
+                    microservice, service_config
+                )
+            if manifests.get("pvc", None) is not None:
+                self.override_pvc(microservice, service_config)
+
+               
+        return microservice
+
+    def override_deployment(self, service: Dict[str, Any], service_config: Dict[str, Any]):
+        if self.override_config is not None:
+            # Apply global environment variables
+            manifests = service.get("manifests",{})
+            _, template = manifests.get("deployment", (None,None))
+            
+            global_env = self.override_config.get("global", {}).get("environment", [])
 
             # Apply basic service properties
             if "replicas" in service_config:
-                if "spec" not in microservice:
-                    microservice["spec"] = {}
-                microservice["spec"]["replicas"] = service_config["replicas"]
+                if "spec" not in template:
+                    template["spec"] = {}
+                template["spec"]["replicas"] = service_config["replicas"]
 
             if "image" in service_config:
-                self._ensure_container_spec(microservice)
-                microservice["spec"]["template"]["spec"]["containers"][0][
-                    "image"
-                ] = service_config["image"]
+                template = self._ensure_container_spec(template)
+                template["spec"]["template"]["spec"]["containers"][0]["image"] = (
+                    service_config["image"]
+                )
 
             # Apply environment variables
             self._apply_environment_variables(
-                microservice, service_config.get("environment", []), global_env
+                template, service_config.get("environment", []), global_env
             )
 
             # Apply port configurations
             if "ports" in service_config:
-                self._apply_port_config(microservice, service_config["ports"])
+                self._apply_port_config(template, service_config["ports"])
 
             # Apply volume mounts
             if "volumes" in service_config:
-                self._apply_volume_mounts(microservice, service_config["volumes"])
+                # Use microservice to attach a brand new pvc if needed
+                self._apply_volume_mounts(service, service_config["volumes"])
 
             # Apply resource constraints
             if "resources" in service_config:
                 self._apply_resource_constraints(
-                    microservice, service_config["resources"]
+                    template, service_config["resources"]
                 )
 
             # Apply probes
             if "livenessProbe" in service_config:
                 self._apply_probe(
-                    microservice, service_config["livenessProbe"], "livenessProbe"
+                    template, service_config["livenessProbe"], "livenessProbe"
                 )
 
             if "readinessProbe" in service_config:
                 self._apply_probe(
-                    microservice, service_config["readinessProbe"], "readinessProbe"
+                    template, service_config["readinessProbe"], "readinessProbe"
                 )
 
             # Apply lifecycle hooks
             if "lifecycle" in service_config:
-                self._apply_lifecycle(microservice, service_config["lifecycle"])
+                self._apply_lifecycle(template, service_config["lifecycle"])
 
-                # Apply affinity rules
-                if "affinity" in service_config:
-                    self._apply_affinity(microservice, service_config["affinity"])
+            # Apply affinity rules
+            if "affinity" in service_config:
+                self._apply_affinity(template, service_config["affinity"])
 
                 # Apply volume claims
-                if "volumeClaims" in service_config:
-                    self._apply_volume_claims(
-                        microservice, service_config["volumeClaims"]
-                    )
+            if "volumeClaims" in service_config:
+                self._apply_volume_claims(
+                    template, service_config["volumeClaims"]
+                )
 
-                # Apply secret references
-                if "secrets" in service_config:
-                    self._apply_secrets(microservice, service_config["secrets"])
+            # Apply secret references
+            if "secrets" in service_config:
+                self._apply_secrets(template, service_config["secrets"])
 
-                # Apply metadata (annotations and labels)
-                if "metadata" in service_config:
-                    self._apply_metadata(microservice, service_config["metadata"])
+            # Apply metadata (annotations and labels)
+            if "metadata" in service_config:
+                    self._apply_metadata(template, service_config["metadata"])
 
             # Process dependencies and generate dependency graph
             if any(
                 "dependencies"
-                in self.override_config.get("services", {}).get(service_name, {})
-                for service_name in self.override_config.get("services", {})
+                in self.override_config.get("services", {}).get(microservice_name, {})
+                for microservice_name in self.override_config.get("services", {})
             ):
                 self._process_dependencies(
-                    microservice, self.override_config["services"]
+                    template, self.override_config["services"]
                 )
+        return service
+    def get_microservice_overrides(self, microservice_name: str) -> Dict[str,Any]:
+        """Get the overrides applied to a specific template."""
+        if not self.override_config:
+            self.logger.warning(
+                "No override configuration loaded. Returning empty overrides."
+            )
+            return {}
+        
+        if (config := self.override_config["services"].get(microservice_name, None)) is None:
+            self.logger.warning(
+                f"No overrides found for service {microservice_name}. Returning empty overrides."
+            )
+            return {}
 
-        return microservice
+        self.logger.info(
+                f"Returning overrides for service {microservice_name}: {config}"
+            )
 
-
-    def _ensure_container_spec(self, service: Dict[str, Any]):
+        return cast(Dict[str, Any], config)
+    
+    
+    def _ensure_container_spec(self, service: Dict[str, Any]) -> Dict[str, Any]:
         """Ensure the container spec structure exists in the service."""
+        
         if "spec" not in service:
             service["spec"] = {}
         if "template" not in service["spec"]:
-            service["spec"]["template"] = {"spec": {}}
+            service["spec"]["template"] = {}
         if "spec" not in service["spec"]["template"]:
             service["spec"]["template"]["spec"] = {}
         if "containers" not in service["spec"]["template"]["spec"]:
             service["spec"]["template"]["spec"]["containers"] = [{}]
-        if not service["spec"]["template"]["spec"]["containers"]:
-            service["spec"]["template"]["spec"]["containers"] = [{}]
-
+        return service
+    
     def _apply_environment_variables(
         self,
         service: Dict[str, Any],
@@ -160,7 +207,7 @@ class Overrider:
         if not (service_env or global_env):
             return
 
-        self._ensure_container_spec(service)
+        service = service = self._ensure_container_spec(service)
         container = service["spec"]["template"]["spec"]["containers"][0]
 
         # Initialize env if not exists
@@ -196,7 +243,7 @@ class Overrider:
         self, service: Dict[str, Any], port_configs: List[Dict[str, Any]]
     ):
         """Apply port configurations to a service."""
-        self._ensure_container_spec(service)
+        service = service = self._ensure_container_spec(service)
         container = service["spec"]["template"]["spec"]["containers"][0]
 
         # Initialize ports if not exists
@@ -227,70 +274,99 @@ class Overrider:
                 container["ports"].append(new_port)
 
     def _apply_volume_mounts(
-        self, service: Dict[str, Any], volume_configs: List[Dict[str, Any]]
+        self, microservice: Dict[str, Any], volume_configs: List[Dict[str, Any]]
     ):
         """Apply volume mount configurations to a service."""
-        self._ensure_container_spec(service)
-        container = service["spec"]["template"]["spec"]["containers"][0]
-        pod_spec = service["spec"]["template"]["spec"]
 
-        # Initialize volumeMounts if not exists
-        if "volumeMounts" not in container:
-            container["volumeMounts"] = []
+        # Retrieve the manifest before starting
+        manifests = microservice.get("manifests", {})
+        _, template = manifests.get("deployment", (None, None))
+        if template is not None and self.override_config is not None:
+            template = self._ensure_container_spec(template)
+            container = template["spec"]["template"]["spec"]["containers"][0]
+            pod_spec = template["spec"]["template"]["spec"]
 
-        # Initialize volumes if not exists
-        if "volumes" not in pod_spec:
-            pod_spec["volumes"] = []
+            # Initialize volumeMounts if not exists
+            if "volumeMounts" not in container:
+                container["volumeMounts"] = []
 
-        # Process each volume mount
-        for volume_config in volume_configs:
-            volume_name = volume_config["name"]
+            # Initialize volumes if not exists
+            if "volumes" not in pod_spec:
+                pod_spec["volumes"] = []
 
-            # Add or update volumeMount in container
-            mount_found = False
-            for i, existing_mount in enumerate(container["volumeMounts"]):
-                if existing_mount["name"] == volume_name:
-                    container["volumeMounts"][i]["mountPath"] = volume_config[
-                        "mountPath"
-                    ]
+            # Process each volume mount
+            for volume_config in volume_configs:
+                volume_name = volume_config["name"]
+
+                # Add or update volumeMount in container
+                mount_found = False
+                for i, existing_mount in enumerate(container["volumeMounts"]):
+                    if existing_mount["name"] == volume_name:
+                        container["volumeMounts"][i]["mountPath"] = volume_config[
+                            "mountPath"
+                        ]
+                        if "subPath" in volume_config:
+                            container["volumeMounts"][i]["subPath"] = volume_config[
+                                "subPath"
+                            ]
+                        if "readOnly" in volume_config:
+                            container["volumeMounts"][i]["readOnly"] = volume_config[
+                                "readOnly"
+                            ]
+                        mount_found = True
+                        break
+
+                if not mount_found:
+                    new_mount = {
+                        "name": volume_name,
+                        "mountPath": volume_config["mountPath"],
+                    }
                     if "subPath" in volume_config:
-                        container["volumeMounts"][i]["subPath"] = volume_config[
-                            "subPath"
-                        ]
+                        new_mount["subPath"] = volume_config["subPath"]
                     if "readOnly" in volume_config:
-                        container["volumeMounts"][i]["readOnly"] = volume_config[
-                            "readOnly"
-                        ]
-                    mount_found = True
-                    break
+                        new_mount["readOnly"] = volume_config["readOnly"]
+                    container["volumeMounts"].append(new_mount)
 
-            if not mount_found:
-                new_mount = {
-                    "name": volume_name,
-                    "mountPath": volume_config["mountPath"],
-                }
-                if "subPath" in volume_config:
-                    new_mount["subPath"] = volume_config["subPath"]
-                if "readOnly" in volume_config:
-                    new_mount["readOnly"] = volume_config["readOnly"]
-                container["volumeMounts"].append(new_mount)
+                # Add volume in pod spec if not exists
+                volume_found = False
+                for existing_volume in pod_spec["volumes"]:
+                    if existing_volume["name"] == volume_name:
+                        volume_found = True
+                        break
 
-            # Add volume in pod spec if not exists
-            volume_found = False
-            for existing_volume in pod_spec["volumes"]:
-                if existing_volume["name"] == volume_name:
-                    volume_found = True
-                    break
+                if not volume_found:
+                    # If volume name present as volumeClaim in override config generate a new volume claim and associate it
+                    
+                    if volume_name in self.override_config.get("volumeClaims", {}):
+                        claim = self.override_config["volumeClaims"][volume_name]
+                        pvc_builder = PVCBuilder()
+                        pvc = pvc_builder.build_template({
+                            "name": microservice["name"],
+                            "labels": microservice.get("labels", []),
+                            "storage_class": claim.get("storageClass", None),
+                            "access_modes": claim.get("accessModes", ["ReadWriteOnce"]),
+                            "resources": claim.get("resources", {"requests": {"storage": "1Gi"}})
+                        })
 
-            if not volume_found:
-                # Create an emptyDir volume by default, can be overridden by volumeClaims
-                pod_spec["volumes"].append({"name": volume_name, "emptyDir": {}})
+                        pod_spec["volumes"].append(
+                            {
+                                "name": volume_name,
+                                "persistentVolumeClaim": {"claimName": claim["name"]},
+                            }
+                        )
+                    
+                    
+                    # Create an emptyDir volume by default
+                    pod_spec["volumes"].append({"name": volume_name, "emptyDir": {}})
+
+                 
+            
 
     def _apply_resource_constraints(
         self, service: Dict[str, Any], resources: Dict[str, Any]
     ):
         """Apply resource constraints to a service."""
-        self._ensure_container_spec(service)
+        service = service = self._ensure_container_spec(service)
         container = service["spec"]["template"]["spec"]["containers"][0]
 
         # Initialize resources if not exists
@@ -317,7 +393,7 @@ class Overrider:
         self, service: Dict[str, Any], probe_config: Dict[str, Any], probe_type: str
     ):
         """Apply health probe configuration to a service."""
-        self._ensure_container_spec(service)
+        service = service = self._ensure_container_spec(service)
         container = service["spec"]["template"]["spec"]["containers"][0]
 
         # Create the probe configuration
@@ -343,7 +419,7 @@ class Overrider:
         self, service: Dict[str, Any], lifecycle_config: Dict[str, Any]
     ):
         """Apply lifecycle hooks to a service."""
-        self._ensure_container_spec(service)
+        service = self._ensure_container_spec(service)
         container = service["spec"]["template"]["spec"]["containers"][0]
 
         # Initialize lifecycle if not exists
@@ -359,7 +435,7 @@ class Overrider:
 
     def _apply_affinity(self, service: Dict[str, Any], affinity_config: Dict[str, Any]):
         """Apply affinity rules to a service."""
-        self._ensure_container_spec(service)
+        service = self._ensure_container_spec(service)
         pod_spec = service["spec"]["template"]["spec"]
 
         # Set affinity directly
@@ -369,11 +445,11 @@ class Overrider:
         self, service: Dict[str, Any], volume_claims: List[Dict[str, Any]]
     ):
         """Apply persistent volume claims for a service."""
-        service_name = service["name"]
+        microservice_name = service["name"]
 
         service["persistent_volumes"] = volume_claims
         # Update pod volumes to use PVCs
-        self._ensure_container_spec(service)
+        service = self._ensure_container_spec(service)
         pod_spec = service["spec"]["template"]["spec"]
 
         # Initialize volumes if not exists
@@ -391,9 +467,7 @@ class Overrider:
                     # Replace with PVC reference
                     pod_spec["volumes"][i] = {
                         "name": volume_name,
-                        "persistentVolumeClaim": {
-                            "claimName": f"{volume_name}"
-                        },
+                        "persistentVolumeClaim": {"claimName": f"{volume_name}"},
                     }
                     volume_found = True
                     break
@@ -403,15 +477,13 @@ class Overrider:
                 pod_spec["volumes"].append(
                     {
                         "name": volume_name,
-                        "persistentVolumeClaim": {
-                            "claimName": f"{volume_name}"
-                        },
+                        "persistentVolumeClaim": {"claimName": f"{volume_name}"},
                     }
                 )
 
     def _apply_secrets(self, service: Dict[str, Any], secrets: List[Dict[str, Any]]):
         """Apply secret references to a service."""
-        self._ensure_container_spec(service)
+        service = self._ensure_container_spec(service)
         container = service["spec"]["template"]["spec"]["containers"][0]
 
         # Initialize env if not exists
@@ -498,15 +570,15 @@ class Overrider:
     ):
         """Process service dependencies and apply appropriate configurations."""
         # Build dependency graph
-        dependency_graph: Dict[str,Any] = {}
+        dependency_graph: Dict[str, Any] = {}
 
-        for service_name, config in service_configs.items():
+        for microservice_name, config in service_configs.items():
             if "dependencies" in config:
-                if service_name not in dependency_graph:
-                    dependency_graph[service_name] = []
+                if microservice_name not in dependency_graph:
+                    dependency_graph[microservice_name] = []
 
                 for dep in config["dependencies"]:
-                    dependency_graph[service_name].append(
+                    dependency_graph[microservice_name].append(
                         {
                             "service": dep["service"],
                             "required": dep.get("required", True),
@@ -515,9 +587,10 @@ class Overrider:
                     )
 
         # Add init containers for required dependencies
-        for service_name, deps in dependency_graph.items():
+        for microservice_name, deps in dependency_graph.items():
 
-            self._ensure_container_spec(service)
+            service = self._ensure_container_spec(service)
+            print(service)
             pod_spec = service["spec"]["template"]["spec"]
 
             # Initialize init containers
@@ -573,3 +646,86 @@ class Overrider:
                         container["env"].append(
                             {"name": env_var_name, "value": f"{dep_name}:{port}"}
                         )
+
+    def override_service(self, template: Dict[str, Any], service_config: Dict[str, Any]):
+        """Apply service-specific overrides."""
+        
+        # Ensure ports are defined in the service template
+        if "spec" not in template:
+            template["spec"] = {}
+        # Clean slate   
+        template["spec"].setdefault("ports", [])
+
+        # Apply port configurations
+        if "ports" in service_config:
+            for port in service_config.get("ports", []):
+                new_port = {
+                    "name": port.get("name", f"{port['port']}"),
+                    "targetPort": port["containerPort"],
+                    "port": port.get("hostPort", port["containerPort"]),
+                    "protocol": port.get("protocol", "TCP"),
+                }
+                template["spec"]["ports"].append(new_port)
+
+    def override_pvc(self, template: Dict[str,Any], service_config: Dict[str, Any]):
+        # Find the claim to override in the config
+        for claim in service_config.get("volumeClaims", []):
+            claim_name = claim["name"]
+            # Check if the PVC already exists in the template
+            if "spec" not in template:
+                template["spec"] = {}
+            if "volumeClaimTemplates" not in template["spec"]:
+                template["spec"]["volumeClaimTemplates"] = []
+
+            # Check if this PVC already exists
+            found = False
+            for existing_claim in template["spec"]["volumeClaimTemplates"]:
+                if existing_claim["metadata"]["name"] == claim_name:
+                    found = True
+                    # Update existing claim with new properties
+                    existing_claim["spec"]["accessModes"] = claim.get("accessModes", ["ReadWriteOnce"])
+                    existing_claim["spec"]["resources"] = {
+                        "requests": {
+                            "storage": claim.get("storage", "1Gi")
+                        }
+                    }
+                    if "storageClassName" in claim:
+                        existing_claim["spec"]["storageClassName"] = claim["storageClassName"]
+                    if "selector" in claim:
+                        existing_claim["spec"]["selector"] = claim["selector"]
+                    if "volumeMode" in claim:
+                        existing_claim["spec"]["volumeMode"] = claim["volumeMode"]
+                    if "dataSource" in claim:
+                        existing_claim["spec"]["dataSource"] = claim["dataSource"]
+                    if "dataSourceRef" in claim:
+                        existing_claim["spec"]["dataSourceRef"] = claim["dataSourceRef"]
+                    # No need to add a new claim, just update the existing one
+                    self.logger.debug(f"Updated existing PVC claim: {claim_name}")
+                    break
+
+            if not found:
+                # Add new PVC claim
+                template["spec"]["volumeClaimTemplates"].append({
+                    "metadata": {"name": claim_name},
+                    "spec": {
+                        "storageClassName": claim.get("storageClassName", "standard"),
+                        "accessModes": claim.get("accessModes", ["ReadWriteOnce"]),
+                        "resources": {
+                            "requests": {
+                                "storage": claim.get("storage", "1Gi")
+                            }
+                        }
+                    }
+                })
+
+   
+class ManifestType(Enum):
+    """Enum for manifest types."""
+
+    DEPLOYMENT = "deployment"
+    STATEFUL_SET = "stateful_set"
+    SERVICE = "service"
+    PVC = "pvc"
+    SECRET = "secret"
+    CONFIG_MAP = "config_map"
+
