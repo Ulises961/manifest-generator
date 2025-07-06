@@ -1,13 +1,11 @@
-from sentence_transformers import SentenceTransformer
 from utils.file_utils import (
     check_shell_in_commands,
     needs_shell_parsing,
     normalize_command_field,
     remove_none_values,
-    setup_sentence_transformer,
 )
 import pytest
-from unittest.mock import patch, create_autospec
+from unittest.mock import patch
 
 
 def test_not_dict():
@@ -33,7 +31,11 @@ def test_nested_dict_with_none():
     }
     assert remove_none_values(input_dict) == expected
 
-
+def test_template():
+    input_dict = {'metadata': {'name': 'test-pvc', 'labels': []}, 'spec': {'storageClassName': None, 'accessModes': None, 'resources': {'requests': {'storage': None}}}}
+    expected = {'metadata': {'name': 'test-pvc'}}
+    assert remove_none_values(input_dict) == expected
+    
 def test_deeply_nested_dict():
     input_dict = {
         "a": {"x": {"y": None, "z": 1}},
@@ -108,39 +110,3 @@ def mock_cuda_unavailable():
         yield
 
 
-class TestSetupSentenceTransformer:
-
-    @patch("utils.file_utils.SentenceTransformer")
-    @patch("os.path.exists")
-    def test_existing_model_cpu_forced(self, mock_exists, mock_transformer):
-        """Test loading existing model with forced CPU usage."""
-        # Setup
-        mock_exists.return_value = True
-        mock_model = create_autospec(SentenceTransformer)
-        mock_transformer.return_value = mock_model
-
-        # Execute
-        result = setup_sentence_transformer(force_cpu=True)
-
-        # Assert
-        assert result is mock_model  # Use 'is' instead of '=='
-        mock_transformer.assert_called_once()
-        kwargs = mock_transformer.call_args.kwargs
-        assert kwargs.get("device") == "cpu"
-
-    @patch("utils.file_utils.SentenceTransformer")
-    @patch("os.path.exists")
-    def test_new_model_download(self, mock_exists, mock_transformer):
-        """Test downloading and saving new model."""
-        # Setup
-        mock_exists.return_value = False
-        mock_model = create_autospec(SentenceTransformer)
-        mock_transformer.return_value = mock_model
-
-        # Execute
-        result = setup_sentence_transformer()
-
-        # Assert
-        assert result is mock_model
-        mock_transformer.assert_called_once()
-        mock_model.save.assert_called_once()

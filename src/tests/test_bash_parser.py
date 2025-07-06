@@ -10,8 +10,8 @@ from tree.node_types import NodeType
 def parser():
     secret_classifier = Mock()
     env_parser = Mock()
-    embeddings_engine = Mock()
-    return BashScriptParser(secret_classifier, env_parser, embeddings_engine)
+    embeddings_client = Mock()
+    return BashScriptParser(secret_classifier, env_parser, embeddings_client)
 
 
 def test_init(parser):
@@ -55,9 +55,9 @@ def test_is_orchestrator_line(parser):
 
 
 def test_find_startup_script(parser):
-    with patch.object(parser._engine, "compute_similarity") as mock_similarity:
-        # Mock the similarity function to return a high score for the first script
-        mock_similarity.return_value = 0.9
+    with patch.object(parser.embeddings_client, "get_similarity") as mock_similarity:
+        # Mock the similarity function to return a dict with a similarity score
+        mock_similarity.return_value = {"similarity": 0.9}
 
         # Test with a list of files
         root = "/test/path"
@@ -66,15 +66,15 @@ def test_find_startup_script(parser):
         result = parser._find_startup_script(root, files)
         assert result == "/test/path/start.sh"
         # Test with no files
-        mock_similarity.return_value = 0.0
+        mock_similarity.return_value = {"similarity": 0.0}
         result = parser._find_startup_script(root, [])
         assert result is None
         # Test with a single file
-        mock_similarity.return_value = 0.8
+        mock_similarity.return_value = {"similarity": 0.8}
         result = parser._find_startup_script(root, ["start.sh"])
         assert result == "/test/path/start.sh"
         # Test with a different file
-        mock_similarity.return_value = 0.0
+        mock_similarity.return_value = {"similarity": 0.0}
         result = parser._find_startup_script(root, ["other.sh"])
         assert result is None
 
@@ -123,8 +123,12 @@ def test_determine_startup_command(mock_open, parser):
             },
         )
 
-        assert entrypoint in service_node.children
-
+        assert any(
+            child.type == NodeType.ENTRYPOINT and
+            child.value == ["echo", "Starting service"] and
+            child.metadata.get("review") == "Generated from bash script"
+            for child in service_node.children
+        )
         # Verify the script was parsed and results added to service_node
         # You can add assertions here based on expected behavior
 

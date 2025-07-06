@@ -1,25 +1,23 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from sentence_transformers import SentenceTransformer
-from embeddings.embeddings_comparator import EmbeddingsEngine
+from embeddings.embeddings_client import EmbeddingsClient
 from embeddings.secret_classifier import SecretClassifier
 from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper
 from embeddings.label_classifier import LabelClassifier
+from tree.node import Node
 from tree.node_types import NodeType
 
 import os
-from utils.file_utils import load_environment, setup_sentence_transformer
 
 @pytest.fixture
 def command_mapper():
-    model = setup_sentence_transformer()
-    embeddings_engine = EmbeddingsEngine(model)
-    label_classifier = LabelClassifier(embeddings_engine)
-    secret_classifier = SecretClassifier(embeddings_engine)
+    embeddings_client = MagicMock(spec=EmbeddingsClient)
+    label_classifier = LabelClassifier(embeddings_client)
+    secret_classifier = SecretClassifier(embeddings_client)
     env_parser = EnvParser(secret_classifier)
-    return CommandMapper(label_classifier, env_parser)
+    return CommandMapper(label_classifier, env_parser, embeddings_client)
 
 def test_parse_dockerfile(command_mapper):
     dockerfile_content = """
@@ -64,22 +62,6 @@ def test_generate_expose_node(command_mapper):
     node = nodes[0]
     assert node.type == NodeType.PORT
     assert node.value == "80"
-
-def test_generate_volume_node(command_mapper):
-    volumes_content = '["test_volume"]'
-    with open("volumes.json", "w") as f:
-        f.write(volumes_content)
-
-    try:
-        volume = {"instruction": "VOLUME", "value": "test_volume"}
-        nodes = command_mapper._generate_volume_nodes(volume, None)
-        node = nodes[0]
-
-        assert isinstance(node, Node)
-        assert node.type == NodeType.VOLUME
-        assert not node.is_persistent
-    finally:
-        os.remove("volumes.json")
 
 @patch("embeddings.label_classifier.LabelClassifier.classify_label")
 def test_decide_label(mock_classify_label, command_mapper):
@@ -157,12 +139,13 @@ def test_parse_healthcheck_invalid_exec_form(command_mapper):
 @patch("parsers.env_parser.EnvParser.parse_env_var")
 def test_generate_env_nodes(mock_parse_env_var, command_mapper):
     # Create a mock node that would be returned by parse_env_var
-    mock_node = type('MockNode', (), {
-        'name': 'TEST_ENV',
-        'type': NodeType.ENV,
-        'value': 'test_value',
-        'metadata': {'is_secret': False}
-    })
+    mock_node = Node(
+        name='TEST_ENV',
+        type=NodeType.ENV,
+        value='test_value',
+        metadata={'is_secret': False}
+    )
+    
     
     # Configure mock to return list with mock node
     mock_parse_env_var.return_value = [mock_node]
@@ -186,4 +169,24 @@ def test_generate_env_nodes(mock_parse_env_var, command_mapper):
     
     mock_parse_env_var.assert_called_once_with("TEST_ENV=test_value")
 
+@patch("tree.command_mapper.EmbeddingsClient")
+def test_generate_volume_node(mock_embeddings_client):
+    # Mock the embeddings client to return a valid response
+    mock_embeddings_client.return_value.decide_volume.return_value = {"decision": True}
 
+    # Initialize CommandMapper with mocked dependencies
+    label_classifier = MagicMock()
+    env_parser = MagicMock()
+    command_mapper = CommandMapper(label_classifier, env_parser, mock_embeddings_client.return_value)
+
+    # Test data
+    volume = {"instruction": "VOLUME", "value": "test_volume"}
+    nodes = command_mapper._generate_volume_nodes(volume, None)
+
+    # Assertions
+    assert len(nodes) == 1
+    node = nodes[0]
+    assert node.name == "VOLUME"
+    assert node.type == NodeType.VOLUME
+    assert node.value == "test_volume"
+    assert node.is_persistent is True

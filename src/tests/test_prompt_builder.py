@@ -1,60 +1,72 @@
-import pytest
+import os
+import logging
+from unittest import TestCase
+from unittest.mock import patch, MagicMock
 from inference.prompt_builder import PromptBuilder
+from tree.attached_file import AttachedFile
 
-@pytest.fixture
-def sample_microservices():
-    return [
-        {
-            "name": "service1",
-            "port": 8080,
-            "image": "service1:latest"
-        },
-        {
-            "name": "service2", 
-            "port": 9090,
-            "image": "service2:latest"
-        }
-    ]
+class TestPromptBuilder(TestCase):
+    def setUp(self):
+        self.prompt_builder = PromptBuilder()
 
-@pytest.fixture
-def prompt_builder(sample_microservices):
-    return PromptBuilder(sample_microservices)
+    @patch("os.getenv")
+    def test_is_prod_mode(self, mock_getenv):
+        mock_getenv.return_value = "false"
+        prompt_builder = PromptBuilder()
+        self.assertFalse(prompt_builder.is_prod_mode)
 
-def test_init(prompt_builder):
-    assert prompt_builder.prompt != ""
-    assert isinstance(prompt_builder.attached_files, list)
-    assert len(prompt_builder.attached_files) == 0
+        mock_getenv.return_value = "true"
+        prompt_builder = PromptBuilder()
+        self.assertTrue(prompt_builder.is_prod_mode)
 
-def test_add_instruction(prompt_builder):
-    instruction = "Test instruction"
-    prompt_builder.add_instruction(instruction)
-    assert f"Instruction: {instruction}" in prompt_builder.get_prompt()
+    def test_attach_files(self):
+        file1 = MagicMock(spec=AttachedFile)
+        file2 = MagicMock(spec=AttachedFile)
+        self.prompt_builder.attach_files([file1, file2])
+        self.assertEqual(len(self.prompt_builder.attached_files), 2)
+        self.assertIn(file1, self.prompt_builder.attached_files)
+        self.assertIn(file2, self.prompt_builder.attached_files)
 
-def test_add_output(prompt_builder):
-    output = "Test output"
-    prompt_builder.add_output(output)
-    assert f"Output: {output}" in prompt_builder.get_prompt()
+    def test_attach_file(self):
+        file = MagicMock(spec=AttachedFile)
+        self.prompt_builder.attach_file(file)
+        self.assertEqual(len(self.prompt_builder.attached_files), 1)
+        self.assertIn(file, self.prompt_builder.attached_files)
 
-def test_clear_prompt(prompt_builder):
-    prompt_builder.clear_prompt()
-    assert prompt_builder.prompt == ""
+    def test_include_attached_files(self):
+        file1 = MagicMock(spec=AttachedFile)
+        file1.name = "file1.txt"
+        file2 = MagicMock(spec=AttachedFile)
+        file2.name = "file2.txt"
+        self.prompt_builder.attach_files([file1, file2])
 
-def test_create_prompt(prompt_builder):
-    instruction = "Test instruction"
-    output = "Test output"
-    prompt_builder.create_prompt(instruction, output)
-    assert f"Instruction: {instruction}" in prompt_builder.prompt
-    assert f"Output: {output}" in prompt_builder.prompt
+        with patch("os.getenv", return_value="true"):
+            prompt = "Base prompt"
+            result = self.prompt_builder.include_attached_files(prompt)
+            self.assertIn("Attached files for additional context:", result)
+            self.assertIn("file1.txt", result)
+            self.assertIn("file2.txt", result)
 
-def test_generate_prompt(prompt_builder, sample_microservices):
-    result = prompt_builder.generate_prompt(sample_microservices[0])
-    print(result)
-    assert False
-    assert "service1" in result
-    assert "Guidelines:" in result
-    assert "Output:" in result
+    @patch("logging.Logger.info")
+    def test_generate_system_prompt(self, mock_logger_info):
+        result = self.prompt_builder._generate_system_prompt()
+        self.assertIsInstance(result, list)
+        self.assertEqual(result[0]["type"], "text")
+        self.assertIn("You are a strict Kubernetes manifests generator.", result[0]["text"])
+        mock_logger_info.assert_called_once_with("Generating common prompt for microservices.")
 
-def test_generate_second_pass_prompt(prompt_builder):
-    prompt_builder.generate_second_pass_prompt()
-    assert "DevOps engineer" in prompt_builder.prompt
-    assert "Guidelines:" in prompt_builder.prompt
+    @patch("logging.Logger.info")
+    def test_generate_prompt(self, mock_logger_info):
+        microservice = {"name": "service1", "image": "service1-image", "replicas": 3}
+        microservices = [{"name": "service2", "image": "service2-image"}]
+        result = self.prompt_builder.generate_prompt(microservice, microservices)
+
+        self.assertIsInstance(result, list)
+        self.assertEqual(result[0]["role"], "user")
+        self.assertIn("Now generate Kubernetes manifests in YAML format for the microservice 'service1'.", result[0]["content"])
+        self.assertIn("  name: service1", result[0]["content"])
+        self.assertIn("  image: service1-image", result[0]["content"])
+        self.assertIn("  replicas: 3", result[0]["content"])
+        mock_logger_info.assert_called_once_with(
+            "Prompt generated for the service1 microservice:\nNow generate Kubernetes manifests in YAML format for the microservice 'service1'.\n\nMicroservice details:\n  name: service1\n  image: service1-image\n  replicas: 3\nOutput:\n"
+        )
