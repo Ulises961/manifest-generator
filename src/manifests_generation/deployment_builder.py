@@ -28,7 +28,7 @@ class DeploymentBuilder:
             "labels": deployment["labels"],
             "command": deployment["command"],
             "args": deployment.get("args"),
-            "image": deployment["name"],
+            "image": deployment["image"],
             "volumes": deployment.get("volumes"),
             "volume_mounts": deployment.get("volume_mounts"),
             "ports": {"containerPort": port for port in deployment.get("ports", [])},

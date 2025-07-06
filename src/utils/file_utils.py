@@ -67,12 +67,12 @@ def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
                     else commands
                 )
             except json.JSONDecodeError:
-                print("failed deserializing", field)
+                logger.debug("failed deserializing", field)
                 return []
 
         # Raw string command: detect shell logic
         return (
-            ["/bin/sh", "-c", field] if needs_shell_parsing(field) else shlex.split(field)
+            ["/bin/sh -c", field] if needs_shell_parsing(field) else shlex.split(field)
         )
 
     return []

@@ -9,10 +9,9 @@ class PromptBuilder:
         self
     ):
         self.logger = logging.getLogger(__name__)
-        self.is_prod_mode = os.getenv("DEV_MODE", "false").lower() == "false"
         self.attached_files: List[AttachedFile] = []
 
-    def attach_files(self, files: list):
+    def attach_files(self, files: List[AttachedFile]):
         """Attach files to the prompt for additional context."""
         self.attached_files.extend(files)
 
@@ -30,7 +29,7 @@ class PromptBuilder:
 
     def _generate_system_prompt(self) -> List[Dict[str, Any]]:
         """Generate the base prompt for all microservices, providing context for interdependencies."""
-        self.logger.info("Generating base prompt for microservices.")
+        self.logger.info("Generating common prompt for microservices.")
 
         # Strong role assignment and formatting constraint for small models
         prompt = (
@@ -45,24 +44,11 @@ class PromptBuilder:
             "- Image name must be the same as the microservice name.\n"
             "- Separate each manifest with '---' if multiple objects are required.\n"
             "- The result must be directly usable with `kubectl apply -f` or in CI/CD pipelines.\n"
+            "- Maintain a uniform and syntactically cohesive style throughout manifests.\n"
             "**No other output is allowed. Do not explain, do not reason, do not output markdown or comments.**\n"
             "**Immediately output only valid Kubernetes YAML for the service.**\n"
         )
 
-        # prompt += "Here is the schema for all microservices in this system:\n\n"
-        # for index, service in enumerate(services):
-        #     if index > 0:
-        #         prompt += ", "
-        #     prompt += f"{service['name']}"
-        #     # for key, value in service.items():
-        #     #     if key != "attached_files" and key != "manifests":
-        #     #         prompt += f"  {key}: {value}\n"
-        #     # prompt += "\n"
-        # prompt += ".\n"
-        # prompt += (
-        #     "Use the above to understand context and infer common configurations "
-        #     "or interdependencies between services, but do not explain them.\n"
-        # )
 
         return [{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}]
 
@@ -83,3 +69,7 @@ class PromptBuilder:
             f"Prompt generated for the {microservice['name']} microservice:\n{prompt}"
         )
         return [{"role": "user", "content": prompt}]
+
+    @property
+    def is_prod_mode(self):
+        return os.getenv("PROD_MODE", "").strip().lower() == "true"

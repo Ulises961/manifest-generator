@@ -36,7 +36,7 @@ class PVCBuilder:
         template["spec"]["storageClassName"] = pvc_entry["storage_class"]
         template["spec"]["accessModes"] = pvc_entry["access_modes"]
         template["spec"]["resources"]["requests"]["storage"] = pvc_entry["resources"]
+
         # Remove all None values from the template
         template = remove_none_values(template)
-
         return cast(Dict[str, Any], template)

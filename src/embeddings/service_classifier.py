@@ -14,7 +14,7 @@ class ServiceClassifier:
     def decide_service(self, query: str, ports: Optional[List[int]] = None) -> Optional[Dict[str, Any]]:
         """Decide the service based on the query and a given threshold."""
         if (result := self.embeddings_client.classify_service(query, ports)) is not None:
-            self.logger.info(f"Service classification result: {result}")
+            self.logger.debug(f"Service classification result: {result}")
             return cast(Dict[str,Any],result.get("classification", None))
         return None
       

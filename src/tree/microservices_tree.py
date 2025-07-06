@@ -33,7 +33,7 @@ class MicroservicesTree:
         self.service_classifier = service_classifier
         self.env_parser: EnvParser = EnvParser(secret_classifier)
         self.command_parser: CommandMapper = CommandMapper(
-            label_classifier, self.env_parser
+            label_classifier, self.env_parser, embeddings_client
         )
 
         self.bash_parser: BashScriptParser = BashScriptParser(
@@ -62,7 +62,7 @@ class MicroservicesTree:
             item_path = os.path.join(self.root_path, item)
             if os.path.isdir(item_path):
                 if str(item).startswith("."):
-                    self.logger.info(f"Skipping hidden directory: {item}")
+                    self.logger.debug(f"Skipping hidden directory: {item}")
                     continue
                 else:
                     self.logger.info(f"Scanning directory: {item_path}")
@@ -141,7 +141,7 @@ class MicroservicesTree:
             ]
             for subdir in subdirs:
                 subdir_path = os.path.join(path, subdir)
-                self.logger.info(f"Scanning directory: {subdir_path}")
+                self.logger.debug(f"Scanning sub-directory: {subdir_path}")
                 # Use a subdirectory name that combines parent and child for clarity
                 self._scan_helper(subdir_path, parent, subdir, preferred_name=dir_name)
 
@@ -161,7 +161,11 @@ class MicroservicesTree:
         microservice.setdefault(
             "metadata", {"dockerfile": node.metadata.get("dockerfile_path", "")}
         )
-
+        microservice.setdefault("image", node.name.lower())
+        microservice.setdefault("env", []) 
+        microservice.setdefault("volume_mounts", []) 
+        microservice.setdefault("volumes", [])  
+        
         if len(labels := node.get_children_by_type(NodeType.LABEL)) > 0:
 
             for label in labels:
@@ -227,7 +231,7 @@ class MicroservicesTree:
         ):
             microservice.setdefault("env", [])
             for env in env_vars:
-                self.logger.info(f"processing env var: {env.name}")
+                self.logger.debug(f"processing env var: {env.name}")
                 microservice["env"].append(
                     {"name": env.name, "key": "config", "value": env.value}
                 )  # type: ignore
@@ -413,7 +417,7 @@ class MicroservicesTree:
 
                             node.attach_file(name, attachment)
 
-                            self.logger.info(
+                            self.logger.debug(
                                 f"Attached file {file_name} to node {node.name}"
                             )
 
