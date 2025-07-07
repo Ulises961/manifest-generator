@@ -6,11 +6,9 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
-        'kubernetes',
         'dockerfile-parse',
         'PyYAML',
         'docker',
-        'checkov',
         'pytest',
         'pytest-cov',
         'mypy',
@@ -19,7 +17,8 @@ setup(
         'caseutil',
         'dotenv',
         'click'
-        'click-completion'
+        'click-completion',
+        'sentence-transformers>=2.2.0',
     ],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",

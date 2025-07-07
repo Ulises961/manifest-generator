@@ -1,7 +1,6 @@
 dockerfile-parse
 PyYAML
 docker
-checkov
 pytest
 pytest-cov
 mypy
@@ -9,6 +8,6 @@ types-PyYAML
 types-dockerfile-parse
 caseutil
 dotenv
-kubernetes>=24.0.0
 click
 click-completion
+sentence-transformers>=2.2.0
