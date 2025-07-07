@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from embeddings.embeddings_client import EmbeddingsClient
+from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.secret_classifier import SecretClassifier
 from parsers.env_parser import EnvParser
 from tree.command_mapper import CommandMapper
@@ -13,11 +13,12 @@ import os
 
 @pytest.fixture
 def command_mapper():
-    embeddings_client = MagicMock(spec=EmbeddingsClient)
-    label_classifier = LabelClassifier(embeddings_client)
-    secret_classifier = SecretClassifier(embeddings_client)
+    embeddings_engine = MagicMock(spec=EmbeddingsEngine)
+    label_classifier = LabelClassifier(embeddings_engine)
+    secret_classifier = SecretClassifier(embeddings_engine)
     env_parser = EnvParser(secret_classifier)
-    return CommandMapper(label_classifier, env_parser, embeddings_client)
+    volumes_classifier = MagicMock()  # Mock for volumes classifier
+    return CommandMapper(label_classifier, env_parser, volumes_classifier)
 
 def test_parse_dockerfile(command_mapper):
     dockerfile_content = """
@@ -169,15 +170,15 @@ def test_generate_env_nodes(mock_parse_env_var, command_mapper):
     
     mock_parse_env_var.assert_called_once_with("TEST_ENV=test_value")
 
-@patch("tree.command_mapper.EmbeddingsClient")
-def test_generate_volume_node(mock_embeddings_client):
+@patch("tree.command_mapper.VolumesClassifier.decide_volume_persistence")
+def test_generate_volume_node(mock_embeddings_engine):
     # Mock the embeddings client to return a valid response
-    mock_embeddings_client.return_value.decide_volume.return_value = {"decision": True}
+    mock_embeddings_engine.return_value.decide_volume_persistence.return_value = True
 
     # Initialize CommandMapper with mocked dependencies
     label_classifier = MagicMock()
     env_parser = MagicMock()
-    command_mapper = CommandMapper(label_classifier, env_parser, mock_embeddings_client.return_value)
+    command_mapper = CommandMapper(label_classifier, env_parser, mock_embeddings_engine.return_value)
 
     # Test data
     volume = {"instruction": "VOLUME", "value": "test_volume"}

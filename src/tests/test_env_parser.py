@@ -36,7 +36,7 @@ def test_parse_comments_and_empty_lines(env_parser, parent_node):
         nodes = env_parser.parse("dummy.env")
         assert len(nodes) == 0
 
-def test_parse_valid_env_vars(env_parser, parent_node):
+def test_parse_valid_env_vars(env_parser):
     content = """
     DB_HOST=localhost
     DB_PORT=5432
@@ -46,11 +46,11 @@ def test_parse_valid_env_vars(env_parser, parent_node):
         assert len(nodes) == 2
         # Check for SECRET type and base64-encoded value
         assert nodes[0].name == "DB_HOST"
-        assert nodes[0].type == NodeType.SECRET
-        assert base64.b64decode(nodes[0].value).decode() == "localhost"
+        assert nodes[0].type == NodeType.ENV
+        assert nodes[0].value == "localhost"
         assert nodes[1].name == "DB_PORT"
-        assert nodes[1].type == NodeType.SECRET
-        assert base64.b64decode(nodes[1].value).decode() == "5432"
+        assert nodes[1].type == NodeType.ENV
+        assert nodes[1].value == "5432"
 
 def test_parse_invalid_lines(env_parser, parent_node):
     content = """
@@ -62,8 +62,8 @@ def test_parse_invalid_lines(env_parser, parent_node):
         nodes = env_parser.parse("dummy.env")
         assert len(nodes) == 1
         assert nodes[0].name == "DB_HOST"
-        assert nodes[0].type == NodeType.SECRET
-        assert base64.b64decode(nodes[0].value).decode() == "localhost"
+        assert nodes[0].type == NodeType.ENV
+        assert nodes[0].value == "localhost"
 
 def test_multiline_env_var(env_parser, parent_node):
     content = """
@@ -74,9 +74,9 @@ def test_multiline_env_var(env_parser, parent_node):
         nodes = env_parser.parse("dummy.env")
         assert len(nodes) == 2
         assert nodes[0].name == "DOTNET_EnableDiagnostics"
-        assert base64.b64decode(nodes[0].value).decode() == "0"
+        assert nodes[0].value == "0"
         assert nodes[1].name == "ASPNETCORE_HTTP_PORTS"
-        assert base64.b64decode(nodes[1].value).decode() == "7070"
+        assert nodes[1].value == "7070"
 
 def test_parse_env_var_with_spaces(env_parser, parent_node):
     content = """
@@ -87,8 +87,8 @@ def test_parse_env_var_with_spaces(env_parser, parent_node):
         assert len(nodes) == 2
         # Check for SECRET type and base64-encoded value
         assert nodes[0].name == "DB_HOST"
-        assert nodes[0].type == NodeType.SECRET
-        assert base64.b64decode(nodes[0].value).decode() == "localhost"
+        assert nodes[0].type == NodeType.ENV
+        assert nodes[0].value == "localhost"
         assert nodes[1].name == "DB_PORT"
-        assert nodes[1].type == NodeType.SECRET
-        assert base64.b64decode(nodes[1].value).decode() == "5432"
+        assert nodes[1].type == NodeType.ENV
+        assert nodes[1].value == "5432"

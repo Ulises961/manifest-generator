@@ -1,4 +1,5 @@
 import os
+import shutil
 import pytest
 import yaml
 from unittest.mock import MagicMock, patch
@@ -134,6 +135,7 @@ def test_generate_skaffold_config(manifest_builder, mock_skaffold_builder):
     skaffold_path = manifest_builder.generate_skaffold_config(microservices, output_dir)
 
     assert skaffold_path == os.path.join(output_dir, "skaffold.yaml")
+    shutil.rmtree(output_dir, ignore_errors=True)  # Clean up the mock output directory
 
 def test_generate_kustomization_file(manifest_builder, mock_skaffold_builder):
     output_dir = "mock_output_dir"
@@ -141,6 +143,7 @@ def test_generate_kustomization_file(manifest_builder, mock_skaffold_builder):
     kustomization_path = manifest_builder.generate_kustomization_file(output_dir)
 
     assert kustomization_path == os.path.join(output_dir, "kustomization.yaml")
+    shutil.rmtree(output_dir, ignore_errors=True)  # Clean up the mock output directory
 
 def test_save_yaml(manifest_builder):
     template = {"key": "value"}

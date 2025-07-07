@@ -10,8 +10,8 @@ from tree.node_types import NodeType
 def parser():
     secret_classifier = Mock()
     env_parser = Mock()
-    embeddings_client = Mock()
-    return BashScriptParser(secret_classifier, env_parser, embeddings_client)
+    embeddings_engine = Mock()
+    return BashScriptParser(secret_classifier, env_parser, embeddings_engine)
 
 
 def test_init(parser):
@@ -55,7 +55,7 @@ def test_is_orchestrator_line(parser):
 
 
 def test_find_startup_script(parser):
-    with patch.object(parser.embeddings_client, "get_similarity") as mock_similarity:
+    with patch.object(parser.embeddings_engine, "compare_words") as mock_similarity:
         # Mock the similarity function to return a dict with a similarity score
         mock_similarity.return_value = {"similarity": 0.9}
 
@@ -66,15 +66,15 @@ def test_find_startup_script(parser):
         result = parser._find_startup_script(root, files)
         assert result == "/test/path/start.sh"
         # Test with no files
-        mock_similarity.return_value = {"similarity": 0.0}
+        mock_similarity.return_value = 0.0
         result = parser._find_startup_script(root, [])
         assert result is None
         # Test with a single file
-        mock_similarity.return_value = {"similarity": 0.8}
+        mock_similarity.return_value = 0.8
         result = parser._find_startup_script(root, ["start.sh"])
         assert result == "/test/path/start.sh"
         # Test with a different file
-        mock_similarity.return_value = {"similarity": 0.0}
+        mock_similarity.return_value = 0.0
         result = parser._find_startup_script(root, ["other.sh"])
         assert result is None
 

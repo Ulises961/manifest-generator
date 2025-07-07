@@ -22,10 +22,11 @@ def mock_service_classifier():
 def tree(mock_service_classifier):
     return MicroservicesTree(
         root_path="",
-        embeddings_client=Mock(),
+        embeddings_engine=Mock(),
         secret_classifier=Mock(),
         service_classifier=mock_service_classifier,
-        label_classifier=Mock()
+        label_classifier=Mock(),
+        volumes_classifier=Mock()
     )
 
 def test_prepare_microservice_basic(tree):
@@ -146,10 +147,11 @@ def test_prepare_microservice_with_multiple_ports(tree):
     # Create tree with the specific mock
     tree = MicroservicesTree(
         root_path="",
-        embeddings_client=Mock(),
+        embeddings_engine=Mock(),
         secret_classifier=Mock(),
         service_classifier=mock_service_classifier,
-        label_classifier=Mock()
+        label_classifier=Mock(),
+        volumes_classifier=Mock()
     )
 
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
@@ -184,7 +186,6 @@ def test_prepare_microservice_with_attached_files(tree):
     
     attached_file = MockAttachedFile("config.yaml", "/app/config.yaml")
     node.attached_files = {"config.yaml": attached_file}
-    print(node)
     
     result = tree.prepare_microservice(node)
     assert result["attached_files"] == {"config.yaml": {"name": "config.yaml", "path": "/app/config.yaml"}}
