@@ -4,8 +4,8 @@ import re
 import shlex
 from typing import Any, Dict, List, Optional, cast
 from dockerfile_parse import DockerfileParser
-from embeddings.embeddings_client import EmbeddingsClient
 from embeddings.label_classifier import LabelClassifier
+from embeddings.volumes_classifier import VolumesClassifier
 from parsers.env_parser import EnvParser
 
 from tree.node import Node
@@ -22,10 +22,10 @@ import itertools
 class CommandMapper:
     """Class to classify Dockerfile commands."""
 
-    def __init__(self, label_classifier: LabelClassifier, env_parser: EnvParser, embeddings_client: EmbeddingsClient):
+    def __init__(self, label_classifier: LabelClassifier, env_parser: EnvParser, volumes_classifier: VolumesClassifier):
         self._label_classifier = label_classifier
         self._env_parser = env_parser
-        self._embeddings_client = embeddings_client 
+        self._volumes_classifier = volumes_classifier 
     DOCKER_COMMANDS: List[str] = [
         "CMD",
         "LABEL",
@@ -170,16 +170,15 @@ class CommandMapper:
         normalized_volume_paths = normalize_spaced_values(command["value"])
         for volume_path in normalized_volume_paths:
             # Check if the volume is persistent
-            if (result := self._embeddings_client.decide_volume(volume_path)) is not None:
-                is_persistent = cast(bool,result.get("decision", False))
-                nodes.append(
-                    self._create_node(
-                        {"instruction": "VOLUME", "value": volume_path},
-                        NodeType.VOLUME,
-                        parent,
-                        is_persistent=is_persistent,
-                    )
+            is_persistent = self._volumes_classifier.decide_volume_persistence(volume_path)
+            nodes.append(
+                self._create_node(
+                    {"instruction": "VOLUME", "value": volume_path},
+                    NodeType.VOLUME,
+                    parent,
+                    is_persistent=is_persistent,
                 )
+            )
         return nodes
 
     def _generate_user_nodes(

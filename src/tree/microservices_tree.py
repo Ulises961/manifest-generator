@@ -1,9 +1,10 @@
 import os
 from typing import Any, Dict, Optional, List, cast
+from embeddings.volumes_classifier import VolumesClassifier
 from parsers.env_parser import EnvParser
 from tree.attached_file import AttachedFile
 from tree.command_mapper import CommandMapper
-from embeddings.embeddings_client import EmbeddingsClient
+from embeddings.embeddings_engine import EmbeddingsEngine
 
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
@@ -21,23 +22,24 @@ class MicroservicesTree:
     def __init__(
         self,
         root_path: str,
-        embeddings_client: EmbeddingsClient,
+        embeddings_engine: EmbeddingsEngine,
         secret_classifier: SecretClassifier,
         service_classifier: ServiceClassifier,
         label_classifier: LabelClassifier,
+        volumes_classifier: VolumesClassifier
     ):
         self.logger = logging.getLogger(__name__)
         self.root_path = root_path
-        self.embeddings_client: EmbeddingsClient = embeddings_client
+        self.embeddings_engine: EmbeddingsEngine = embeddings_engine
         self.secret_classifier = secret_classifier
         self.service_classifier = service_classifier
         self.env_parser: EnvParser = EnvParser(secret_classifier)
         self.command_parser: CommandMapper = CommandMapper(
-            label_classifier, self.env_parser, embeddings_client
+            label_classifier, self.env_parser, volumes_classifier
         )
 
         self.bash_parser: BashScriptParser = BashScriptParser(
-            secret_classifier, self.env_parser, embeddings_client
+            secret_classifier, self.env_parser, embeddings_engine
         )
 
         self.file_extensions = {

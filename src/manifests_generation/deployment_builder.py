@@ -37,7 +37,6 @@ class DeploymentBuilder:
             "user": deployment.get("user"),
         }
 
-        deployment_entry = cast(Dict[str, Any], remove_none_values(deployment_entry))
 
         template = self._get_deployment_template()
         template["metadata"]["name"] = deployment_entry["name"]

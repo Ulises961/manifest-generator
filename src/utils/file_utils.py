@@ -1,10 +1,12 @@
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 from dotenv import load_dotenv
 import shlex
 import logging
+from sentence_transformers import SentenceTransformer
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +15,16 @@ def load_file(path: str) -> Any:
     """Load a JSON file."""
     with open(path, "r") as file:
         return json.load(file)
+
+def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
+    """Get model name and path from environment variables."""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    models_dir = os.path.realpath(
+        os.path.join(current_dir, "..", "resources", "models")
+    )
+    model_name: str = os.getenv(model_env_var, default_model)
+    model_path = os.path.join(models_dir, model_name)
+    return model_name, model_path
 
 
 def remove_none_values(d) -> Optional[Dict[str, Any]] | Any:
@@ -91,3 +103,37 @@ def check_shell_in_commands(commands: List[str]) -> bool:
         if needs_shell_parsing(word):
             return True
     return False
+
+def setup_cuda(force_cpu: bool = False) -> str:
+    """Setup CUDA for PyTorch."""
+    device = "cpu" if force_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
+
+    if device == "cuda":
+        logger.info("CUDA is available. Using GPU for inference.")
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+
+    else:
+        logger.info("CUDA is not available. Using CPU for inference.")
+
+    return device
+
+
+def setup_sentence_transformer(force_cpu: bool = False) -> Any:
+    """Setup and return a SentenceTransformer model."""
+    model_name, model_path = _get_model_paths("EMBEDDINGS_MODEL", "all-MiniLM-L6-v2")
+
+    device = setup_cuda(force_cpu)
+
+    if os.path.exists(model_path):
+        return SentenceTransformer(model_name_or_path=model_path, device=device)  # type: ignore
+
+    os.makedirs(model_path, exist_ok=True)
+
+    model = SentenceTransformer(model_name_or_path=model_name, device=device)  # type: ignore
+    model.save(model_path) # type: ignore
+
+    return model
+
+
+

@@ -1,7 +1,7 @@
-from typing import List, Dict, Optional, Tuple, cast
+from typing import List, Optional, Tuple
 import re
 import os
-from embeddings.embeddings_client import EmbeddingsClient
+from embeddings.embeddings_engine import EmbeddingsEngine
 from parsers.env_parser import EnvParser
 from tree.node import Node
 from tree.node_types import NodeType
@@ -17,9 +17,9 @@ class BashScriptParser:
         self,
         secret_classifier: SecretClassifier,
         env_parser: EnvParser,
-        embeddings_client: EmbeddingsClient,
+        embeddings_engine: EmbeddingsEngine,
     ):
-        self.embeddings_client = embeddings_client
+        self.embeddings_engine = embeddings_engine
         self.secret_classifier = secret_classifier
         self.startup_script_names = ["start.sh", "entrypoint.sh", "run.sh", "serve.sh"]
         self.env_parser = env_parser
@@ -87,16 +87,11 @@ class BashScriptParser:
         for file in files:
             if file.endswith(".sh"):
                 for script_name in self.startup_script_names:
-                    if (
-                        result := self.embeddings_client.get_similarity(
-                            file, script_name
-                        )
-                    ) is not None:
-                        result = cast(Dict[str, float], result)
-                        similarity = float(result.get("similarity", 0))
-                        if similarity > 0.8:
-                            # Assuming the script is a potential startup script
-                            return os.path.join(root, file)
+                    similarity = self.embeddings_engine.compare_words(file, script_name)
+                    print(similarity)
+                    if similarity > 0.8:
+                        # Assuming the script is a potential startup script
+                        return os.path.join(root, file)
         return None
 
     def parse_script(

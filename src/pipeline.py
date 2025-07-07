@@ -1,14 +1,16 @@
 from typing import Any, Dict, List
 
 from caseutil import to_snake
-from embeddings.embeddings_client import EmbeddingsClient
+from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
+from embeddings.volumes_classifier import VolumesClassifier
 from inference.prompt_builder import PromptBuilder
 from inference.inference_processor import InferenceProcessor
 from manifests_generation.manifest_builder import ManifestBuilder
 from tree.microservices_tree import MicroservicesTree
+from utils.file_utils import setup_sentence_transformer
 from utils.logging_utils import setup_logging
 import logging
 import os
@@ -33,15 +35,19 @@ def run():
     target_repository = os.getenv("TARGET_REPOSITORY", "")
 
     logger.info("Starting microservices manifest generator")
+    
+    embedding_model = setup_sentence_transformer()
 
     # Load the embeddings engine
-    embeddings_engine = EmbeddingsClient(os.getenv("EMBEDDINGS_MODEL", "all-MiniLM-L6-v2"))
+    embeddings_engine = EmbeddingsEngine(embedding_model)
     # Load the secret classifier
     secret_classifier = SecretClassifier(embeddings_engine)
     # Load the service classifier
     service_classifier = ServiceClassifier(embeddings_engine)
     # Load the label classifier
     label_classifier = LabelClassifier(embeddings_engine)
+    # Load the volumes classifier
+    volumes_classifier = VolumesClassifier()
     # Generate a tree with the microservices detected in the repository
 
     ### Phase 1: Build the microservices tree ###
@@ -51,6 +57,7 @@ def run():
         secret_classifier,
         service_classifier,
         label_classifier,
+        volumes_classifier, 
     )
 
     repository_tree = treebuilder.build()
@@ -110,7 +117,7 @@ def run():
         prompt = prompt_builder.generate_prompt(microservice, enriched_services)
 
         if os.getenv("DRY_RUN", "false").lower() == "true":
-            logging.info(f"Dry mode enabled, skipping LLM inference. Prompt generated: {prompt}")
+            logging.info(f"Dry mode enabled, skipping LLM inference.\n\n----\n")
             continue
 
         ## Generate the response

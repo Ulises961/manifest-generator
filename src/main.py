@@ -91,15 +91,14 @@ def main(config_file:Optional[str] ,interactive: bool, repository_path: Optional
     else:
         config = {
             'repository_path': repository_path,
+            'embeddings_model': embeddings_model,
+            'embeddings_token': embeddings_token,
+            'overrides_file': overrides_file,
             'skaffold_file': skaffold_file,
+            'dry_run': dry_run,
             'llm_model': llm_model,
             'llm_endpoint': llm_endpoint,
             'llm_token': llm_token,
-            'embeddings_model': embeddings_model,
-            'embeddings_endpoint': embeddings_endpoint,
-            'embeddings_token': embeddings_token,
-            'overrides_file': overrides_file,
-            'dry_run': dry_run,
             'verbose': verbose
         }
    
@@ -127,122 +126,18 @@ def interactive_setup(repository_path=None, skaffold_file=None, llm_model=None,
         show_default=False
     )
     
-    # Skaffold file (optional)
-    if not skaffold_file:
-        use_skaffold = click.confirm("📋 Do you have a Skaffold file to use?", default=False)
-        if use_skaffold:
-            config['skaffold_file'] = click.prompt(
-                "📋 Path to Skaffold file",
-                type=click.Path(exists=True, file_okay=True, dir_okay=False),
-                show_default=False
-            )
-        else:
-            config['skaffold_file'] = None
-    else:
-        config['skaffold_file'] = skaffold_file
-    
-    # LLM Configuration
-    click.echo(click.style("\n🤖 LLM Configuration", fg='green', bold=True))
-    
-    if not llm_endpoint:
-        llm_type = click.prompt(
-            "Choose LLM setup",
-            type=click.Choice(['local', 'openai', 'custom'], case_sensitive=False),
-            default='local',
-            show_choices=True
-        )
-        
-        if llm_type == 'local':
-            config['llm_endpoint'] = click.prompt(
-                "🌐 LLM endpoint URL",
-                default="http://localhost:8000/v1/chat/completions"
-            )
-            config['llm_model'] = llm_model or click.prompt(
-                "🎯 LLM model name",
-                default="codellama/CodeLlama-13b-Instruct-hf"
-            )
-            config['llm_token'] = llm_token or click.prompt(
-                "🔑 LLM API token (optional)",
-                default="",
-                show_default=False
-            )
-        elif llm_type == 'openai':
-            config['llm_endpoint'] = "https://api.openai.com/v1/chat/completions"
-            config['llm_model'] = llm_model or click.prompt(
-                "🎯 OpenAI model name",
-                default="gpt-3.5-turbo"
-            )
-            config['llm_token'] = llm_token or click.prompt(
-                "🔑 OpenAI API key",
-                hide_input=True
-            )
-        else:  # custom
-            config['llm_endpoint'] = llm_endpoint or click.prompt("🌐 Custom LLM endpoint URL")
-            config['llm_model'] = llm_model or click.prompt("🎯 Model name")
-            config['llm_token'] = llm_token or click.prompt(
-                "🔑 API token (optional)",
-                default="",
-                show_default=False
-            )
-    else:
-        config['llm_endpoint'] = llm_endpoint
-        config['llm_model'] = llm_model or click.prompt("🎯 LLM model name")
-        config['llm_token'] = llm_token or click.prompt(
-            "🔑 LLM API token (optional)",
-            default="",
-            show_default=False
-        )
-    
-    # Dry run option
-    if dry_run or click.confirm("\n🤖 Do you want to generate only heuristics based manifests (dry-run)?", default=False):
-        config['dry_run'] = True
-        click.echo(click.style("ℹ️ Running in dry-run mode. No LLM inference will be performed.", fg='yellow'))
-    else:
-        config['dry_run'] = False
-
-    # Verbose mode
-    if verbose or click.confirm("\n🔍 Do you want to enable verbose logging?", default = False):
-        config['verbose'] = True
-        click.echo(click.style("🔍 Verbose mode enabled. Detailed logs will be printed.", fg='yellow'))
-    else:
-        config['verbose'] = False
-
     # Embeddings Configuration
     click.echo(click.style("\n🔍 Embeddings Configuration", fg='yellow', bold=True))
     
     if not embeddings_endpoint:
-        embeddings_type = click.prompt(
-            "Choose embeddings setup",
-            type=click.Choice(['local', 'openai', 'custom'], case_sensitive=False),
-            default='local',
-            show_choices=True
+  
+        config['embeddings_model'] = embeddings_model or click.prompt(
+            "📊 Sentence transformer model name",
+            default="all-MiniLM-L6-v2"
         )
-        
-        if embeddings_type == 'local':
-            config['embeddings_model'] = embeddings_model or click.prompt(
-                "📊 Sentence transformer model name",
-                default="all-MiniLM-L6-v2"
-            )
-            config['embeddings_endpoint'] = None
-            config['embeddings_token'] = None
-        elif embeddings_type == 'openai':
-            config['embeddings_endpoint'] = "https://api.openai.com/v1/embeddings"
-            config['embeddings_model'] = embeddings_model or click.prompt(
-                "📊 OpenAI embeddings model",
-                default="text-embedding-ada-002"
-            )
-            config['embeddings_token'] = embeddings_token or click.prompt(
-                "🔑 OpenAI API key",
-                hide_input=True
-            )
-        else:  # custom
-            config['embeddings_endpoint'] = embeddings_endpoint or click.prompt("🌐 Custom embeddings endpoint URL")
-            config['embeddings_model'] = embeddings_model or click.prompt("📊 Embeddings model name")
-            config['embeddings_token'] = embeddings_token or click.prompt(
-                "🔑 API token (optional)",
-                default="",
-                show_default=False
-            )
+        config['embeddings_endpoint'] = None
+        config['embeddings_token'] = None
+      
     else:
         config['embeddings_endpoint'] = embeddings_endpoint
         config['embeddings_model'] = embeddings_model or click.prompt("📊 Embeddings model name")
@@ -264,6 +159,93 @@ def interactive_setup(repository_path=None, skaffold_file=None, llm_model=None,
             config['overrides_file'] = None
     else:
         config['overrides_file'] = overrides_file
+
+    # Skaffold file (optional)
+    if not skaffold_file:
+        use_skaffold = click.confirm("📋 Do you have a Skaffold file to use?", default=False)
+        if use_skaffold:
+            config['skaffold_file'] = click.prompt(
+                "📋 Path to Skaffold file",
+                type=click.Path(exists=True, file_okay=True, dir_okay=False),
+                show_default=False
+            )
+        else:
+            config['skaffold_file'] = None
+    else:
+        config['skaffold_file'] = skaffold_file
+    
+    # Dry run option
+    if dry_run or click.confirm("\n🤖 Do you want to generate only heuristics based manifests (dry-run)?", default=False):
+        config['dry_run'] = True
+        click.echo(click.style("ℹ️ Running in dry-run mode. No LLM inference will be performed.", fg='yellow'))
+        config['llm_endpoint'] = None
+        config['llm_type'] = None
+        config['llm_token']= None
+        config['llm_model'] = None
+    else:
+        config['dry_run'] = False
+
+    
+    if not config.get('dry_run', False):
+        # LLM Configuration
+        click.echo(click.style("\n🤖 LLM Configuration", fg='green', bold=True))
+        
+        if not llm_endpoint:
+            llm_type = click.prompt(
+                "Choose LLM setup",
+                type=click.Choice(['local', 'openai', 'custom'], case_sensitive=False),
+                default='local',
+                show_choices=True
+            )
+            
+            
+            if llm_type == 'local':
+                config['llm_endpoint'] = click.prompt(
+                    "🌐 LLM endpoint URL",
+                    default="http://localhost:8000/v1/chat/completions"
+                )
+                config['llm_model'] = llm_model or click.prompt(
+                    "🎯 LLM model name",
+                    default="codellama/CodeLlama-13b-Instruct-hf"
+                )
+                config['llm_token'] = llm_token or click.prompt(
+                    "🔑 LLM API token (optional)",
+                    default="",
+                    show_default=False
+                )
+            elif llm_type == 'openai':
+                config['llm_endpoint'] = "https://api.openai.com/v1/chat/completions"
+                config['llm_model'] = llm_model or click.prompt(
+                    "🎯 OpenAI model name",
+                    default="gpt-3.5-turbo"
+                )
+                config['llm_token'] = llm_token or click.prompt(
+                    "🔑 OpenAI API key",
+                    hide_input=True
+                )
+            else:  # custom
+                config['llm_endpoint'] = llm_endpoint or click.prompt("🌐 Custom LLM endpoint URL")
+                config['llm_model'] = llm_model or click.prompt("🎯 Model name")
+                config['llm_token'] = llm_token or click.prompt(
+                    "🔑 API token (optional)",
+                    default="",
+                    show_default=False
+                )
+        else:
+            config['llm_endpoint'] = llm_endpoint
+            config['llm_model'] = llm_model or click.prompt("🎯 LLM model name")
+            config['llm_token'] = llm_token or click.prompt(
+                "🔑 LLM API token (optional)",
+                default="",
+                show_default=False
+            )
+    
+    # Verbose mode
+    if verbose or click.confirm("\n🔍 Do you want to enable verbose logging?", default = False):
+        config['verbose'] = True
+        click.echo(click.style("🔍 Verbose mode enabled. Detailed logs will be printed.", fg='yellow'))
+    else:
+        config['verbose'] = False
     
     # Summary
     click.echo(click.style("\n✅ Configuration Summary:", fg='green', bold=True))
