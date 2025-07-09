@@ -119,7 +119,7 @@
                                     "type": "boolean"
                                 },
                                 "persistentVolumeClaim": {
-                                    "type":"object",
+                                    "type": "object",
                                     "required": [
                                         "claimName"
                                     ],
@@ -355,19 +355,34 @@
                     "autoscaling": {
                         "type": "object",
                         "properties": {
-                            "minReplicas": { "type": "integer" },
-                            "maxReplicas": { "type": "integer" },
+                            "minReplicas": {
+                                "type": "integer"
+                            },
+                            "maxReplicas": {
+                                "type": "integer"
+                            },
                             "metrics": {
                                 "type": "array",
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "type": { "type": "string", "enum": ["Resource", "Pods", "Object"] },
+                                        "type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Resource",
+                                                "Pods",
+                                                "Object"
+                                            ]
+                                        },
                                         "resource": {
                                             "type": "object",
                                             "properties": {
-                                                "name": { "type": "string" },
-                                                "targetAverageUtilization": { "type": "integer" }
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "targetAverageUtilization": {
+                                                    "type": "integer"
+                                                }
                                             }
                                         }
                                     }
@@ -380,11 +395,15 @@
                         "properties": {
                             "annotations": {
                                 "type": "object",
-                                "additionalProperties": { "type": "string" }
+                                "additionalProperties": {
+                                    "type": "string"
+                                }
                             },
                             "labels": {
                                 "type": "object",
-                                "additionalProperties": { "type": "string" }
+                                "additionalProperties": {
+                                    "type": "string"
+                                }
                             }
                         }
                     },
@@ -392,15 +411,70 @@
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "required": ["service"],
+                            "required": [
+                                "service"
+                            ],
                             "properties": {
-                                "service": { "type": "string" },
-                                "required": { "type": "boolean" },
-                                "port": { "type": "integer" }
+                                "service": {
+                                    "type": "string"
+                                },
+                                "required": {
+                                    "type": "boolean"
+                                },
+                                "port": {
+                                    "type": "integer"
+                                }
                             }
                         }
                     }
                 }
+            }
+        },
+        "customManifests": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "properties": {
+                    "apiVersion": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "labels": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "string"
+                                }
+                            },
+                            "annotations": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "spec": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "required": [
+                    "apiVersion",
+                    "kind",
+                    "metadata",
+                    "spec"
+                ]
             }
         }
     }

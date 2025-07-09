@@ -1,6 +1,6 @@
 from copy import deepcopy
 import os
-from typing import Any, List, cast, Dict
+from typing import Any, cast, Dict
 import yaml
 from utils.file_utils import load_file
 
@@ -29,20 +29,20 @@ class ConfigMapBuilder:
                 "config_map.yaml",
             )
 
+            # Prepare the Kubernetes ConfigMap template
+            template = self._get_configmap_template()
+            template["kind"] = "ConfigMap"
+            template["metadata"]["name"] = f"config"
+            template["metadata"]["labels"] = {"environment": "production"}
+            template["data"] = {config_map["name"]: config_map["value"]}
+
             if not os.path.exists(config_map_path):
-                # Prepare the Kubernetes ConfigMap template
-                template = self._get_configmap_template()
-                template["kind"] = "ConfigMap"
-                template["metadata"]["name"] = f"config"
-                template["metadata"]["labels"] = {"environment": "production"}
-                template["data"] = {config_map["name"]: config_map["value"]}
-            
                 return template
             
             else:
                 # Load existing config map content
                 with open(config_map_path, "r") as file:
-                    existing_data = yaml.safe_load(file) or {}
+                    existing_data = yaml.safe_load(file) or template
 
                 # Update or add the config map entry
                 existing_data.setdefault("data", {})

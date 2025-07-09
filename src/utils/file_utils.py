@@ -48,7 +48,7 @@ def remove_none_values(d) -> Optional[Dict[str, Any]] | Any:
     return {
         key: value
         for key, value in d.items()
-        if value is not None and value != {} and value != []
+        if value is not None and value != {} and value != [] and value != [None]
     }
 
 
@@ -65,7 +65,7 @@ def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
         return []
 
     if isinstance(field, list):
-        return ["/bin/sh -c"] + field if check_shell_in_commands(field) else field
+        return ["/bin/sh", "-c"] + field if check_shell_in_commands(field) else field
 
     if isinstance(field, str):
         field = field.strip()
@@ -74,7 +74,7 @@ def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
             try:
                 commands = cast(list, json.loads(field))
                 return (
-                    ["/bin/sh -c", field]
+                    ["/bin/sh", "-c", field]
                     if check_shell_in_commands(commands)
                     else commands
                 )
@@ -84,7 +84,7 @@ def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
 
         # Raw string command: detect shell logic
         return (
-            ["/bin/sh -c", field] if needs_shell_parsing(field) else shlex.split(field)
+            ["/bin/sh", "-c", field] if needs_shell_parsing(field) else shlex.split(field)
         )
 
     return []

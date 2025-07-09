@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 import yaml
 
 from manifests_generation.pvc_builder import PVCBuilder
-from validation.overrides_validator import OverridesValidator
+from overrides.overrides_validator import OverridesValidator
 
 
 class Overrider:
@@ -46,7 +46,7 @@ class Overrider:
             )
             return None
 
-    def apply_overrides(self, microservice: Dict[str, Any], microservice_name: str) -> Dict[str, Any]:
+    def apply_configuration_overrides(self, microservice: Dict[str, Any], microservice_name: str) -> Dict[str, Any]:
         """Apply configuration overrides from a YAML file to microservices."""
 
         if self.override_config is not None:
@@ -66,10 +66,13 @@ class Overrider:
             )
             
             manifests = microservice.get("manifests", {})
+            
             if manifests.get("deployment", None) is not None:
                 self.override_deployment(microservice, service_config)
+            
             if manifests.get("stateful_set", None) is not None:
                 self.override_deployment(microservice, service_config)
+
             if manifests.get("service", None) is not None:
                 self.override_service(
                     microservice, service_config
@@ -211,8 +214,7 @@ class Overrider:
         container = service["spec"]["template"]["spec"]["containers"][0]
 
         # Initialize env if not exists
-        if "env" not in container:
-            container["env"] = []
+        container.setdefault("env", [])
 
         # Add global environment variables
         for env in global_env:
@@ -717,15 +719,4 @@ class Overrider:
                         }
                     }
                 })
-
-   
-class ManifestType(Enum):
-    """Enum for manifest types."""
-
-    DEPLOYMENT = "deployment"
-    STATEFUL_SET = "stateful_set"
-    SERVICE = "service"
-    PVC = "pvc"
-    SECRET = "secret"
-    CONFIG_MAP = "config_map"
 

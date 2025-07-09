@@ -1,23 +1,21 @@
-from enum import Enum
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple, cast
 from manifests_generation.configmap_builder import ConfigMapBuilder
 from manifests_generation.deployment_builder import DeploymentBuilder
-from manifests_generation.overrider import Overrider
+from overrides.overrider import Overrider
 from manifests_generation.pvc_builder import PVCBuilder
 from manifests_generation.secret_builder import SecretBuilder
 from manifests_generation.service_builder import ServiceBuilder
 from manifests_generation.skaffold_config_builder import SkaffoldConfigBuilder
 from manifests_generation.statefulset_builder import StatefulSetBuilder
 import yaml
-from validation.overrides_validator import OverridesValidator
 
 
 class ManifestBuilder:
     """Manifest builder for microservices."""
 
-    def __init__(self, config_path) -> None:
+    def __init__(self, overrider: Overrider) -> None:
         """Initialize the tree builder with the manifest templates."""
         
         self.logger = logging.getLogger(__name__)
@@ -37,7 +35,7 @@ class ManifestBuilder:
 
         os.makedirs(os.path.dirname(self.k8s_manifests_path), exist_ok=True)
 
-        self.overrider = Overrider(config_path)
+        self.overrider = overrider
         self._configmap_builder = ConfigMapBuilder(self.k8s_manifests_path)
         self._servicebuilder = ServiceBuilder()
         self._deployment_builder = DeploymentBuilder()
@@ -78,15 +76,17 @@ class ManifestBuilder:
             for secret in microservice["secrets"]:
                 saved = self.build_secrets_yaml(secret)
                 microservice["manifests"].update({"secret": saved})
+                self._save_yaml(saved[1], saved[0])
 
         if microservice.get("env", None):
             for env in microservice["env"]:
                 saved = self.build_config_map_yaml(env)
                 microservice["manifests"].update({"config_map": saved})
-        
+                self._save_yaml(saved[1], saved[0])
+
         # Apply overrides to the microservice manifests
-        self.overrider.apply_overrides(microservice, microservice['name'])
-        self.logger.debug(f"Applied overrides to microservice manifests. {microservice['manifests']}")
+        self.overrider.apply_configuration_overrides(microservice, microservice['name'])
+
         # Save templates
         for (path,manifest) in microservice['manifests'].values():
             self._save_yaml(manifest, path)

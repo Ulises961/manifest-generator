@@ -3,7 +3,7 @@ import os
 from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler
 
 def setup_logging(
-    log_dir="src/logs", 
+    log_dir="logs", 
     log_file_name="microservices_tree.log",
     log_level=logging.INFO,
     max_size_mb=5,
