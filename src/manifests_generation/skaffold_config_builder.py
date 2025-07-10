@@ -77,16 +77,6 @@ class SkaffoldConfigBuilder:
                 if file.endswith(".yaml"):
                     resources.add(f"{secrets_dir_rel}/{file}")
 
-        # Add config maps common to all services 
-        config_map_dir_rel = k8s_folder
-        if os.path.exists(os.path.join(output_dir, "config_map.yaml")):
-            resources.add(f"{config_map_dir_rel}/config_map.yaml")
-
-        # Add secrets common to all services 
-        secrets_dir_rel = k8s_folder
-        if os.path.exists(os.path.join(output_dir, "secrets.yaml")):
-            resources.add(f"{secrets_dir_rel}/secrets.yaml")
-
         # Add any stateful sets
         statefulsets_dir_rel = f"{k8s_folder}/stateful_set"
         statefulsets_dir = os.path.join(output_dir, statefulsets_dir_rel)
@@ -103,6 +93,12 @@ class SkaffoldConfigBuilder:
                 if file.endswith(".yaml"):
                     resources.add(f"{pvcs_dir_rel}/{file}")
 
+        # Add any file in the k8s folder that is not a directory
+        parent_dir = os.path.join(output_dir, k8s_folder)
+        for file in os.listdir(parent_dir):
+            if file.endswith(".yaml") and not os.path.isdir(os.path.join(parent_dir, file)):
+                # We save the relative path to the file
+                resources.add(f"{k8s_folder}/{file}")
 
         # Create the kustomization.yaml content
         kustomization = {

@@ -1,13 +1,14 @@
 from typing import Any, Dict, List
 
 from caseutil import to_snake
+from anthropic_client import AnthropicClient
 from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
 from embeddings.volumes_classifier import VolumesClassifier
+from feedback_loop import ManifestFeedbackLoop
 from inference.prompt_builder import PromptBuilder
-from inference.inference_processor import InferenceProcessor
 from manifests_generation.manifest_builder import ManifestBuilder
 from overrides.overrider import Overrider
 from tree.microservices_tree import MicroservicesTree
@@ -17,6 +18,8 @@ import logging
 import os
 from huggingface_hub import InferenceClient
 import anthropic
+
+from validation.kubescape_validator import KubescapeValidator
 
 # Get module-specific logger
 logger = logging.getLogger(__name__)
@@ -99,93 +102,32 @@ def run():
     manifest_builder.generate_skaffold_config(enriched_services, manual_manifests_path)
 
     # ### Phase 3: Generate inferred manifests from the repository tree ###
-
-    # Prepare a http client to query the LLM
-    base_url = "http://localhost:8080"
-    endpoint = os.getenv("LLM_ENDPOINT", f"{base_url}/v1/chat/completions")
-
-    inference_client = InferenceClient(
-        model=endpoint,
-        headers={"Content-Type": "application/json"},
-    )
-    inference_client = anthropic.Anthropic()
+    generator = AnthropicClient()
+    evaluator = AnthropicClient()
 
 
     if os.getenv("DRY_RUN", "false").lower() == "true":
         logger.info("Running in dry run mode, skipping LLM inference.")
     
-    
-    prompt_builder = PromptBuilder()
-    inference_processor = InferenceProcessor()
-    for microservice in enriched_services:
-        logging.info(f"Generating manifests for child... {microservice['name']}")
-        for manifest in microservice["manifests"]:
-            ## Attach the files to the prompt
-            for attached_file in microservice.get("attached_files", {}):
-                prompt_builder.attach_file(attached_file)
-        prompt = prompt_builder.generate_prompt(microservice, enriched_services)
-
-        if os.getenv("DRY_RUN", "false").lower() == "true":
-            logging.info(f"Dry mode enabled, skipping LLM inference.\n\n----\n")
-            continue
-
-        ## Generate the response
-        response = inference_client.messages.create(
-            model="claude-3-5-haiku-latest",
-            max_tokens=3000,
-            temperature=0,
-            system=prompt_builder._generate_system_prompt(),  # type: ignore
-            messages=prompt # type: ignore
-            )
-   
-        logging.debug(f"Response from LLM: {response.model_dump_json()}")
-        logging.info(f"Content from LLM: {response.content}")
-
-        processed_response = inference_processor.process_response(response.content) # type: ignore
-        
-        logger.info(f"Received response for {microservice['name']}: {processed_response}")
-
-        # Save the manifests to the target directory
-        llm_manifests_path = os.path.join( os.getenv("TARGET_PATH", "target"),
-                os.getenv("MANIFESTS_PATH", "manifests"),
-                os.getenv("LLM_MANIFESTS_PATH", "llm"))
-
-        os.makedirs(llm_manifests_path, exist_ok=True)
-
-
-        for manifest in processed_response:
-            logging.info(f"Generated manifest: {microservice['name']}")
-
-            target_dir = os.path.join(
-                llm_manifests_path,
-                os.getenv("K8S_MANIFESTS_PATH", "k8s"),
-                to_snake(manifest['name'])
-            )
-
-            os.makedirs(target_dir, exist_ok=True)
-
-            # Save the response to a file
-            manifest_path = os.path.join(target_dir, f"{microservice['name']}.yaml")
-            
-            with open(manifest_path, "w") as f:
-                f.write(manifest["manifest"])
-
-            logging.info(f"Saved manifest to {manifest_path}")
-
-
-        # Introduce extra manifests included in the overrides.yaml file
-        if config := overrider.override_config:
-            if config.get("customManifests", None):
-                for manifest_name, manifest_content in config["customManifests"].items():
-                    # Log the manifest name and content
-                    logger.debug(f"Processing custom manifest: {manifest_name}")
-
-                    # Save the custom manifest
-                    manifest_path = os.path.join(llm_manifests_path, os.getenv("K8S_MANIFESTS_PATH", "k8s"), f"{manifest_name}.yaml")
-                    manifest_builder._save_yaml(manifest_content, manifest_path)
-                    logger.info(f"Custom manifest saved: {manifest_path}")
-
-        manifest_builder.generate_skaffold_config(
-            enriched_services, # For the Dockerfile paths of the repository scanned
-            llm_manifests_path
+    else:
+        logger.info("Running in production mode, generating manifests with LLM.")
+        feedback_loop = ManifestFeedbackLoop(
+            generator=generator,
+            evaluator=evaluator,
+            validator=KubescapeValidator()
         )
+
+        feedback_loop.generate_manifests(
+            enriched_services,
+            os.getenv("TARGET_PATH", "target"),
+            os.getenv("MANIFESTS_PATH", "manifests"),
+            os.getenv("LLM_MANIFESTS_PATH", "llm")
+        )
+
+        feedback_loop.refine_manifests(
+            enriched_services,
+            os.getenv("TARGET_PATH", "target"),
+            os.getenv("MANIFESTS_PATH", "manifests"),
+            os.getenv("LLM_MANIFESTS_PATH", "llm")
+        )
+    

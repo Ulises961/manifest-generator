@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from manifests_generation.overrider import Overrider
+from overrides.overrider import Overrider
 from validation.overrides_validator import OverridesValidator
 
 @pytest.fixture

@@ -11,6 +11,6 @@
     "default_config": true,
     "interactive": false,
     "hugging_face_token": "",
-    "dry_run": true,
+    "dry_run": false,
     "verbose": true
 }
