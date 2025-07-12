@@ -1,5 +1,5 @@
 rl_env/*
-venv/*
+*venv/*
 src/__pycache__/*
 */*.egg-info/*
 */*.egg

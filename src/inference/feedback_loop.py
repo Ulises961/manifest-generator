@@ -1,11 +1,11 @@
-import logging
 import os
 from typing import Any, Dict, List, Optional
 
 from caseutil import to_snake
-from llm_client import LLMClient
+from inference import LLMClient
 from inference.prompt_builder import PromptBuilder
 from manifests_generation.manifest_builder import ManifestBuilder
+from overrides.overrider import Overrider
 from validation.kubescape_validator import KubescapeValidator
 
 
@@ -14,21 +14,26 @@ class ManifestFeedbackLoop:
     Class to handle the feedback loop for manifest generation.
     It processes the output from the LLM and updates the microservice manifests accordingly.
     """
-
+    V0 = "v0"
     def __init__(
         self,
         generator: LLMClient,
         evaluator: LLMClient,
         validator: KubescapeValidator,
-        manifest_builder: ManifestBuilder
+        manifest_builder: ManifestBuilder,
+        overrider: Overrider,
+        
     ):
-        self.logger = logging.getLogger(__name__)
+        self.logger = self.logger.getLogger(__name__)
         self.generator = generator
         self.evaluator = evaluator
         self.validator = validator
         self.prompt_builder = PromptBuilder()
         self.manifests_path = os.path.join(os.getenv("TARGET_DIR", "target"), os.getenv("MANIFESTS_PATH", "manifests"), "LLM_MANIFESTS_PATH", "llm")
         self.manifest_builder = manifest_builder
+        self.overrider = overrider
+        os.makedirs(self.manifests_path, exist_ok=True)
+
         
     def review_manifest(
         self,
@@ -148,14 +153,14 @@ class ManifestFeedbackLoop:
 
         self.logger.info(f"Manifest at {manifest_path} patched successfully.")
 
-    def refine_manifests(self, previous_iteration_path: str):
+    def refine_manifests(self, enriched_services: List[Dict[str,Any]]):
         """
         Iterate through the feedback loop until no issues are found.
         """
         max_iterations = int(os.getenv("MAX_FEEDBACK_ITERATIONS", "3"))
         first_prompt = True
-
         for iteration in range(max_iterations):
+            previous_iteration_path = os.path.join(self.manifests_path, f"V{iteration}", os.getenv("K8S_MANIFESTS_PATH", "k8s"))
             for _, _, manifest_paths in os.walk(previous_iteration_path):
                 for manifest_path in manifest_paths:
                     self.logger.info(f"Validating manifest at {manifest_path}")
@@ -199,20 +204,20 @@ class ManifestFeedbackLoop:
                     first_prompt = False
 
           # Introduce extra manifests included in the overrides.yaml file
-        if config := overrider.override_config:
+        if config := self.overrider.override_config:
             if config.get("customManifests", None):
                 for manifest_name, manifest_content in config["customManifests"].items():
                     # Log the manifest name and content
-                    logger.debug(f"Processing custom manifest: {manifest_name}")
+                    self.logger.debug(f"Processing custom manifest: {manifest_name}")
 
                     # Save the custom manifest
-                    manifest_path = os.path.join(llm_manifests_path, os.getenv("K8S_MANIFESTS_PATH", "k8s"), f"{manifest_name}.yaml")
-                    manifest_builder._save_yaml(manifest_content, manifest_path)
-                    logger.info(f"Custom manifest saved: {manifest_path}")
+                    self.manifest_path = os.path.join(self.manifests_path, os.getenv("K8S_MANIFESTS_PATH", "k8s"), f"{manifest_name}.yaml")
+                    self.manifest_builder._save_yaml(manifest_content, self.manifest_path)
+                    self.logger.info(f"Custom manifest saved: {self.manifest_path}")
 
-        manifest_builder.generate_skaffold_config(
+        self.manifest_builder.generate_skaffold_config(
             enriched_services, # For the Dockerfile paths of the repository scanned
-            llm_manifests_path
+            self.manifests_path
         )
 
     def generate_manifests(self, microservices: List[Dict[str, Any]], manifests_path: Optional[str] = None):
@@ -222,7 +227,7 @@ class ManifestFeedbackLoop:
         self.logger.info("Initializing feedback loop with microservices manifests.")
         
         for index, microservice in enumerate(microservices):
-            logging.info(f"Generating manifests for child... {microservice['name']}")
+            self.logger.info(f"Generating manifests for child... {microservice['name']}")
         
             prompt = f"""Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n
                 Details:\n"""
@@ -234,7 +239,7 @@ class ManifestFeedbackLoop:
             user_prompt = self.prompt_builder.generate_user_prompt(prompt)
 
             if os.getenv("DRY_RUN", "false").lower() == "true":
-                logging.info(f"Dry mode enabled, skipping LLM inference.\n\n----\n")
+                self.logger.info(f"Dry mode enabled, skipping LLM inference.\n\n----\n")
                 continue
             
             system_prompt = (
@@ -256,30 +261,25 @@ class ManifestFeedbackLoop:
 
             ## Generate the response
             response = self.generator.chat(
-                system=prompt_builder._generate_system_prompt(system_prompt) if index == 0 else None,  # type: ignore
+                system= self.prompt_builder._generate_system_prompt(system_prompt) if index == 0 else None,  # type: ignore
                 messages=user_prompt # type: ignore
             )
     
-            logging.info(f"Content from LLM: {response.content}")
+            self.logger.info(f"Content from LLM: {response.content}")
 
-            processed_response = inference_processor.process_response(response.content) # type: ignore
+            processed_response = self.generator.process_response(response.content) # type: ignore
             
             self.logger.info(f"Received response for {microservice['name']}: {processed_response}")
 
-            # Save the manifests to the target directory
-            llm_manifests_path = os.path.join( os.getenv("TARGET_PATH", "target"),
-                    os.getenv("MANIFESTS_PATH", "manifests"),
-                    os.getenv("LLM_MANIFESTS_PATH", "llm"))
-
-            os.makedirs(llm_manifests_path, exist_ok=True)
 
 
             for manifest in processed_response:
-                logging.info(f"Generated manifest: {microservice['name']}")
+                self.logger.info(f"Generated manifest: {microservice['name']}")
 
                 target_dir = os.path.join(
-                    llm_manifests_path,
+                    self.manifests_path,
                     os.getenv("K8S_MANIFESTS_PATH", "k8s"),
+                    V0,
                     to_snake(manifest['name'])
                 )
 
@@ -291,7 +291,7 @@ class ManifestFeedbackLoop:
                 with open(manifest_path, "w") as f:
                     f.write(manifest["manifest"])
 
-                logging.info(f"Saved manifest to {manifest_path}")
+                self.logger.info(f"Saved manifest to {manifest_path}")
 
 
         

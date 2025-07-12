@@ -1,8 +1,6 @@
 import logging
 import re
-from typing import Dict, List, cast
-
-from pyparsing import Any
+from typing import Dict, List, cast, Any
 from llm_client import LLMClient
 from anthropic import Anthropic
 
