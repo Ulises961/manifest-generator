@@ -142,7 +142,6 @@ class KubescapeValidator:
             "high",
             "medium",
             "low",
-            "info",
             "total_controls",
             "failed_count",
         ]
@@ -159,7 +158,6 @@ class KubescapeValidator:
                     "high": m["severity_counts"]["high"],
                     "medium": m["severity_counts"]["medium"],
                     "low": m["severity_counts"]["low"],
-                    "info": m["severity_counts"]["info"],
                     "total_controls": m["total_controls"],
                     "failed_count": len(m["failed_controls"]),
                 }
