@@ -11,3 +11,5 @@ dotenv
 click
 click-completion>=0.5.2
 sentence-transformers>=2.2.0
+jsonschema
+anthropic
