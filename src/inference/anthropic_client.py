@@ -1,7 +1,7 @@
 import logging
 import re
 from typing import Dict, List, cast, Any
-from llm_client import LLMClient
+from inference.llm_client import LLMClient
 from anthropic import Anthropic
 
 
@@ -9,17 +9,23 @@ class AnthropicClient(LLMClient):
     def __init__(self, model_name: str = "claude-3-5-haiku-latest"):
         super().__init__(Anthropic())
         self.model_name = model_name
-        self.client: Anthropic = cast(Anthropic, super().client)
+        self.client: Anthropic  # Type annotation for clarity
         self.logger = logging.getLogger(__name__)
 
     def chat(self, messages: List[Dict[str, Any]], system_prompt=None) -> Any:
-        response = self.client.messages.create(
-            model="claude-3-5-haiku-latest",
-            max_tokens=3000,
-            temperature=0,
-            system=system_prompt,  # type: ignore
-            messages=messages,  # type: ignore
-        )
+        # Prepare the request parameters
+        request_params = {
+            "model": "claude-3-5-haiku-latest",
+            "max_tokens": 3000,
+            "temperature": 0,
+            "messages": messages,
+        }
+
+        # Only add system parameter if system_prompt is provided and not None
+        if system_prompt is not None:
+            request_params["system"] = system_prompt
+
+        response = self.client.messages.create(**request_params)
         return response
 
     def generate_named_manifests(self, response: List[Any]) -> List[Dict[str, str]]:
@@ -29,21 +35,11 @@ class AnthropicClient(LLMClient):
         """
         named_manifests: List[Dict[str, str]] = []
 
-        for block in response:
-            # Accept either a string or an object with .text
-            if isinstance(block, str):
-                content = block
-            else:
-                content = getattr(block, "text", None) # type: ignore
-            if not content or not isinstance(content, str) or not content.strip():
-                self.logger.warning(
-                    "Received empty or invalid content block, skipping."
-                )
-                continue
-
+        for content in response:
             # Split on YAML document separator
             manifests = content.split("---")
             manifest_number = 0
+
             for manifest in manifests:
                 manifest = manifest.strip()
                 if not manifest:
@@ -54,12 +50,54 @@ class AnthropicClient(LLMClient):
                     name = res.group(1).strip()
                 else:
                     name = "default-" + str(manifest_number)
-                manifest_number += 1
 
+                manifest_number += 1
                 named_manifest = {
                     "name": name,
                     "manifest": manifest,  # preserve indentation
                 }
+
                 named_manifests.append(named_manifest)
                 self.logger.debug(f"Post processed manifest {named_manifest}")
         return named_manifests
+
+    def pre_process_response(self, response: Any) -> List[str]:
+        """
+        Process the model's response and return a list of named manifests.
+        This method is a wrapper around generate_named_manifests for compatibility.
+        """
+        result: List[str] = []
+        for block in getattr(response, "content", []):
+            text = getattr(block, "text", None)  # type: ignore
+            text = self.clean_response(text) if text else None
+
+            if not text or not isinstance(text, str) or not text.strip():
+                self.logger.warning(
+                    f"Received empty or invalid text block. Details:\nType: {type(text)}\nValue: {text}.\nSkipping."
+                )
+                continue
+
+            result.append(text)
+        return result
+
+    def process_response(self, response: Any) -> List[Dict[str, str]]:
+        """
+        Process the model's response and return a list of named manifests.
+        This method is a wrapper around pre_process_response for compatibility.
+        """
+        response = self.pre_process_response(response)
+        if isinstance(response, list):
+            return self.generate_named_manifests(response)
+        else:
+            return []
+
+    def clean_response(self, response: str) -> str:
+        """
+        Clean the response from the model by removing leading and trailing whitespace.
+        This is useful for ensuring the response is properly formatted.
+        """
+        response = response.strip()
+        # Remove pre and post text that is not part of the YAML
+        response = re.sub(r"^.*?```yaml", "", response, flags=re.DOTALL)
+        response = re.sub(r"```.*?$", "", response, flags=re.DOTALL)
+        return response.strip()

@@ -1,14 +1,11 @@
 from typing import Any, Dict, List
-
-from caseutil import to_snake
-from anthropic_client import AnthropicClient
+from inference.anthropic_client import AnthropicClient
 from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
 from embeddings.secret_classifier import SecretClassifier
 from embeddings.service_classifier import ServiceClassifier
 from embeddings.volumes_classifier import VolumesClassifier
-from feedback_loop import ManifestFeedbackLoop
-from inference.prompt_builder import PromptBuilder
+from inference.feedback_loop import ManifestFeedbackLoop
 from manifests_generation.manifest_builder import ManifestBuilder
 from overrides.overrider import Overrider
 from tree.microservices_tree import MicroservicesTree
@@ -16,8 +13,6 @@ from utils.file_utils import setup_sentence_transformer
 from utils.logging_utils import setup_logging
 import logging
 import os
-from huggingface_hub import InferenceClient
-import anthropic
 
 from validation.kubescape_validator import KubescapeValidator
 
@@ -94,17 +89,17 @@ def run():
                
     ## Add Skaffold config to build its image
     manual_manifests_path = os.path.join(
-        os.getenv("TARGET_PATH", "target"),
+        os.getenv("OUTPUT_DIR", "target"),
         os.getenv("MANIFESTS_PATH", "manifests"),
         os.getenv("MANUAL_MANIFESTS_PATH", "manual"),
     )
 
     manifest_builder.generate_skaffold_config(enriched_services, manual_manifests_path)
 
-    # ### Phase 3: Generate inferred manifests from the repository tree ###
+    # ### Phase 3: Generate manifests from the repository tree ###
     generator = AnthropicClient()
     evaluator = AnthropicClient()
-
+    validator = KubescapeValidator()
 
     if os.getenv("DRY_RUN", "false").lower() == "true":
         logger.info("Running in dry run mode, skipping LLM inference.")
@@ -112,22 +107,14 @@ def run():
     else:
         logger.info("Running in production mode, generating manifests with LLM.")
         feedback_loop = ManifestFeedbackLoop(
-            generator=generator,
-            evaluator=evaluator,
-            validator=KubescapeValidator()
+            generator,
+            evaluator,
+            validator,
+            manifest_builder,
+            overrider
         )
 
-        feedback_loop.generate_manifests(
-            enriched_services,
-            os.getenv("TARGET_PATH", "target"),
-            os.getenv("MANIFESTS_PATH", "manifests"),
-            os.getenv("LLM_MANIFESTS_PATH", "llm")
-        )
+        feedback_loop.generate_manifests(enriched_services)
 
-        feedback_loop.refine_manifests(
-            enriched_services,
-            os.getenv("TARGET_PATH", "target"),
-            os.getenv("MANIFESTS_PATH", "manifests"),
-            os.getenv("LLM_MANIFESTS_PATH", "llm")
-        )
+        feedback_loop.refine_manifests(enriched_services)
     

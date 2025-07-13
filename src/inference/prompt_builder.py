@@ -14,14 +14,41 @@ class PromptBuilder:
     def _generate_system_prompt(self, prompt: str) -> List[Dict[str, Any]]:
         """Generate the base prompt for all microservices, providing context for interdependencies."""
         self.logger.info("Generating common prompt for microservices.")
-        return [{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}]
+        
+        # For Anthropic's caching, the system message should be structured correctly
+        return [
+            {
+                "role": "system", 
+                "content": [
+                    {
+                        "type": "text", 
+                        "text": prompt,
+                        "cache_control": {"type": "ephemeral"} if self.is_caching_enabled else None
+                    }
+                ]
+            }
+        ]
 
-    def generate_user_prompt(self, prompt: str) -> List[Dict[str, str]]:
+    def generate_user_prompt(self, prompt: str) -> List[Dict[str, Any]]:
         """Generate a Kubernetes manifest generation prompt for a specific microservice."""
-        self.logger.info(
-            f"Prompt generated:\n{prompt}"
-        )
-        return [{"role": "user", "content": prompt}]
+        self.logger.info(f"Prompt generated:\n{prompt}")
+        
+        return [
+            {
+                "role": "user", 
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+
+    @property
+    def is_caching_enabled(self) -> bool:
+        """Check if caching should be enabled based on environment."""
+        return os.getenv("ENABLE_CACHING", "true").lower() == "true"
 
     @property
     def is_prod_mode(self):
