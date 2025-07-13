@@ -352,7 +352,7 @@ class ManifestFeedbackLoop:
         self.logger.info(f"Received review for {manifest_path}: {messages}")
 
         # Process the messages from the LLM
-        messages = self.evaluator.pre_process_response(messages)  # type: ignore
+        messages = self.evaluator.pre_process_response(messages.content)  # type: ignore
 
 
         return " ".join(messages).strip()  # type: ignore
@@ -402,4 +402,4 @@ class ManifestFeedbackLoop:
         
         self.logger.debug(f"Received patch for {manifest_path}: {response.content}")
         
-        return self.generator.pre_process_response(response)  # type: ignore
+        return self.generator.pre_process_response(response.content)  # type: ignore

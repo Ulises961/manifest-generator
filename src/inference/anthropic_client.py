@@ -67,7 +67,7 @@ class AnthropicClient(LLMClient):
         This method is a wrapper around generate_named_manifests for compatibility.
         """
         result: List[str] = []
-        for block in getattr(response, "content", []):
+        for block in response:
             text = getattr(block, "text", None)  # type: ignore
             text = self.clean_response(text) if text else None
 
