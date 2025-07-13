@@ -3,12 +3,11 @@ import os
 from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler
 
 def setup_logging(
-    log_dir="logs", 
+    log_dir="../logs", 
     log_file_name="microservices_tree.log",
     log_level=logging.INFO,
     max_size_mb=5,
     size_backup_count=5,
-    time_backup_days=7,
     console_output=True
 ):
     """Set up logging with both size and time-based rotation.
@@ -31,7 +30,7 @@ def setup_logging(
     
     # Create formatter
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "%(asctime)s - %(name)s::%(funcName)s:%(lineno)d - %(levelname)s - %(message)s"
     )
     
     # Configure root logger
