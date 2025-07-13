@@ -1,4 +1,5 @@
 import os
+import traceback
 from typing import Any, Dict, Optional, List, cast
 from embeddings.volumes_classifier import VolumesClassifier
 from parsers.env_parser import EnvParser
@@ -52,7 +53,6 @@ class MicroservicesTree:
             "bash": [".sh"],
             "env": [".env"],
         }
-        self.is_dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
 
     def build(self) -> Node:
         root_node = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
@@ -159,7 +159,7 @@ class MicroservicesTree:
         """Generate manifests for the given microservice node."""
         # Generate manifests for the microservice
         microservice: Dict[str, Any] = {"name": node.name}
-        microservice.setdefault("labels", {"app": node.name})
+        microservice.setdefault("labels", {"app.kubernetes.io/name": node.name})
         microservice.setdefault(
             "metadata", {"dockerfile": node.metadata.get("dockerfile_path", "")}
         )
@@ -265,7 +265,6 @@ class MicroservicesTree:
                     if "persistent_volumes" not in microservice:
                         microservice["persistent_volumes"] = []
 
-                    # TODO: define a skaffold file to define the persistent volume
                     microservice["persistent_volumes"].append(
                         {
                             "name": f"volume-{index}",
@@ -298,11 +297,6 @@ class MicroservicesTree:
             microservice.setdefault("workdir", None)
             microservice["workdir"] = workdirs[0].value
 
-        if node.attached_files is not None and not self.is_dev_mode:
-            # Attach files to the microservice node
-            for file_name, file in node.attached_files.items():
-                microservice.setdefault("attached_files", {})
-                microservice["attached_files"][file_name] = file.__to_dict__()
 
         # Enrich microservice
         container_ports = microservice.get("ports", [])
@@ -424,5 +418,5 @@ class MicroservicesTree:
                             )
 
                     except Exception as e:
-                        self.logger.error(f"Error reading file {file_path}: {e}")
+                        self.logger.error(f"Error reading file {file_path}: {traceback.format_exc()}")
                         return

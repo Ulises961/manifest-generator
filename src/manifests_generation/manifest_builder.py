@@ -20,7 +20,7 @@ class ManifestBuilder:
         
         self.logger = logging.getLogger(__name__)
 
-        self.target_path = os.getenv("TARGET_PATH", "target")
+        self.target_path = os.getenv("OUTPUT_DIR", "target")
         self.manifests_path = os.path.join(
             self.target_path, os.getenv("MANIFESTS_PATH", "manifests")
         )
