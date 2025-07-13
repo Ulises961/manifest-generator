@@ -137,30 +137,32 @@ class ManifestFeedbackLoop:
         )
 
         max_iterations = int(os.getenv("REFINEMENT_ITERATIONS", "3"))
-        collected_metrics = []
-        
+        collected_metrics = {}
+
         for iteration in range(max_iterations):
             self.logger.info(f"Starting iteration {iteration + 1}/{max_iterations}")
-            
+
+            collected_metrics.setdefault(iteration, [])
+
             previous_iteration_path = os.path.join(
                 manifests_path, f"v{iteration}", os.getenv("K8S_MANIFESTS_PATH", "k8s")
             )
-            
+
             # Check if the iteration directory exists
             if not os.path.exists(previous_iteration_path):
                 self.logger.warning(f"Iteration path {previous_iteration_path} does not exist. Skipping iteration {iteration + 1}")
                 continue
-                
+
             iteration_has_issues = False
-            
+
             for _, dirnames, _ in os.walk(previous_iteration_path):
                 for dirname in dirnames:
                     self.logger.info(f"Processing directory: {dirname}")
                     dir_path = os.path.join(previous_iteration_path, dirname)
-                    
+
                     if not os.path.exists(dir_path):
                         continue
-                        
+
                     manifest_paths = [
                         os.path.join(dir_path, f)
                         for f in os.listdir(dir_path)
@@ -180,14 +182,15 @@ class ManifestFeedbackLoop:
                         try:
                             # Validate the manifest
                             metrics = self.validator.validate_file(manifest_path)
-                            collected_metrics.append(metrics)
-                            issues = metrics.get("failed_controls", [])
+                            iteration_metrics = collected_metrics.get(iteration, [])
+                            iteration_metrics.append(metrics)
+                            collected_metrics.update({iteration: iteration_metrics})
 
+                            issues = metrics.get("failed_controls_details", [])
+                            continue
                             if len(issues) > 0:
                                 iteration_has_issues = True
-                                review = self.review_manifest(
-                                    manifest_path, issues
-                                )
+                                review = self.review_manifest(manifest_path, issues)
                             else:
                                 review = ""
                         except Exception as e:
@@ -202,19 +205,23 @@ class ManifestFeedbackLoop:
                             try:
                                 patch = self.get_patch(review, manifest_path)[0] # type: ignore
                             except Exception as e:
-                                self.logger.error(f"Failed to get patch for {manifest_path}: {traceback.format_exc()}")
+                                self.logger.error(
+                                    f"Failed to get patch for {manifest_path}: {traceback.format_exc()}"
+                                )
                                 patch = None
-
+                                                           
                             save_path = os.path.join(
                                 manifests_path,
-                                f"v{iteration + 1}",
+                                f"v{iteration + 1}" if iteration < max_iterations - 1 else converged_manifests_path,
                                 os.getenv("K8S_MANIFESTS_PATH", "k8s"),
                                 dirname,
                             )
                             os.makedirs(save_path, exist_ok=True)
 
                             if patch:
-                                self.logger.info(f"Applying patch: {patch}\n to {manifest_path}")
+                                self.logger.info(
+                                    f"Applying patch: {patch}\n to {manifest_path}"
+                                )
 
                                 with open(
                                     os.path.join(
@@ -258,10 +265,18 @@ class ManifestFeedbackLoop:
 
                             with open(output_path, "w") as f:
                                 f.write(open(manifest_path).read())
-                        
+            
+            self.validator.save_metrics_to_csv(
+                collected_metrics[iteration],
+                iteration,
+                output_file=os.path.join(manifests_path, "validation_results.csv"),
+            )
+
             # If no issues found in this iteration, we can break early
             if not iteration_has_issues:
-                self.logger.info(f"No issues found in iteration {iteration + 1}. Refinement process converged.")
+                self.logger.info(
+                    f"No issues found in iteration {iteration + 1}. Refinement process converged."
+                )
                 break
                 
         self.validator.save_metrics_to_csv(
@@ -303,7 +318,9 @@ class ManifestFeedbackLoop:
         with open(manifest_path, "r") as f:
             manifest_content = f.read()
 
-        feedback = "\n".join(f"- {i['name']}: {i['suggested_remediation']}" for i in issues)
+        feedback = "\n".join(
+            f"- {i['name']}: {i['suggested_remediation']}" for i in issues
+        )
         self.logger.info(f"Refining manifest at {manifest_path} with issues: {issues}")
 
         system_prompt = self.prompt_builder._generate_system_prompt(
@@ -396,10 +413,9 @@ class ManifestFeedbackLoop:
         )
 
         response = self.generator.chat(
-            messages=user_prompt,
-            system_prompt=system_prompt
+            messages=user_prompt, system_prompt=system_prompt
         )
-        
+
         self.logger.debug(f"Received patch for {manifest_path}: {response.content}")
-        
+
         return self.generator.pre_process_response(response.content)  # type: ignore
