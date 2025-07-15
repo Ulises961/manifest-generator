@@ -13,7 +13,6 @@ class Node:
         parent: Optional["Node"] = None,
         metadata: Dict[str, Any] = {},
         is_persistent: bool = False,
-        attached_files: Optional[Dict[str, AttachedFile]] = None
 
     ):
         """
@@ -31,7 +30,6 @@ class Node:
         self.children: List[Node] = []
         self.is_persistent: bool = is_persistent
         self._metadata: Dict[str, Any] = metadata
-        self._attached_files: Optional[Dict[str, AttachedFile]] = attached_files
 
     def add_child(self, child: "Node") -> None:
         self.children.append(child)
@@ -70,25 +68,7 @@ class Node:
         else:
             raise ValueError("Metadata must be a dictionary or None.")
 
-    @property
-    def attached_files(self):
-        return self._attached_files
-
-    @attached_files.setter
-    def attached_files(self, attached_files: Dict[str, AttachedFile]):
-        if isinstance(attached_files, dict):
-            if all(isinstance(file, AttachedFile) for file in attached_files.values()):
-                self._attached_files = attached_files
-        elif attached_files is None:
-            self._attached_files = None
-        else:
-            raise ValueError("Attached files must be a dictionary of attached files or None.")
-
-    def attach_file(self, name:str, file: AttachedFile) -> None:
-        """Attach a file to the node."""
-        if self.attached_files is None:
-            self.attached_files = {name: file}
-
+   
     def __repr__(self):
         return f"Node(name={self.name}, type={self.type}, value={self._value}, parent={self.parent.name if self.parent else None} ,children={self.children})"
 

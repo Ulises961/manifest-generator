@@ -8,7 +8,6 @@ import yaml
 class PromptBuilder:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.attached_files: List[AttachedFile] = []
 
     def _generate_system_prompt(self, prompt: str) -> List[Dict[str, Any]]:
         """Generate the base prompt for all microservices, providing context for interdependencies."""
@@ -25,8 +24,6 @@ class PromptBuilder:
 
     def generate_user_prompt(self, prompt: str) -> List[Dict[str, Any]]:
         """Generate a Kubernetes manifest generation prompt for a specific microservice."""
-        self.logger.info(f"Prompt generated:\n{prompt}")
-
         return [{"role": "user", "content": prompt}]
 
     @property

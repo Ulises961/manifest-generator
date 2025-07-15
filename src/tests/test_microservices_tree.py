@@ -173,23 +173,6 @@ def test_prepare_microservice_with_workdir(tree):
     result = tree.prepare_microservice(node)
     assert result["workdir"] == "/app"
 
-def test_prepare_microservice_with_attached_files(tree):
-    node = Node(name="test-service", type=NodeType.MICROSERVICE)
-      # Create a more realistic attached file object
-    class MockAttachedFile(AttachedFile):
-        def __init__(self, name, path):
-            self.name = name
-            self.path = path
-        
-        def __to_dict__(self):
-            return {"name": self.name, "path": self.path}
-    
-    attached_file = MockAttachedFile("config.yaml", "/app/config.yaml")
-    node.attached_files = {"config.yaml": attached_file}
-    
-    result = tree.prepare_microservice(node)
-    assert result["attached_files"] == {"config.yaml": {"name": "config.yaml", "path": "/app/config.yaml"}}
-
 def test_prepare_microservice_with_secrets(tree):
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
     secret_node = Node(name="DB_PASSWORD", type=NodeType.SECRET, value="password123")

@@ -19,37 +19,10 @@ class TestPromptBuilder(TestCase):
         prompt_builder = PromptBuilder()
         self.assertTrue(prompt_builder.is_prod_mode)
 
-    def test_attach_files(self):
-        file1 = MagicMock(spec=AttachedFile)
-        file2 = MagicMock(spec=AttachedFile)
-        self.prompt_builder.attach_files([file1, file2])
-        self.assertEqual(len(self.prompt_builder.attached_files), 2)
-        self.assertIn(file1, self.prompt_builder.attached_files)
-        self.assertIn(file2, self.prompt_builder.attached_files)
-
-    def test_attach_file(self):
-        file = MagicMock(spec=AttachedFile)
-        self.prompt_builder.attach_file(file)
-        self.assertEqual(len(self.prompt_builder.attached_files), 1)
-        self.assertIn(file, self.prompt_builder.attached_files)
-
-    def test_include_attached_files(self):
-        file1 = MagicMock(spec=AttachedFile)
-        file1.name = "file1.txt"
-        file2 = MagicMock(spec=AttachedFile)
-        file2.name = "file2.txt"
-        self.prompt_builder.attach_files([file1, file2])
-
-        with patch("os.getenv", return_value="true"):
-            prompt = "Base prompt"
-            result = self.prompt_builder.include_attached_files(prompt)
-            self.assertIn("Attached files for additional context:", result)
-            self.assertIn("file1.txt", result)
-            self.assertIn("file2.txt", result)
 
     @patch("logging.Logger.info")
     def test_generate_system_prompt(self, mock_logger_info):
-        result = self.prompt_builder._generate_system_prompt()
+        result = self.prompt_builder._generate_system_prompt("")
         self.assertIsInstance(result, list)
         self.assertEqual(result[0]["type"], "text")
         self.assertIn("You are a strict Kubernetes manifests generator.", result[0]["text"])
@@ -59,7 +32,7 @@ class TestPromptBuilder(TestCase):
     def test_generate_prompt(self, mock_logger_info):
         microservice = {"name": "service1", "image": "service1-image", "replicas": 3}
         microservices = [{"name": "service2", "image": "service2-image"}]
-        result = self.prompt_builder.generate_prompt(microservice, microservices)
+        result = self.prompt_builder.generate_user_prompt("")
 
         self.assertIsInstance(result, list)
         self.assertEqual(result[0]["role"], "user")
