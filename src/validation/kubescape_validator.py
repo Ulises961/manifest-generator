@@ -34,7 +34,7 @@ class KubescapeValidator:
             self.kubescape_path,
             "scan",
             "framework",
-            "all",
+            "nsa,cis-v1.23-t1.0.1",
             "--format",
             "json",
             manifest_path,
@@ -99,7 +99,7 @@ class KubescapeValidator:
             else:
                 failed_controls += 1
 
-        relevant_controls = failed_controls + passed_controls - irrelevant_controls
+        relevant_controls = failed_controls + passed_controls
 
         # Calculate meaningful compliance score after the loop
         if relevant_controls > 0:
@@ -166,7 +166,7 @@ class KubescapeValidator:
 
     def save_metrics_to_csv(
         self,
-        metrics_list: List[Dict],
+        iteration_metrics: Dict[str, Dict],
         iteration: int,
         output_file: str = "scan_results.csv",
     ):
@@ -203,10 +203,11 @@ class KubescapeValidator:
                     self.logger.info(f"Created new CSV file: {output_file}")
 
                 # Write metrics data
-                for metrics in metrics_list:
+                for metric_name, metrics in iteration_metrics.items():
                     try:
                         row = {
                             "iteration": iteration,
+                            "name": metric_name,
                             "file": metrics.get("file", "Unknown"),
                             "resource_type": metrics.get("resource_type", "Unknown"),
                             "compliance_score": metrics.get("compliance_score", 0),
@@ -236,7 +237,7 @@ class KubescapeValidator:
                         continue
 
             self.logger.info(
-                f"Successfully saved {len(metrics_list)} metrics to {output_file}"
+                f"Successfully saved {len(iteration_metrics.items())} metrics to {output_file}"
             )
 
         except IOError as e:

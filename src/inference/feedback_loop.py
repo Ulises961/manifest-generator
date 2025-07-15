@@ -60,7 +60,7 @@ class ManifestFeedbackLoop:
                 Details:\n"""
 
             for key, value in microservice.items():
-                if key != "attached_files" and key != "manifests":
+                if key != "manifests":
                     prompt += f"  {key}: {value}\n"
 
             user_prompt = self.prompt_builder.generate_user_prompt(prompt)
@@ -89,7 +89,9 @@ class ManifestFeedbackLoop:
             ## Generate the response
             response = self.generator.chat(
                 messages=user_prompt,  # type: ignore
-                system_prompt=self.prompt_builder._generate_system_prompt(system_prompt)
+                system_prompt=self.prompt_builder._generate_system_prompt(
+                    system_prompt
+                ),
             )
 
             self.logger.info(f"Content from LLM: {response.content}")
@@ -150,7 +152,9 @@ class ManifestFeedbackLoop:
 
             # Check if the iteration directory exists
             if not os.path.exists(previous_iteration_path):
-                self.logger.warning(f"Iteration path {previous_iteration_path} does not exist. Skipping iteration {iteration + 1}")
+                self.logger.warning(
+                    f"Iteration path {previous_iteration_path} does not exist. Skipping iteration {iteration + 1}"
+                )
                 continue
 
             iteration_has_issues = False
@@ -171,48 +175,56 @@ class ManifestFeedbackLoop:
 
                     for manifest_path in manifest_paths:
                         self.logger.info(f"Validating manifest at {manifest_path}")
-
+                        manifest_file = os.path.basename(manifest_path)
                         if (
                             not manifest_path.endswith(".yaml")
-                            or os.path.basename(manifest_path).startswith("skaffold")
-                            or os.path.basename(manifest_path).startswith("kustomization")
+                            or manifest_file.startswith("skaffold")
+                            or manifest_file.startswith(
+                                "kustomization"
+                            )
                         ):
                             continue
 
+                        manifest_file.removesuffix(".yaml")
+                        issues = []
                         try:
                             # Validate the manifest
                             metrics = self.validator.validate_file(manifest_path)
-                            iteration_metrics = collected_metrics.get(iteration, [])
-                            iteration_metrics.append(metrics)
+                            iteration_metrics = collected_metrics.get(iteration, {})
+                            iteration_metrics[manifest_file].append(metrics)
                             collected_metrics.update({iteration: iteration_metrics})
-
-                            issues = metrics.get("failed_controls_details", [])
-                            continue
-                            if len(issues) > 0:
-                                iteration_has_issues = True
-                                review = self.review_manifest(manifest_path, issues)
-                            else:
-                                review = ""
+                            issues_found = metrics.get("failed_controls_details", [])
+                            iteration_has_issues = True
+                        
                         except Exception as e:
-                            self.logger.error(f"Failed to validate manifest {manifest_path}: {traceback.format_exc()}")
-                            # Copy manifest forward without changes if validation fails
-                            review = ""
+                            self.logger.error(
+                                f"Failed to validate manifest {manifest_path}: {traceback.format_exc()}"
+                            )
+                        
+                            issues_found = []
 
-                        # If issues are found generate a new manifest
-                        if review and review.strip():
-                            self.logger.info(f"Review for {manifest_path}: {review}")
+                        # Compare the issues with the previous iteration
+                        previous_issues = collected_metrics[iteration-1][manifest_file]["failed_controls_details"] if iteration > 0 else []
 
-                            try:
-                                patch = self.get_patch(review, manifest_path)[0] # type: ignore
-                            except Exception as e:
-                                self.logger.error(
-                                    f"Failed to get patch for {manifest_path}: {traceback.format_exc()}"
-                                )
-                                patch = None
-                                                           
+                        for prev_issue in previous_issues:
+                            # Only check for issues that have not yet been reported
+                            if prev_issue not in issues_found:
+                                issues.append(prev_issue)
+
+                            self.logger.info(
+                                f"New issues found in manifest {manifest_path}: {issues}"
+                            )
+
+                        patch = self.patch_manifest(manifest_path, issues)
+
+
+                        if patch and patch.strip():
+                            self.logger.info(f"Patched maifest {manifest_path}: {patch}")
+
+                               
                             save_path = os.path.join(
                                 manifests_path,
-                                f"v{iteration + 1}" if iteration < max_iterations - 1 else converged_manifests_path,
+                                f"v{iteration + 1}" if iteration < max_iterations - 1 else os.getenv("REVIEWED_MANIFESTS", "final_manifests"),
                                 os.getenv("K8S_MANIFESTS_PATH", "k8s"),
                                 dirname,
                             )
@@ -255,13 +267,15 @@ class ManifestFeedbackLoop:
                                 dirname,
                             )
                             os.makedirs(output_dir, exist_ok=True)
-                            
-                            output_path = os.path.join(output_dir, os.path.basename(manifest_path))
 
-                            if not review or not review.strip():
-                                self.logger.info(
-                                    f"No issues found for manifest at {manifest_path}. Saving to final directory."
-                                )
+                            output_path = os.path.join(
+                                output_dir, os.path.basename(manifest_path)
+                            )
+
+                            
+                            self.logger.info(
+                                f"No issues found for manifest at {manifest_path}. Saving to final directory."
+                            )
 
                             with open(output_path, "w") as f:
                                 f.write(open(manifest_path).read())
@@ -278,11 +292,6 @@ class ManifestFeedbackLoop:
                     f"No issues found in iteration {iteration + 1}. Refinement process converged."
                 )
                 break
-                
-        self.validator.save_metrics_to_csv(
-            collected_metrics,
-            output_file=os.path.join(manifests_path, "validation_results.csv"),
-        )
 
         # Introduce extra manifests included in the overrides.yaml file
         if config := self.overrider.override_config:
@@ -294,23 +303,23 @@ class ManifestFeedbackLoop:
                     self.logger.debug(f"Processing custom manifest: {manifest_name}")
 
                     # Save the custom manifest
-                    self.manifest_path = os.path.join(
+                    manifest_path = os.path.join(
                         converged_manifests_path,
                         os.getenv("K8S_MANIFESTS_PATH", "k8s"),
                         f"{manifest_name}.yaml",
                     )
-                    
+
                     self.manifest_builder._save_yaml(
-                        manifest_content, self.manifest_path
+                        manifest_content, manifest_path
                     )
-                    self.logger.info(f"Custom manifest saved: {self.manifest_path}")
+                    self.logger.info(f"Custom manifest saved: {manifest_path}")
 
         self.manifest_builder.generate_skaffold_config(
             enriched_services,  # For the Dockerfile paths of the repository scanned
             converged_manifests_path,
         )
 
-    def review_manifest(
+    def patch_manifest(
         self,
         manifest_path: str,
         issues: List[dict],
@@ -318,48 +327,71 @@ class ManifestFeedbackLoop:
         with open(manifest_path, "r") as f:
             manifest_content = f.read()
 
-        feedback = "\n".join(
-            f"- {i['name']}: {i['suggested_remediation']}" for i in issues
-        )
-        self.logger.info(f"Refining manifest at {manifest_path} with issues: {issues}")
+        # Better issue formatting
+        if issues:
+            formatted_issues = []
+            for issue in issues:
+                issue_text = f"- Control: {issue.get('name', 'Unknown')}"
+
+                # Better remediation formatting
+                remediation = issue.get('suggested_remediation', [])
+                for solution in remediation:
+                    issue_text += f"\n- Fix: {solution.get('path', solution)} - Apply: {solution.get('value', 'Unknown')}"
+                formatted_issues.append(issue_text)
+            
+            issues_context = "\n".join(formatted_issues)
+        else:
+            issues_context = "No specific issues identified."
 
         system_prompt = self.prompt_builder._generate_system_prompt(
-            """
-            You are a Kubernetes security and best practices expert reviewing manifests for production deployment.
-            
-            Your task:
-            1. Analyze the provided Kubernetes manifest against the security issues identified by Kubescape
-            2. Generate specific, actionable improvement instructions that address each identified issue
-            3. Focus on security, resource management, and Kubernetes best practices
-            4. If no critical issues need addressing, return an empty string
-            
-            Output format:
-            - Provide clear, specific instructions for fixing each issue
-            - Use concrete values and configurations, not generic placeholders
-            - Prioritize security and production-readiness
-            - Be concise but comprehensive
-            """
-        )
+        f"""
+        You are a senior Kubernetes security engineer reviewing manifests for production deployment.
+        
+        Your expertise should guide the decision-making process. Use the security analysis as input, but apply your professional judgment.
+ 
+        
+        Your task:
+        1. Review the Kubernetes manifest for security and best practices
+        2. Apply fixes that genuinely improve manifest quality without breaking functionality
+        3. Feel free to SKIP fixes that are:
+           - Would break legitimate functionality
+           - Are overly restrictive for the use case
+           - Create operational complexity without significant security benefit
+        4. Output the improved manifest in valid YAML format
+        5. If no meaningful improvements are needed, return an empty string
+        
+        Decision Guidelines:
+        - Some security controls may not apply to certain resource types (e.g., Service resources)
+        - Network policies, resource limits, and security contexts are often valuable
+        - Overly restrictive permissions can hinder legitimate operations
+        - Production workloads need reasonable security without operational burden
+        
+        Output Rules:
+        - Only output valid Kubernetes YAML or empty string
+        - Do not add explanations or comments
+        - Preserve original functionality and structure
+        - Apply professional judgment, not blind compliance
+        """
+    )
 
-        user_prompt = self.prompt_builder.generate_user_prompt(
-            f"""
-            Review this Kubernetes manifest and provide specific improvement instructions.
-            
-            SECURITY ISSUES IDENTIFIED BY KUBESCAPE:
-            {feedback}
-            
-            MANIFEST TO REVIEW:
-            --- Manifest Start ---
-            {manifest_content}
-            --- Manifest End ---
-            
-            Provide specific instructions to fix each identified security issue. Focus on:
-            - Security contexts and privilege settings
-            - Resource limits and requests
-            - Network policies and service configurations
-            - Label compliance and best practices
-            """
-        )
+        prompt = f"""Review this Kubernetes manifest and apply security improvements using your professional judgment.
+
+        Provided analysis (use as guidance, not strict requirements):
+        {issues_context}
+
+        MANIFEST TO REVIEW:
+        ```yaml
+        {manifest_content}
+        ```
+
+        Instructions:
+        - Apply security improvements that make genuine sense for this resource type
+        - Skip suggestions that don't apply or would cause operational issues
+        - Return the improved manifest or empty string if no meaningful improvements needed
+        - Use your expertise to balance security with functionality"""
+
+
+        user_prompt = self.prompt_builder.generate_user_prompt(prompt)
 
         messages = self.evaluator.chat(
             messages=user_prompt,
@@ -371,51 +403,4 @@ class ManifestFeedbackLoop:
         # Process the messages from the LLM
         messages = self.evaluator.pre_process_response(messages.content)  # type: ignore
 
-
         return " ".join(messages).strip()  # type: ignore
-
-    def get_patch(
-        self,
-        review: str,
-        manifest_path: str,
-    ) -> Optional[str]:
-        """
-        Patch the manifest based on the review provided by the LLM.
-        The review should contain actionable instructions for the LLM that generated the manifest.
-        """
-
-        self.logger.info(f"Patching manifest with review: {review}")
-        system_prompt = self.prompt_builder._generate_system_prompt(
-            """
-            The manifests previously generated have been reviewed, and feedback has been provided. 
-            Your task is to refine the manifest based on the feedback to address all identified issues. 
-            The output should be a valid, production-ready Kubernetes manifest that adheres to best practices 
-            and requires no further refinements.
-
-            Ensure that:
-            1. All feedback points are addressed explicitly.
-            2. No unnecessary changes are introduced beyond the scope of the feedback.
-            3. The refined manifest is syntactically and semantically valid for Kubernetes deployment.
-            "**No other output is allowed. Do not explain, do not reas  on, do not output markdown or comments.**\n"
-            "**Immediately output only valid Kubernetes YAML for the resource.**\n"
-            """
-        )
-
-        user_prompt = self.prompt_builder.generate_user_prompt(
-            f"""
-            Based on the following review, refine the Kubernetes manifest:
-            {review}
-
-            --- Manifest Start ---
-            {open(manifest_path).read()}
-            --- Manifest End ---
-            """
-        )
-
-        response = self.generator.chat(
-            messages=user_prompt, system_prompt=system_prompt
-        )
-
-        self.logger.debug(f"Received patch for {manifest_path}: {response.content}")
-
-        return self.generator.pre_process_response(response.content)  # type: ignore
