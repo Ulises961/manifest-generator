@@ -82,9 +82,8 @@ class StatefulSetBuilder:
             ]
 
         if "ports" in stateful_set:
-            template["spec"]["template"]["spec"]["containers"][0]["ports"] = [
-                stateful_set_entry["ports"]
-            ]
+            template["spec"]["template"]["spec"]["containers"][0]["ports"] = stateful_set_entry["ports"]
+            
 
         if "workdir" in stateful_set:
             template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (

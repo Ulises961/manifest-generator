@@ -1,17 +1,12 @@
-import gc
 import json
 import os
 import re
-import time
-from typing import Any, Dict, List, Optional, cast, Tuple
-import torch
-from sentence_transformers import SentenceTransformer
+from typing import Any, Dict, List, Optional, Tuple, cast
 from dotenv import load_dotenv
 import shlex
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import logging
-from transformers import BitsAndBytesConfig
-from utils.hugging_face import HUGGING_FACE_TOKEN
+from sentence_transformers import SentenceTransformer
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +15,16 @@ def load_file(path: str) -> Any:
     """Load a JSON file."""
     with open(path, "r") as file:
         return json.load(file)
+
+def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
+    """Get model name and path from environment variables."""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    models_dir = os.path.realpath(
+        os.path.join(current_dir, "..", "resources", "models")
+    )
+    model_name: str = os.getenv(model_env_var, default_model)
+    model_path = os.path.join(models_dir, model_name)
+    return model_name, model_path
 
 
 def remove_none_values(d) -> Optional[Dict[str, Any]] | Any:
@@ -43,7 +48,7 @@ def remove_none_values(d) -> Optional[Dict[str, Any]] | Any:
     return {
         key: value
         for key, value in d.items()
-        if value is not None and value != {} and value != []
+        if value is not None and value != {} and value != [] and value != [None]
     }
 
 
@@ -53,16 +58,51 @@ def load_environment():
     load_dotenv(env_path)
 
 
-def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
-    """Get model name and path from environment variables."""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    models_dir = os.path.realpath(
-        os.path.join(current_dir, "..", "resources", "models")
-    )
-    model_name: str = os.getenv(model_env_var, default_model)
-    model_path = os.path.join(models_dir, model_name)
-    return model_name, model_path
 
+def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
+    """Normalize Docker CMD/ENTRYPOINT field into list."""
+    if not field:
+        return []
+
+    if isinstance(field, list):
+        return ["/bin/sh", "-c"] + field if check_shell_in_commands(field) else field
+
+    if isinstance(field, str):
+        field = field.strip()
+
+        if field.startswith("[") and field.endswith("]"):
+            try:
+                commands = cast(list, json.loads(field))
+                return (
+                    ["/bin/sh", "-c", field]
+                    if check_shell_in_commands(commands)
+                    else commands
+                )
+            except json.JSONDecodeError:
+                logger.debug("failed deserializing", field)
+                return []
+
+        # Raw string command: detect shell logic
+        return (
+            ["/bin/sh", "-c", field] if needs_shell_parsing(field) else shlex.split(field)
+        )
+
+    return []
+
+
+def needs_shell_parsing(command: str) -> bool:
+    """Return True if command string likely needs to be run under a shell."""
+    shell_pattern = re.compile(
+        r"\$|\&\&|\|\||[|;&><*]|2>|&>|-c\b|(?<!(\w)\.)(?:bash|zsh|fish|tcsh|csh|ksh|dash|sh)\b"
+    )
+    return bool(shell_pattern.search(command))
+
+
+def check_shell_in_commands(commands: List[str]) -> bool:
+    for word in commands:
+        if needs_shell_parsing(word):
+            return True
+    return False
 
 def setup_cuda(force_cpu: bool = False) -> str:
     """Setup CUDA for PyTorch."""
@@ -96,108 +136,4 @@ def setup_sentence_transformer(force_cpu: bool = False) -> Any:
     return model
 
 
-def setup_inference_models(force_cpu: bool = False) -> Tuple[Any, Any, str]:
-    """Setup and return a AutoModelForCausalLM model and tokenizer."""
 
-    device = setup_cuda(force_cpu)
-
-    # Check if in development or production mode
-    is_dev_mode = os.getenv("DEV_MODE", "true").lower() == "true"
-
-    quantization_config = BitsAndBytesConfig(
-            load_in_8bit=True,
-            llm_int8_threshold=6.0
-        )
-    
-    if is_dev_mode:
-        # Development mode - use smaller model with quantization
-        model_name, model_path = _get_model_paths(
-            "INFERENCE_MODEL", "microsoft/phi-1.5"
-        )
-        logger.info("Running in DEVELOPMENT mode with smaller model: %s", model_name)
-
-    else:
-        # Production mode - use full-size model
-        model_name, model_path = _get_model_paths(
-            "PRODUCTION_INFERENCE_MODEL",     "deepseek-ai/deepseek-coder-33b-instruct",
-        )
-        logger.info("Running in PRODUCTION mode with model: %s", model_name)
-        
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="auto",
-            quantization_config=quantization_config if is_dev_mode else None,
-            torch_dtype=torch.float16,
-            low_cpu_mem_usage=True,
-            token=HUGGING_FACE_TOKEN,
-        )
-
-        model.eval()
-
-        tokenizer = AutoTokenizer.from_pretrained(model_name, token=HUGGING_FACE_TOKEN)
-
-        if not os.path.exists(model_path):
-            model.save_pretrained(model_path)
-
-        return model, tokenizer, device
-    except Exception as e:
-        logger.error(f"Failed to load model {model_name}: {e}")
-
-        # Run the model in cpu instead of gpu
-        if is_dev_mode:
-            logger.info(f"Falling back to cpu device")
-            return (
-                AutoModelForCausalLM.from_pretrained(model_name, device_map="cpu"),
-                AutoTokenizer.from_pretrained(model_name, device_map="cpu"),
-                "cpu",
-            )
-        else:
-            # In production, we want to fail rather than use an inadequate model
-            raise RuntimeError(f"Failed to load production model: {model_name}")
-
-
-def normalize_command_field(field: Optional[str | List[str]]) -> List[str]:
-    """Normalize Docker CMD/ENTRYPOINT field into list."""
-    if not field:
-        return []
-
-    if isinstance(field, list):
-        return ["/bin/sh -c"] + field if check_shell_in_commands(field) else field
-
-    if isinstance(field, str):
-        field = field.strip()
-
-        if field.startswith("[") and field.endswith("]"):
-            try:
-                commands = cast(list, json.loads(field))
-                return (
-                    ["/bin/sh -c", field]
-                    if check_shell_in_commands(commands)
-                    else commands
-                )
-            except json.JSONDecodeError:
-                print("failed deserializing", field)
-                return []
-
-        # Raw string command: detect shell logic
-        return (
-            ["/bin/sh", "-c", field] if needs_shell_parsing(field) else shlex.split(field)
-        )
-
-    return []
-
-
-def needs_shell_parsing(command: str) -> bool:
-    """Return True if command string likely needs to be run under a shell."""
-    shell_pattern = re.compile(
-        r"\$|\&\&|\|\||[|;&><*]|2>|&>|-c\b|(?<!(\w)\.)(?:bash|zsh|fish|tcsh|csh|ksh|dash|sh)\b"
-    )
-    return bool(shell_pattern.search(command))
-
-
-def check_shell_in_commands(commands: List[str]) -> bool:
-    for word in commands:
-        if needs_shell_parsing(word):
-            return True
-    return False

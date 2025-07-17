@@ -1,8 +1,9 @@
+from copy import deepcopy
+import logging
 import os
-import re
 from typing import Any, Dict, List, Optional
 
-from numpy import log, ndarray, vstack
+from numpy import log, vstack
 from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file
@@ -11,6 +12,7 @@ from utils.file_utils import load_file
 class ServiceClassifier:
     def __init__(self, embeddings_engine: EmbeddingsEngine) -> None:
         """Initialize the ServiceClassifier with an embeddings engine."""
+        self.logger = logging.getLogger(__name__)
         self._engine: EmbeddingsEngine = embeddings_engine
 
         # Load the services knowledge base
@@ -20,12 +22,12 @@ class ServiceClassifier:
                 "src/resources/knowledge_base/microservices.json",
             )
         )
-    
+
     @property
     def services(self) -> List[Dict[str, Any]]:
         """Get the services knowledge base."""
         return self._services
-    
+
     def calculate_threshold(self, embeddings_size) -> float:
         # Calculate the threshold for the microservices embeddings
         self._microservices_threshold: float = 0.8 - (
@@ -33,9 +35,7 @@ class ServiceClassifier:
         )
 
         # Ensure threshold is between 0.1 and 0.9
-        return max(
-            0.1, min(self._microservices_threshold, 0.9)
-        )
+        return max(0.1, min(self._microservices_threshold, 0.9))
 
     def _load_services(self, path: str) -> List[Dict[str, Any]]:
         """Push embeddings to services knowledge base."""
@@ -45,7 +45,7 @@ class ServiceClassifier:
             # Add the microservice label to the keywords list
             if service["name"] not in service["keywords"]:
                 service["keywords"] = service["keywords"] + [service["name"]]
-            
+
             embeddings_list: List[Tensor] = []
 
             # Compute the embedding for the keywords
@@ -54,16 +54,23 @@ class ServiceClassifier:
                 embedding = self._engine.encode(keyword)
                 embeddings_list.append(embedding)
 
-            service["embeddings"] = vstack(embeddings_list)  # Stack vertically into one array
+            service["embeddings"] = vstack(
+                embeddings_list
+            )  # Stack vertically into one array
 
         return services["services"]
 
-    def decide_service(self, query: str, ports: Optional[List[int]] = None) -> Optional[Dict[str, Any]]:
+    def decide_service(
+        self,
+        query: str,
+        ports: Optional[List[int]] = None,
+        threshold: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Decide the service based on the query and a given threshold."""
-
+        self.logger.info(f"Deciding service for query: {query} with ports: {ports}")
         # Compute the embedding for the query
-        query_embedding: Tensor = self._engine.encode(query)
-
+        query_embedding: Tensor = self._engine.encode(query)    
+        threshold = threshold or self.calculate_threshold(len(query_embedding))
         most_similar: Optional[Dict[str, Any]] = None
         max_similarity: float = -1.0
 
@@ -77,9 +84,13 @@ class ServiceClassifier:
                     if port in service["ports"]:
                         similarity += 0.1
             # Check if the similarity is greater than the threshold
-            if similarity > max_similarity and similarity >= self.calculate_threshold(len(service["embeddings"])):
+            if similarity > max_similarity and similarity >= threshold:
                 most_similar = service
                 max_similarity = similarity
 
+        most_similar = deepcopy(most_similar)
+        if most_similar:
+            most_similar.pop("embeddings", None)  #  Remove embeddings from the result
         # Check if the most similar service is above the threshold
+        self.logger.debug(""f"Most similar service: {most_similar}")
         return most_similar

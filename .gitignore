@@ -1,11 +1,14 @@
-rl_env/*
-venv/*
+*venv/*
 src/__pycache__/*
 */*.egg-info/*
 */*.egg
 src/*/__pycache__/*
 src/resources/models/*
 target/*
+output/*
+*.pyc
+*.pyo
+*.pyd
 logs/
 *.log
 .vscode

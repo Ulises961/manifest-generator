@@ -1,6 +1,7 @@
-import json
 import os
+import traceback
 from typing import Any, Dict, Optional, List, cast
+from embeddings.volumes_classifier import VolumesClassifier
 from parsers.env_parser import EnvParser
 from tree.attached_file import AttachedFile
 from tree.command_mapper import CommandMapper
@@ -26,6 +27,7 @@ class MicroservicesTree:
         secret_classifier: SecretClassifier,
         service_classifier: ServiceClassifier,
         label_classifier: LabelClassifier,
+        volumes_classifier: VolumesClassifier
     ):
         self.logger = logging.getLogger(__name__)
         self.root_path = root_path
@@ -34,7 +36,7 @@ class MicroservicesTree:
         self.service_classifier = service_classifier
         self.env_parser: EnvParser = EnvParser(secret_classifier)
         self.command_parser: CommandMapper = CommandMapper(
-            label_classifier, self.env_parser
+            label_classifier, self.env_parser, volumes_classifier
         )
 
         self.bash_parser: BashScriptParser = BashScriptParser(
@@ -51,8 +53,6 @@ class MicroservicesTree:
             "bash": [".sh"],
             "env": [".env"],
         }
-        self.is_dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-
 
     def build(self) -> Node:
         root_node = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
@@ -64,7 +64,7 @@ class MicroservicesTree:
             item_path = os.path.join(self.root_path, item)
             if os.path.isdir(item_path):
                 if str(item).startswith("."):
-                    self.logger.info(f"Skipping hidden directory: {item}")
+                    self.logger.debug(f"Skipping hidden directory: {item}")
                     continue
                 else:
                     self.logger.info(f"Scanning directory: {item_path}")
@@ -84,7 +84,7 @@ class MicroservicesTree:
         preferred_name: Optional[str] = None,
     ) -> None:
         """Scan the directory for microservices and find Dockerfile."""
-        
+
         # Only check files in the current directory, not recursively
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
 
@@ -103,7 +103,10 @@ class MicroservicesTree:
                     dir_name = preferred_name
 
                 microservice_node = Node(
-                    name=dir_name, type=NodeType.MICROSERVICE, parent=parent, metadata={"dockerfile_path": path}
+                    name=dir_name,
+                    type=NodeType.MICROSERVICE,
+                    parent=parent,
+                    metadata={"dockerfile_path": path},
                 )
 
                 # Add the microservice node to the parent node
@@ -140,7 +143,7 @@ class MicroservicesTree:
             ]
             for subdir in subdirs:
                 subdir_path = os.path.join(path, subdir)
-                self.logger.info(f"Scanning directory: {subdir_path}")
+                self.logger.debug(f"Scanning sub-directory: {subdir_path}")
                 # Use a subdirectory name that combines parent and child for clarity
                 self._scan_helper(subdir_path, parent, subdir, preferred_name=dir_name)
 
@@ -156,19 +159,25 @@ class MicroservicesTree:
         """Generate manifests for the given microservice node."""
         # Generate manifests for the microservice
         microservice: Dict[str, Any] = {"name": node.name}
-        microservice.setdefault("labels", {"app": node.name})
-        microservice.setdefault("metadata", {"dockerfile": node.metadata.get("dockerfile_path","")})
-
+        microservice.setdefault("labels", {"app.kubernetes.io/name": node.name})
+        microservice.setdefault(
+            "metadata", {"dockerfile": node.metadata.get("dockerfile_path", "")}
+        )
+        microservice.setdefault("image", node.name.lower())
+        microservice.setdefault("env", []) 
+        microservice.setdefault("volume_mounts", []) 
+        microservice.setdefault("volumes", [])  
+        
         if len(labels := node.get_children_by_type(NodeType.LABEL)) > 0:
 
             for label in labels:
-                parsed_labels = parse_key_value_string(label.value)
+                parsed_labels = parse_key_value_string(cast(str, label.value))
                 microservice["labels"].update(parsed_labels)  # type: ignore
 
         if len(annotations := node.get_children_by_type(NodeType.ANNOTATION)) > 0:
             microservice.setdefault("annotations", {})
             for annotation in annotations:
-                parsed_annotations = parse_key_value_string(annotation.value)
+                parsed_annotations = parse_key_value_string(cast(str, annotation.value))
                 microservice["annotations"].update(parsed_annotations)  # type: ignore
 
         if (
@@ -192,8 +201,10 @@ class MicroservicesTree:
             len(ports := node.get_children_by_type(NodeType.PORT, must_be_active=True))
             > 0
         ):
-            microservice["ports"] = [int(port.value) for port in ports]
-            microservice["service-ports"] = [int(port.value) for port in ports]
+            microservice["ports"] = [int(cast(str, port.value)) for port in ports]
+            microservice["service-ports"] = [
+                int(cast(str, port.value)) for port in ports
+            ]
             microservice["type"] = "ClusterIP"
             microservice["protocol"] = "TCP"
             microservice["workload"] = "Deployment"
@@ -222,7 +233,7 @@ class MicroservicesTree:
         ):
             microservice.setdefault("env", [])
             for env in env_vars:
-                self.logger.info(f"processing env var: {env.name}")
+                self.logger.debug(f"processing env var: {env.name}")
                 microservice["env"].append(
                     {"name": env.name, "key": "config", "value": env.value}
                 )  # type: ignore
@@ -254,13 +265,12 @@ class MicroservicesTree:
                     if "persistent_volumes" not in microservice:
                         microservice["persistent_volumes"] = []
 
-                    # TODO: define a skaffold file to define the persistent volume
                     microservice["persistent_volumes"].append(
                         {
                             "name": f"volume-{index}",
                             "labels": {
-                                "app": microservice["labels"]["app"],
-                                "storage-type": "persistent"
+                                "app": microservice["labels"]["app.kubernetes.io/name"],
+                                "storage-type": "persistent",
                             },
                             "storage_class": "standard",
                             "access_modes": ["ReadWriteOnce"],
@@ -287,12 +297,6 @@ class MicroservicesTree:
             microservice.setdefault("workdir", None)
             microservice["workdir"] = workdirs[0].value
 
-        if node.attached_files is not None and not self.is_dev_mode:
-            # Attach files to the microservice node
-            for file_name, file in node.attached_files.items():
-                microservice.setdefault("attached_files", {})
-                microservice["attached_files"][file_name] = file.__to_dict__()
-                
 
         # Enrich microservice
         container_ports = microservice.get("ports", [])
@@ -352,10 +356,8 @@ class MicroservicesTree:
 
         for command in commands:
             # Classify the command
-            nodes: List[Node] = (
-                self.command_parser.generate_node_from_command(
-                    command, microservice_node
-                )
+            nodes: List[Node] = self.command_parser.generate_node_from_command(
+                command, microservice_node
             )
 
             for node in nodes:
@@ -385,36 +387,3 @@ class MicroservicesTree:
                     # Parse the config file and add it to the node
                     config_nodes = self.env_parser.parse(file_path)
                     node.add_children(config_nodes)
-
-                else:
-                    # Check if the file size is within the limit
-                    if os.path.getsize(file_path) > max_file_size_kb * 1024:
-                        self.logger.warning(
-                            f"File {file_name} exceeds the size limit of {max_file_size_kb} KB. Skipping."
-                        )
-                        return
-
-                    try:
-                        with open(file_path, "r") as f:
-                            content = f.read()
-                            file_size_kb = os.path.getsize(file_path) / 1024
-                            
-                            # Make sure the file size is an integer
-                            file_size_int = int(file_size_kb)
-                            
-                            attachment = AttachedFile(
-                                file_name,
-                                file_type,
-                                file_size_int,  # Use integer size instead of float
-                                content
-                            )
-
-                            node.attach_file(name, attachment)
-
-                            self.logger.info(
-                                f"Attached file {file_name} to node {node.name}"
-                            )
-
-                    except Exception as e:
-                        self.logger.error(f"Error reading file {file_path}: {e}")
-                        return

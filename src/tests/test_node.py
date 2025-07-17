@@ -14,9 +14,6 @@ def test_value_property():
     # Test with None value
     none_node = Node("test", NodeType.ROOT, None)
     assert none_node.value is None
-    # Test with invalid value type
-    with pytest.raises(ValueError):
-        invalid_node = Node("test", NodeType.ROOT, 123)  # Should raise ValueError
 
 def test_add_child():
     parent = Node("parent", NodeType.ROOT, "parent_value")

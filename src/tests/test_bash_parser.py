@@ -55,9 +55,9 @@ def test_is_orchestrator_line(parser):
 
 
 def test_find_startup_script(parser):
-    with patch.object(parser._engine, "compute_similarity") as mock_similarity:
-        # Mock the similarity function to return a high score for the first script
-        mock_similarity.return_value = 0.9
+    with patch.object(parser.embeddings_engine, "compare_words") as mock_similarity:
+        # Mock the similarity function to return a dict with a similarity score
+        mock_similarity.return_value = {"similarity": 0.9}
 
         # Test with a list of files
         root = "/test/path"
@@ -123,8 +123,12 @@ def test_determine_startup_command(mock_open, parser):
             },
         )
 
-        assert entrypoint in service_node.children
-
+        assert any(
+            child.type == NodeType.ENTRYPOINT and
+            child.value == ["echo", "Starting service"] and
+            child.metadata.get("review") == "Generated from bash script"
+            for child in service_node.children
+        )
         # Verify the script was parsed and results added to service_node
         # You can add assertions here based on expected behavior
 

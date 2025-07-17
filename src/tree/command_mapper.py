@@ -2,9 +2,10 @@ import json
 import os
 import re
 import shlex
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from dockerfile_parse import DockerfileParser
 from embeddings.label_classifier import LabelClassifier
+from embeddings.volumes_classifier import VolumesClassifier
 from parsers.env_parser import EnvParser
 
 from tree.node import Node
@@ -21,10 +22,10 @@ import itertools
 class CommandMapper:
     """Class to classify Dockerfile commands."""
 
-    def __init__(self, label_classifier: LabelClassifier, env_parser: EnvParser):
+    def __init__(self, label_classifier: LabelClassifier, env_parser: EnvParser, volumes_classifier: VolumesClassifier):
         self._label_classifier = label_classifier
         self._env_parser = env_parser
-
+        self._volumes_classifier = volumes_classifier 
     DOCKER_COMMANDS: List[str] = [
         "CMD",
         "LABEL",
@@ -161,7 +162,7 @@ class CommandMapper:
         return nodes
 
     def _generate_volume_nodes(
-        self, command: dict, parent: Node
+        self, command: dict, parent: Optional[Node]
     ) -> List[Node]:
         """Generate a node from a VOLUME command."""
         nodes = []
@@ -169,16 +170,7 @@ class CommandMapper:
         normalized_volume_paths = normalize_spaced_values(command["value"])
         for volume_path in normalized_volume_paths:
             # Check if the volume is persistent
-            volumes_path = os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                os.getenv("VOLUMES_PATH", "resources/knowledge_base/volumes.json"),
-            )
-            with open(volumes_path, "r") as f:
-                volumes = json.load(f)
-
-            is_persistent = volume_path in volumes
-
+            is_persistent = self._volumes_classifier.decide_volume_persistence(volume_path)
             nodes.append(
                 self._create_node(
                     {"instruction": "VOLUME", "value": volume_path},
@@ -224,7 +216,7 @@ class CommandMapper:
     
 
     def _create_node(
-        self, command: dict, type: NodeType, parent: Node, is_persistent: bool = False
+        self, command: dict, type: NodeType, parent: Optional[Node], is_persistent: bool = False
     ) -> Node:
         """Create a Node from a command."""
         return Node(

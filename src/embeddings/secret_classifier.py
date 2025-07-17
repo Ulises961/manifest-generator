@@ -2,7 +2,7 @@ import os
 import re
 from typing import Any, Dict, List
 
-from numpy import log, ndarray
+from numpy import log
 from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file

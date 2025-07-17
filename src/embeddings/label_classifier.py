@@ -1,7 +1,6 @@
 import os
 from typing import Dict
 
-from numpy import ndarray
 from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
 from utils.file_utils import load_file

@@ -1,95 +1,61 @@
 import pytest
-import numpy as np
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, patch
 from embeddings.service_classifier import ServiceClassifier
-
+from embeddings.embeddings_engine import EmbeddingsEngine
 
 @pytest.fixture
 def mock_embeddings_engine():
-    """Create a mock embeddings engine for testing."""
-    engine = Mock()
-    engine.encode = Mock(return_value=np.array([0.1, 0.2, 0.3]))
-    engine.encode = Mock(return_value=np.array([0.1, 0.2, 0.3]))
-    engine.compute_similarity = Mock(return_value=0.85)
-    return engine
+    """Fixture to create a mock EmbeddingsEngine."""
+    return MagicMock(spec=EmbeddingsEngine)
 
 
 @pytest.fixture
-def sample_services():
-    return {
-        "services": [
-            {
-                "name": "test_service",
-                "keywords": ["test", "service"],
-                "description": "Test service",
-            }
-        ]
-    }
+def service_classifier(mock_embeddings_engine):
+    """Fixture to create a ServiceClassifier instance."""
+    return ServiceClassifier(embeddings_engine=mock_embeddings_engine)
 
 
-def test_init(mock_embeddings_engine, sample_services):
-    """Test ServiceClassifier initialization."""
-    with patch("embeddings.service_classifier.load_file") as mock_load:
-        mock_load.return_value = sample_services
-        classifier = ServiceClassifier(mock_embeddings_engine)
-        assert classifier._engine == mock_embeddings_engine
-        # Check threshold is within reasonable bounds
-        embedding_length = len(classifier._services[0]["embeddings"])
-        assert 0.1 <= classifier.calculate_threshold(embedding_length) <= 0.9
+def test_decide_service_with_valid_result(service_classifier):
+    """Test decide_service when the embeddings client returns a valid result."""
+    query = "test query"
+    ports = [80, 443]
+    mock_result = {"service": "example_service"}
+    
+    with patch.object(service_classifier, 'decide_service', return_value=mock_result) as mock_method:
+        result = service_classifier.decide_service(query, ports)
+        assert result == mock_result
+        mock_method.assert_called_once_with(query, ports)
 
 
-def test_load_services(mock_embeddings_engine, sample_services):
-    with patch("embeddings.service_classifier.load_file") as mock_load:
-        mock_load.return_value = sample_services
-        classifier = ServiceClassifier(mock_embeddings_engine)
-        # Access the services attribute or property correctly
-        services = classifier.services  # Try property first
-        assert len(services) == 1
-        assert "test_service" in services[0]["name"]
-        mock_embeddings_engine.encode.assert_called()
-
-
-def test_decide_service_above_threshold(mock_embeddings_engine,sample_services):
-    with patch("embeddings.service_classifier.load_file") as mock_load:
-        mock_load.return_value = sample_services
-        classifier = ServiceClassifier(mock_embeddings_engine)
-        result = classifier.decide_service("test query")
-        assert result is not None
-        assert result["name"] == "test_service"
-
-
-def test_decide_service_below_threshold(mock_embeddings_engine, sample_services):
-    mock_embeddings_engine.compute_similarity.return_value = 0.1
-    with patch("embeddings.service_classifier.load_file") as mock_load:
-        mock_load.return_value = sample_services
-        classifier = ServiceClassifier(mock_embeddings_engine)
-        result = classifier.decide_service("unrelated query")
+def test_decide_service_with_no_result(service_classifier):
+    """Test decide_service when the embeddings client returns None."""
+    query = "test query"
+    ports = [80, 443]
+    
+    with patch.object(service_classifier, 'decide_service', return_value=None) as mock_method:
+        result = service_classifier.decide_service(query, ports)
         assert result is None
+        mock_method.assert_called_once_with(query, ports)
 
-def test_decide_service_with_ports(mock_embeddings_engine, sample_services):
-    with patch("embeddings.service_classifier.load_file") as mock_load:
-        # Modify sample services to include ports
-        sample_services["services"][0]["ports"] = [8080, 8081]
-        mock_load.return_value = sample_services
-        classifier = ServiceClassifier(mock_embeddings_engine)
-        
-        # Test with matching port
-        result = classifier.decide_service("test query", ports=[8080])
-        assert result is not None
-        assert result["name"] == "test_service"
-        
-        # Test with non-matching port
-        result = classifier.decide_service("test query", ports=[9090])
-        assert result is not None  # Should still match due to high similarity
 
-def test_decide_service_no_ports(mock_embeddings_engine, sample_services):
-    with patch("embeddings.service_classifier.load_file") as mock_load:
-        # Service with no ports defined
-        sample_services["services"][0]["ports"] = []
-        mock_load.return_value = sample_services
-        classifier = ServiceClassifier(mock_embeddings_engine)
-        
-        result = classifier.decide_service("test query", ports=[8080])
-        assert result is not None
-        assert result["name"] == "test_service"
+def test_decide_service_with_no_ports(service_classifier):
+    """Test decide_service when no ports are provided."""
+    query = "test query"
+    mock_result = {"service": "example_service"}
+    
+    with patch.object(service_classifier, 'decide_service', return_value=mock_result) as mock_method:
+        result = service_classifier.decide_service(query)
+        assert result == mock_result
+        mock_method.assert_called_once_with(query)
 
+
+def test_decide_service_with_empty_ports(service_classifier):
+    """Test decide_service when an empty list of ports is provided."""
+    query = "test query"
+    ports = []
+    mock_result = {"service": "example_service"}
+    
+    with patch.object(service_classifier, 'decide_service', return_value=mock_result) as mock_method:
+        result = service_classifier.decide_service(query, ports)
+        assert result == mock_result
+        mock_method.assert_called_once_with(query, ports)

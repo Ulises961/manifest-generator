@@ -1,6 +1,5 @@
 import base64
-from typing import List, Optional, Tuple
-from typing_extensions import Buffer
+from typing import List
 from embeddings.secret_classifier import SecretClassifier
 from tree.node import Node
 from tree.node_types import NodeType
@@ -11,12 +10,6 @@ class EnvParser:
     def __init__(self, secret_classifier: SecretClassifier):
         self.secret_classifier = secret_classifier
 
-    def get_env_vars(self):
-        return self.env_vars
-    
-    def get_env_var(self, key):
-        return self.env_vars.get(key)
-    
 
     def parse(self, path: str) -> List[Node]:
         """Parse .env file and add variables as children to the parent node."""

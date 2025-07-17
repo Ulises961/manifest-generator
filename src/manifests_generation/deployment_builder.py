@@ -28,7 +28,7 @@ class DeploymentBuilder:
             "labels": deployment["labels"],
             "command": deployment["command"],
             "args": deployment.get("args"),
-            "image": deployment["name"],
+            "image": deployment["image"],
             "volumes": deployment.get("volumes"),
             "volume_mounts": deployment.get("volume_mounts"),
             "ports": {"containerPort": port for port in deployment.get("ports", [])},
@@ -37,7 +37,6 @@ class DeploymentBuilder:
             "user": deployment.get("user"),
         }
 
-        deployment_entry = cast(Dict[str, Any], remove_none_values(deployment_entry))
 
         template = self._get_deployment_template()
         template["metadata"]["name"] = deployment_entry["name"]
@@ -46,7 +45,9 @@ class DeploymentBuilder:
         if "annotations" in deployment:
             template["metadata"]["annotations"] = deployment["annotations"]
 
-        template["spec"]["selector"]["matchLabels"] = deployment_entry["labels"]
+        template["spec"]["selector"]["matchLabels"] = {
+            "app.kubernetes.io/name": deployment_entry["labels"]["app.kubernetes.io/name"]
+        }
         template["spec"]["template"]["metadata"]["labels"] = deployment_entry["labels"]
         template["spec"]["template"]["spec"]["containers"][0]["name"] = (
             deployment_entry["name"]

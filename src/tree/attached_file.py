@@ -1,9 +1,9 @@
 class AttachedFile:
     def __init__(self, name, type, size, content) -> None:
-        self.name: str = name
-        self.type: str = type
-        self.size: int = size
-        self.content: str = content
+        self._name: str = name
+        self._type: str = type
+        self._size: int = size
+        self._content: str = content
 
     @property
     def name(self):

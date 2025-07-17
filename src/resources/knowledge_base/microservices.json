@@ -8,7 +8,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "message-broker"},
+        "labels": {
+          "app.kubernetes.io/component": "message-broker",
+          "app.kubernetes.io/part-of": "event-streaming"
+        },
         "persistence": "persistent"
       },
       {
@@ -19,7 +22,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role":"message-broker"},
+        "labels": {
+          "app.kubernetes.io/component": "message-broker",
+          "app.kubernetes.io/part-of": "messaging"
+        },
         "persistence": "persistent"
       },
       {
@@ -30,7 +36,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "cache"},
+        "labels": {
+          "app.kubernetes.io/component": "cache",
+          "app.kubernetes.io/part-of": "data-tier"
+        },
         "persistence": "optional"
       },
       {
@@ -41,7 +50,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "database", "storage": "persistent"},
+        "labels": {
+          "app.kubernetes.io/component": "database",
+          "app.kubernetes.io/part-of": "data-tier"
+        },
         "persistence": "persistent"
       },
       {
@@ -52,7 +64,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role":"database", "storage": "persistent"},
+        "labels": {
+          "app.kubernetes.io/component": "database",
+          "app.kubernetes.io/part-of": "data-tier"
+        },
         "persistence": "persistent"
       },
       {
@@ -63,7 +78,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "database", "storage": "persistent"},
+        "labels": {
+          "app.kubernetes.io/component": "database",
+          "app.kubernetes.io/part-of": "data-tier"
+        },
         "persistence": "persistent"
       },
       {
@@ -74,7 +92,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "message-broker"},
+        "labels": {
+          "app.kubernetes.io/component": "coordination-service",
+          "app.kubernetes.io/part-of": "messaging"
+        },
         "persistence": "persistent"
       },
       {
@@ -85,7 +106,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "cicd"},
+        "labels": {
+          "app.kubernetes.io/component": "automation-server",
+          "app.kubernetes.io/part-of": "cicd"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -95,7 +119,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "cicd"},
+        "labels": {
+          "app.kubernetes.io/component": "build-runner",
+          "app.kubernetes.io/part-of": "cicd"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -106,18 +133,24 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "monitoring"},
+        "labels": {
+          "app.kubernetes.io/component": "metrics-server",
+          "app.kubernetes.io/part-of": "monitoring"
+        },
         "persistence": "ephemeral"
       },
       {
         "name": "Grafana",
         "keywords": ["monitoring", "visualization", "grafana"],
         "ports": [3000],
-        "service": [3000],
+        "servicePorts": [3000],
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "monitoring"},
+        "labels": {
+          "app.kubernetes.io/component": "dashboard",
+          "app.kubernetes.io/part-of": "monitoring"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -128,7 +161,11 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
-        "labels": {"role": "frontend", "exposure": "public"},
+        "labels": {
+          "app.kubernetes.io/component": "web-server",
+          "app.kubernetes.io/part-of": "frontend",
+          "networking.kubernetes.io/ingress-class": "nginx"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -139,7 +176,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
-        "labels": {"role": "frontend", "exposure": "public"},
+        "labels": {
+          "app.kubernetes.io/component": "web-server",
+          "app.kubernetes.io/part-of": "frontend"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -150,7 +190,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
-        "labels": {"role": "frontend", "exposure": "public"},
+        "labels": {
+          "app.kubernetes.io/component": "frontend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -161,7 +204,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
-        "labels": {"role": "frontend", "exposure": "public"},
+        "labels": {
+          "app.kubernetes.io/component": "frontend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -172,7 +218,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
-        "labels": {"role": "frontend", "exposure": "public"},
+        "labels": {
+          "app.kubernetes.io/component": "frontend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -183,7 +232,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "ClusterIP",
-        "labels": {"role": "backend"},
+        "labels": {
+          "app.kubernetes.io/component": "backend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -194,7 +246,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "ClusterIP",
-        "labels": {"role": "backend"},
+        "labels": {
+          "app.kubernetes.io/component": "backend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -205,7 +260,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "ClusterIP",
-        "labels": {"role": "backend"},
+        "labels": {
+          "app.kubernetes.io/component": "backend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -216,7 +274,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "ClusterIP",
-        "labels": {"role": "backend"},
+        "labels": {
+          "app.kubernetes.io/component": "backend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -227,7 +288,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "cicd"},
+        "labels": {
+          "app.kubernetes.io/component": "workflow-engine",
+          "app.kubernetes.io/part-of": "cicd"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -238,7 +302,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "cicd"},
+        "labels": {
+          "app.kubernetes.io/component": "pipeline-controller",
+          "app.kubernetes.io/part-of": "cicd"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -249,7 +316,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "monitoring"},
+        "labels": {
+          "app.kubernetes.io/component": "log-aggregator",
+          "app.kubernetes.io/part-of": "monitoring"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -260,7 +330,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "worker"},
+        "labels": {
+          "app.kubernetes.io/component": "task-worker",
+          "app.kubernetes.io/part-of": "task-queue"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -271,7 +344,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "worker"},
+        "labels": {
+          "app.kubernetes.io/component": "task-worker",
+          "app.kubernetes.io/part-of": "task-queue"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -282,7 +358,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "worker"},
+        "labels": {
+          "app.kubernetes.io/component": "task-worker",
+          "app.kubernetes.io/part-of": "task-queue"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -293,7 +372,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": null,
-        "labels": {"role": "worker"},
+        "labels": {
+          "app.kubernetes.io/component": "task-worker",
+          "app.kubernetes.io/part-of": "task-queue"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -304,7 +386,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "ClusterIP",
-        "labels": {"role": "message-broker"},
+        "labels": {
+          "app.kubernetes.io/component": "message-broker",
+          "app.kubernetes.io/part-of": "messaging"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -315,7 +400,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "ClusterIP",
-        "labels": {"role": "backend"},
+        "labels": {
+          "app.kubernetes.io/component": "backend",
+          "app.kubernetes.io/part-of": "web-application"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -326,7 +414,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "search", "storage": "persistent"},
+        "labels": {
+          "app.kubernetes.io/component": "search-engine",
+          "app.kubernetes.io/part-of": "elk-stack"
+        },
         "persistence": "persistent"
       },
       {
@@ -337,7 +428,10 @@
         "protocol": "TCP",
         "workload": "Deployment",
         "serviceType": "ClusterIP",
-        "labels": {"role": "message-broker"},
+        "labels": {
+          "app.kubernetes.io/component": "message-broker",
+          "app.kubernetes.io/part-of": "iot-platform"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -348,7 +442,10 @@
         "protocol": "UDP",
         "workload": "DaemonSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "monitoring"},
+        "labels": {
+          "app.kubernetes.io/component": "network-monitor",
+          "app.kubernetes.io/part-of": "monitoring"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -359,7 +456,10 @@
         "protocol": "TCP/UDP",
         "workload": "Deployment", 
         "serviceType": "ClusterIP",
-        "labels": {"role": "service-mesh"},
+        "labels": {
+          "app.kubernetes.io/component": "service-discovery",
+          "app.kubernetes.io/part-of": "service-mesh"
+        },
         "persistence": "ephemeral"
       },
       {
@@ -370,7 +470,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "storage", "app.kubernetes.io/part-of": "ceph-cluster"},
+        "labels": {
+          "app.kubernetes.io/component": "storage-cluster",
+          "app.kubernetes.io/part-of": "ceph-cluster"
+        },
         "persistence": "persistent"
       },
       {
@@ -381,7 +484,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "cache"},
+        "labels": {
+          "app.kubernetes.io/component": "cache",
+          "app.kubernetes.io/part-of": "data-tier"
+        },
         "persistence": "ephemeral"  
       },
       {
@@ -392,7 +498,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "database", "storage": "persistent"},
+        "labels": {
+          "app.kubernetes.io/component": "database",
+          "app.kubernetes.io/part-of": "data-tier"
+        },
         "persistence": "persistent"
       },
       {
@@ -403,7 +512,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "database", "storage": "persistent"},
+        "labels": {
+          "app.kubernetes.io/component": "database",
+          "app.kubernetes.io/part-of": "data-tier"
+        },
         "persistence": "persistent"
       },
       {
@@ -414,7 +526,10 @@
         "protocol": "TCP",
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
-        "labels": {"role": "storage", "app.kubernetes.io/part-of": "object-storage"},
+        "labels": {
+          "app.kubernetes.io/component": "object-storage",
+          "app.kubernetes.io/part-of": "storage-tier"
+        },
         "persistence": "persistent"
       }
     ],
