@@ -20,7 +20,8 @@ setup(
         'click-completion >=0.5.2',
         'sentence-transformers>=2.2.0',
         'anthropic',
-        'jsonschema'
+        'jsonschema',
+        'gnureadline'
     ],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",
