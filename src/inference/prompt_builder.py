@@ -30,7 +30,3 @@ class PromptBuilder:
     def is_caching_enabled(self) -> bool:
         """Check if caching should be enabled based on environment."""
         return os.getenv("ENABLE_CACHING", "true").lower() == "true"
-
-    @property
-    def is_prod_mode(self):
-        return os.getenv("PROD_MODE", "").strip().lower() == "true"
