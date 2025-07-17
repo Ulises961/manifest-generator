@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from typing import Dict, List, cast, Any
 from inference.llm_client import LLMClient
@@ -6,16 +7,16 @@ from anthropic import Anthropic
 
 
 class AnthropicClient(LLMClient):
-    def __init__(self, model_name: str = "claude-3-5-haiku-latest"):
+    def __init__(self):
         super().__init__(Anthropic())
-        self.model_name = model_name
+        self.model_name = os.getenv("LLM_MODEL", "claude-3-5-haiku-latest")
         self.client: Anthropic  # Type annotation for clarity
         self.logger = logging.getLogger(__name__)
 
     def chat(self, messages: List[Dict[str, Any]], system_prompt=None) -> Any:
         # Prepare the request parameters
         request_params = {
-            "model": "claude-3-5-haiku-latest",
+            "model":self.model_name,
             "max_tokens": 3000,
             "temperature": 0,
             "messages": messages,

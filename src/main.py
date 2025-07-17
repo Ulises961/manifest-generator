@@ -25,8 +25,6 @@ def cli():
     '"llm_model": "model_name",'
     '"llm_token": "your_token", '
     '"embeddings_model": "sentence-transformers/all-MiniLM-L6-v2",'
-    '"embeddings_endpoint": "http://localhost:8000/v1/embeddings",'
-    '"embeddings_token": "your_embeddings_token", '
     '"overrides_file": "/path/to/overrides.json",'
     '"dry_run": false, '
     '"verbose": false, '
@@ -320,15 +318,15 @@ def interactive_setup(
 def set_environment_variables(config: Dict[str, str]):
     """Set environment variables based on configuration"""
 
-    # Required variables
+    ### Required variables ###
     os.environ["TARGET_REPOSITORY"] = config["repository_path"]
 
     os.environ["OUTPUT_DIR"] = config.get("output_path", "target")
 
-    # DEFAULT variables
-
+    ### DEFAULT variables ###
     os.environ["EMBEDDINGS_MODEL"] = config.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2")
     
+    ### Knowledge base
     os.environ["SERVICES_PATH"] = config.get(
         "services_path", "resources/knowledge_base/microservices.json"
     )
@@ -341,6 +339,8 @@ def set_environment_variables(config: Dict[str, str]):
     os.environ["LABELS_PATH"] = config.get(
         "labels_path", "resources/knowledge_base/labels.json"
     )
+
+    ## Templates
     os.environ["CONFIG_MAP_TEMPLATE_PATH"] = config.get(
         "configmap_template_path", "resources/k8s_templates/configmap.json"
     )
@@ -356,12 +356,17 @@ def set_environment_variables(config: Dict[str, str]):
     os.environ["PVC_TEMPLATE_PATH"] = config.get(
         "pvc_template_path", "resources/k8s_templates/pvc.json"
     )
+
+    ## Model path
     os.environ["MODELS_PATH"] = config.get("models_path", "resources/models")
+
+    ## Paths for manifests
     os.environ["MANUAL_MANIFESTS_PATH"] = config.get("manual_manifests_path", "manual")
     os.environ["K8S_MANIFESTS_PATH"] = config.get("k8s_manifests_path", "k8s")
     os.environ["LLM_MANIFESTS_PATH"] = config.get("llm_manifests_path", "llm")
 
-    # Optional variables
+    ### Optional variables ###
+    os.environ["LLM_MODEL"] = config.get("llm_model", "claude-3-5-haiku-latest")
     os.environ["LLM_API_KEY"] = config.get("llm_token", "")
     os.environ["OVERRIDES_FILE_PATH"] = config.get("overrides_file", "")
     os.environ["REFINEMENT_ITERATIONS"] = str(config.get("refinement_iterations", 3))
