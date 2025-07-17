@@ -269,7 +269,7 @@ class MicroservicesTree:
                         {
                             "name": f"volume-{index}",
                             "labels": {
-                                "app": microservice["labels"]["app"],
+                                "app": microservice["labels"]["app.kubernetes.io/name"],
                                 "storage-type": "persistent",
                             },
                             "storage_class": "standard",
@@ -387,36 +387,3 @@ class MicroservicesTree:
                     # Parse the config file and add it to the node
                     config_nodes = self.env_parser.parse(file_path)
                     node.add_children(config_nodes)
-
-                else:
-                    # Check if the file size is within the limit
-                    if os.path.getsize(file_path) > max_file_size_kb * 1024:
-                        self.logger.warning(
-                            f"File {file_name} exceeds the size limit of {max_file_size_kb} KB. Skipping."
-                        )
-                        return
-
-                    try:
-                        with open(file_path, "r") as f:
-                            content = f.read()
-                            file_size_kb = os.path.getsize(file_path) / 1024
-
-                            # Make sure the file size is an integer
-                            file_size_int = int(file_size_kb)
-
-                            attachment = AttachedFile(
-                                file_name,
-                                file_type,
-                                file_size_int,  # Use integer size instead of float
-                                content,
-                            )
-
-                            node.attach_file(name, attachment)
-
-                            self.logger.debug(
-                                f"Attached file {file_name} to node {node.name}"
-                            )
-
-                    except Exception as e:
-                        self.logger.error(f"Error reading file {file_path}: {traceback.format_exc()}")
-                        return

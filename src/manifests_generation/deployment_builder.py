@@ -45,7 +45,9 @@ class DeploymentBuilder:
         if "annotations" in deployment:
             template["metadata"]["annotations"] = deployment["annotations"]
 
-        template["spec"]["selector"]["matchLabels"] = deployment_entry["labels"]
+        template["spec"]["selector"]["matchLabels"] = {
+            "app.kubernetes.io/name": deployment_entry["labels"]["app.kubernetes.io/name"]
+        }
         template["spec"]["template"]["metadata"]["labels"] = deployment_entry["labels"]
         template["spec"]["template"]["spec"]["containers"][0]["name"] = (
             deployment_entry["name"]
