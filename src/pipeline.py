@@ -96,7 +96,7 @@ def run():
 
     manifest_builder.generate_skaffold_config(enriched_services, manual_manifests_path)
 
-    # ### Phase 3: Generate manifests from the repository tree ###
+    # # ### Phase 3: Generate manifests from the repository tree ###
     generator = AnthropicClient()
     evaluator = AnthropicClient()
     validator = KubescapeValidator()

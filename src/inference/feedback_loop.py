@@ -144,7 +144,7 @@ class ManifestFeedbackLoop:
         for iteration in range(max_iterations):
             self.logger.info(f"Starting iteration {iteration + 1}/{max_iterations}")
 
-            collected_metrics.setdefault(iteration, [])
+            collected_metrics.setdefault(iteration, {})
 
             previous_iteration_path = os.path.join(
                 manifests_path, f"v{iteration}", os.getenv("K8S_MANIFESTS_PATH", "k8s")
@@ -191,7 +191,7 @@ class ManifestFeedbackLoop:
                             # Validate the manifest
                             metrics = self.validator.validate_file(manifest_path)
                             iteration_metrics = collected_metrics.get(iteration, {})
-                            iteration_metrics[manifest_file].append(metrics)
+                            iteration_metrics.setdefault(manifest_file, metrics)
                             collected_metrics.update({iteration: iteration_metrics})
                             issues_found = metrics.get("failed_controls_details", [])
                             iteration_has_issues = True
@@ -202,7 +202,7 @@ class ManifestFeedbackLoop:
                             )
                         
                             issues_found = []
-
+                        
                         # Compare the issues with the previous iteration
                         previous_issues = collected_metrics[iteration-1][manifest_file]["failed_controls_details"] if iteration > 0 else []
 
@@ -214,7 +214,7 @@ class ManifestFeedbackLoop:
                             self.logger.info(
                                 f"New issues found in manifest {manifest_path}: {issues}"
                             )
-
+                        
                         patch = self.patch_manifest(manifest_path, issues)
 
 
@@ -398,7 +398,7 @@ class ManifestFeedbackLoop:
             system_prompt=system_prompt,
         )
 
-        self.logger.info(f"Received review for {manifest_path}: {messages}")
+        self.logger.debug(f"Received review for {manifest_path}: {messages.model_dump_json()}")
 
         # Process the messages from the LLM
         messages = self.evaluator.pre_process_response(messages.content)  # type: ignore

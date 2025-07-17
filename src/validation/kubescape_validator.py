@@ -65,7 +65,7 @@ class KubescapeValidator:
             ) from e
 
         if result.returncode != 0:
-            self.logger.error(
+            self.logger.warning(
                 f"Kubescape scan failed for {manifest_path}: {result.stderr}"
             )
             raise RuntimeError(f"Kubescape scan failed: {result.stderr}")
@@ -174,6 +174,7 @@ class KubescapeValidator:
 
         fieldnames = [
             "iteration",
+            "name",
             "file", 
             "resource_type",
             "compliance_score",
