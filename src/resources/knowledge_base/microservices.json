@@ -9,7 +9,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "kafka",
           "app.kubernetes.io/component": "message-broker",
           "app.kubernetes.io/part-of": "event-streaming"
         },
@@ -24,7 +23,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "rabbitmq",
           "app.kubernetes.io/component": "message-broker",
           "app.kubernetes.io/part-of": "messaging"
         },
@@ -39,7 +37,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "redis",
           "app.kubernetes.io/component": "cache",
           "app.kubernetes.io/part-of": "data-tier"
         },
@@ -54,7 +51,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "postgresql",
           "app.kubernetes.io/component": "database",
           "app.kubernetes.io/part-of": "data-tier"
         },
@@ -69,7 +65,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "mysql",
           "app.kubernetes.io/component": "database",
           "app.kubernetes.io/part-of": "data-tier"
         },
@@ -84,7 +79,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "mongodb",
           "app.kubernetes.io/component": "database",
           "app.kubernetes.io/part-of": "data-tier"
         },
@@ -99,7 +93,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "zookeeper",
           "app.kubernetes.io/component": "coordination-service",
           "app.kubernetes.io/part-of": "messaging"
         },
@@ -114,7 +107,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "jenkins",
           "app.kubernetes.io/component": "automation-server",
           "app.kubernetes.io/part-of": "cicd"
         },
@@ -128,7 +120,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "gitlab-runner",
           "app.kubernetes.io/component": "build-runner",
           "app.kubernetes.io/part-of": "cicd"
         },
@@ -143,7 +134,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "prometheus",
           "app.kubernetes.io/component": "metrics-server",
           "app.kubernetes.io/part-of": "monitoring"
         },
@@ -158,7 +148,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "grafana",
           "app.kubernetes.io/component": "dashboard",
           "app.kubernetes.io/part-of": "monitoring"
         },
@@ -173,7 +162,6 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/name": "nginx",
           "app.kubernetes.io/component": "web-server",
           "app.kubernetes.io/part-of": "frontend",
           "networking.kubernetes.io/ingress-class": "nginx"
@@ -189,7 +177,6 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/name": "apache",
           "app.kubernetes.io/component": "web-server",
           "app.kubernetes.io/part-of": "frontend"
         },
@@ -204,7 +191,6 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/name": "react-app",
           "app.kubernetes.io/component": "frontend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -219,7 +205,6 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/name": "vue-app",
           "app.kubernetes.io/component": "frontend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -234,7 +219,6 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/name": "angular-app",
           "app.kubernetes.io/component": "frontend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -249,7 +233,6 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "flask-app",
           "app.kubernetes.io/component": "backend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -264,7 +247,6 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "django-app",
           "app.kubernetes.io/component": "backend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -279,7 +261,6 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "spring-app",
           "app.kubernetes.io/component": "backend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -294,7 +275,6 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "nodejs-app",
           "app.kubernetes.io/component": "backend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -309,7 +289,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "argo-workflows",
           "app.kubernetes.io/component": "workflow-engine",
           "app.kubernetes.io/part-of": "cicd"
         },
@@ -324,7 +303,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "tekton-pipelines",
           "app.kubernetes.io/component": "pipeline-controller",
           "app.kubernetes.io/part-of": "cicd"
         },
@@ -339,7 +317,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "loki",
           "app.kubernetes.io/component": "log-aggregator",
           "app.kubernetes.io/part-of": "monitoring"
         },
@@ -354,7 +331,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "celery-worker",
           "app.kubernetes.io/component": "task-worker",
           "app.kubernetes.io/part-of": "task-queue"
         },
@@ -369,7 +345,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "sidekiq-worker",
           "app.kubernetes.io/component": "task-worker",
           "app.kubernetes.io/part-of": "task-queue"
         },
@@ -384,7 +359,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "rq-worker",
           "app.kubernetes.io/component": "task-worker",
           "app.kubernetes.io/part-of": "task-queue"
         },
@@ -399,7 +373,6 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/name": "huey-worker",
           "app.kubernetes.io/component": "task-worker",
           "app.kubernetes.io/part-of": "task-queue"
         },
@@ -414,7 +387,6 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "nats",
           "app.kubernetes.io/component": "message-broker",
           "app.kubernetes.io/part-of": "messaging"
         },
@@ -429,7 +401,6 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "express-app",
           "app.kubernetes.io/component": "backend",
           "app.kubernetes.io/part-of": "web-application"
         },
@@ -444,7 +415,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "elasticsearch",
           "app.kubernetes.io/component": "search-engine",
           "app.kubernetes.io/part-of": "elk-stack"
         },
@@ -459,7 +429,6 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "mqtt-broker",
           "app.kubernetes.io/component": "message-broker",
           "app.kubernetes.io/part-of": "iot-platform"
         },
@@ -474,7 +443,6 @@
         "workload": "DaemonSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "snmp-exporter",
           "app.kubernetes.io/component": "network-monitor",
           "app.kubernetes.io/part-of": "monitoring"
         },
@@ -489,7 +457,6 @@
         "workload": "Deployment", 
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "consul",
           "app.kubernetes.io/component": "service-discovery",
           "app.kubernetes.io/part-of": "service-mesh"
         },
@@ -504,7 +471,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "ceph",
           "app.kubernetes.io/component": "storage-cluster",
           "app.kubernetes.io/part-of": "ceph-cluster"
         },
@@ -519,7 +485,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "memcached",
           "app.kubernetes.io/component": "cache",
           "app.kubernetes.io/part-of": "data-tier"
         },
@@ -534,7 +499,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "cassandra",
           "app.kubernetes.io/component": "database",
           "app.kubernetes.io/part-of": "data-tier"
         },
@@ -549,7 +513,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "cockroachdb",
           "app.kubernetes.io/component": "database",
           "app.kubernetes.io/part-of": "data-tier"
         },
@@ -564,7 +527,6 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/name": "minio",
           "app.kubernetes.io/component": "object-storage",
           "app.kubernetes.io/part-of": "storage-tier"
         },
