@@ -38,7 +38,7 @@ class EmbeddingsEngine:
         if embedding_2.ndim == 1:
             embedding_2 = embedding_2.reshape(1, -1)
 
-        return float(cosine_similarity(embedding_1, embedding_2)[0][0])
+        return float(cosine_similarity(embedding_1, embedding_2)[0][0]) #type: ignore
 
     def compare_manifests(self, query: str, base: str) -> float:
         """Compare two sentences using cosine similarity."""
@@ -61,4 +61,4 @@ class EmbeddingsEngine:
         emb1 = self.model.encode(word1, convert_to_numpy=True)
         emb2 = self.model.encode(word2, convert_to_numpy=True)
         
-        return float(cosine_similarity([emb1], [emb2])[0][0])
+        return float(cosine_similarity([emb1], [emb2])[0][0]) #type: ignore

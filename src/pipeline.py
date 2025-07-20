@@ -15,6 +15,7 @@ import logging
 import os
 
 from validation.kubescape_validator import KubescapeValidator
+from validation.manifests_validator import ManifestsValidator
 
 # Get module-specific logger
 logger = logging.getLogger(__name__)
@@ -118,3 +119,17 @@ def run():
 
         feedback_loop.refine_manifests(enriched_services)
     
+
+    # ### Phase 4: Validate the generated manifests ###
+    logger.info("Validating generated manifests by comparison.")
+    manifests_validator = ManifestsValidator(embeddings_engine)
+    manual_manifests_path = os.path.join(manual_manifests_path, "k8s")
+    llm_manifests_path = os.path.join(
+        os.getenv("OUTPUT_DIR", "target"),
+        os.getenv("MANIFESTS_PATH", "manifests"),
+        os.getenv("LLM_MANIFESTS_PATH", "llm"),
+        os.getenv("REVIEWED_MANIFESTS", "final_manifests")
+    )
+
+    validated_microservices = manifests_validator.validate(manual_manifests_path, llm_manifests_path)
+    logger.info(f"Validation completed:  {json.dumps(validated_microservices)}")
