@@ -93,6 +93,9 @@ class MicroservicesTree:
         microservice_node = None
 
         for file in files:
+            if file.startswith('.'):
+                    self.logger.debug(f"Skipping hidden file: {file}")
+                    continue
             if file == "Dockerfile":
                 dockerfile_found = True
                 dockerfile_path = os.path.join(path, file)
@@ -188,6 +191,9 @@ class MicroservicesTree:
             )
             > 0
         ):
+            self.logger.debug(
+                f"Processing entrypoint for microservice: {node.name}, value: {entrypoint[0].value}"
+            )
             # There's a unique entrypoint
             microservice["command"] = entrypoint[0].value
 

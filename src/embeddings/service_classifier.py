@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from numpy import log, vstack
 from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
-from utils.file_utils import load_file
+from utils.file_utils import load_json_file
 
 
 class ServiceClassifier:
@@ -39,7 +39,7 @@ class ServiceClassifier:
 
     def _load_services(self, path: str) -> List[Dict[str, Any]]:
         """Push embeddings to services knowledge base."""
-        services: Dict[str, List[Dict[str, Any]]] = load_file(path)
+        services: Dict[str, List[Dict[str, Any]]] = load_json_file(path)
 
         for service in services["services"]:
             # Add the microservice label to the keywords list

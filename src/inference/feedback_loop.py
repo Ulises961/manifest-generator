@@ -75,7 +75,7 @@ class ManifestFeedbackLoop:
                 "The set of microservices are interrelated and compose an application.\n"
                 "Guidelines:\n"
                 "- Use production-ready Kubernetes best practices.\n"
-                "- If needed, add Service, ConfigMap, Secret, or PVC.\n"
+                "- If needed, add Service, ServiceAccount, ConfigMap, Secret, or PVC.\n"
                 "- Use kubernetes compliant labels like `app.kubernetes.io/name`, `app.kubernetes.io/tier`, `app.kubernetes.io/role`, and `environment`.\n"
                 "- Use TODO placeholders for values that cannot be confidently inferred.\n"
                 "- Image name must be the same as the microservice name.\n"

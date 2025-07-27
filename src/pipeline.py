@@ -15,6 +15,7 @@ from utils.logging_utils import setup_logging
 import logging
 import os
 
+from validation.metrics_analyzer import MetricsAnalyzer
 from validation.kubescape_validator import KubescapeValidator
 from validation.manifests_validator import ManifestsValidator
 
@@ -124,13 +125,92 @@ def run():
     # ### Phase 4: Validate the generated manifests ###
     logger.info("Validating generated manifests by comparison.")
     manifests_validator = ManifestsValidator(embeddings_engine)
+    metrics_analyzer = MetricsAnalyzer()
+
     manual_manifests_path = os.path.join(manual_manifests_path, "k8s")
-    llm_manifests_path = os.path.join(
+    llm_manifests_path_v0 = os.path.join(
+        os.getenv("OUTPUT_DIR", "target"),
+        os.getenv("MANIFESTS_PATH", "manifests"),
+        os.getenv("LLM_MANIFESTS_PATH", "llm"),
+        os.getenv("V0", "v0")
+    )
+
+    llm_manifests_path_final = os.path.join(
         os.getenv("OUTPUT_DIR", "target"),
         os.getenv("MANIFESTS_PATH", "manifests"),
         os.getenv("LLM_MANIFESTS_PATH", "llm"),
         os.getenv("REVIEWED_MANIFESTS", "final_manifests")
     )
 
-    validated_microservices = manifests_validator.validate(manual_manifests_path, llm_manifests_path)
-    logger.info(f"Validation completed:  {json.dumps(validated_microservices)}")
+    ground_truth_manifests = os.path.join(
+        os.getenv("TARGET_REPOSITORY", "target"),
+        "..",
+        "kubernetes-manifests",
+        "k8s"
+    )
+
+    validation_results_path =  os.path.join(os.getenv("OUTPUT_DIR", "target"), os.getenv("RESULTS", "results"))
+    os.makedirs(validation_results_path, exist_ok= True)
+
+    ## LLM (V0) - MWC 
+    validated_llm_mwc_microservices = manifests_validator.validate(llm_manifests_path_v0, manual_manifests_path)
+    enriched_analysis =    manifests_validator.evaluate_issue_severity(validated_llm_mwc_microservices)
+    # Save the summary of the validation
+    manifests_validator.save_analysis(
+        enriched_analysis,
+        os.path.join(validation_results_path, "llm_v0_mwc_validation_output.json")
+    )
+    # Generate a csv summary of the validation
+    analysis = metrics_analyzer.analyze(validated_llm_mwc_microservices)
+    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "llm_v0_mwc_diff_analysis.csv"))
+
+    ## LLM (V0)- GROUND TRUTH
+    validated_gt_llm_microservices = manifests_validator.validate(llm_manifests_path_v0, ground_truth_manifests)
+    enriched_analysis = manifests_validator.evaluate_issue_severity(validated_gt_llm_microservices)
+    # Save the summary of the validation
+    manifests_validator.save_analysis(
+        enriched_analysis,
+        os.path.join(validation_results_path, "gt_llm_v0_validation_output.json")
+    )
+    # Generate a csv summary of the validation
+    analysis = metrics_analyzer.analyze(validated_gt_llm_microservices)
+    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "ground_truth_llm_v0_summary.csv"))
+
+
+    ## LLM (FINAL) - MWC 
+    validated_llm_mwc_microservices = manifests_validator.validate(llm_manifests_path_final, manual_manifests_path)
+    enriched_analysis =    manifests_validator.evaluate_issue_severity(validated_llm_mwc_microservices)
+    # Save the summary of the validation
+    manifests_validator.save_analysis(
+        enriched_analysis,
+        os.path.join(validation_results_path, "llm_final_mwc_validation_output.json")
+    )
+    # Generate a csv summary of the validation
+    analysis = metrics_analyzer.analyze(validated_llm_mwc_microservices)
+    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "llm_final_mwc_diff_analysis.csv"))
+
+    ## LLM (FINAL) - GROUND TRUTH
+    validated_gt_llm_microservices = manifests_validator.validate(llm_manifests_path_final, ground_truth_manifests)
+    enriched_analysis = manifests_validator.evaluate_issue_severity(validated_gt_llm_microservices)
+    # Save the summary of the validation
+    manifests_validator.save_analysis(
+        enriched_analysis,
+        os.path.join(validation_results_path, "gt_llm_final_validation_output.json")
+    )
+    # Generate a csv summary of the validation
+    analysis = metrics_analyzer.analyze(validated_gt_llm_microservices)
+    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "ground_truth_llm_final_summary.csv"))
+
+
+    ## MWC - GROUND TRUTH
+    validated_gt_mwc_microservices = manifests_validator.validate(manual_manifests_path, ground_truth_manifests)
+    enriched_analysis = manifests_validator.evaluate_issue_severity(validated_gt_mwc_microservices)
+    # Save the summary of the validation
+    manifests_validator.save_analysis(
+        enriched_analysis,
+        os.path.join(validation_results_path, "gt_mwc_validation_output.json")
+    )
+    # Generate a csv summary of the validation
+    analysis = metrics_analyzer.analyze(validated_gt_mwc_microservices)
+    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "ground_truth_mwc_summary.csv"))
+

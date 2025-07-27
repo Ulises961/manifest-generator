@@ -7,15 +7,21 @@ import shlex
 import logging
 from sentence_transformers import SentenceTransformer
 import torch
+import yaml
 
 logger = logging.getLogger(__name__)
 
 
-def load_file(path: str) -> Any:
+def load_json_file(path: str) -> Any:
     """Load a JSON file."""
     with open(path, "r") as file:
         return json.load(file)
-
+    
+def load_yaml_file(path: str) -> dict:
+    """Load a YAML file."""
+    with open(path, "r") as file:
+        return yaml.safe_load(file)
+    
 def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
     """Get model name and path from environment variables."""
     current_dir = os.path.dirname(os.path.abspath(__file__))

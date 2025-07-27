@@ -266,7 +266,7 @@ def main(
 
     # Set environment variables based on configuration
     set_environment_variables(config)
-    return
+    
     run()
 
 
@@ -546,7 +546,9 @@ def set_environment_variables(config: Dict[str, str]):
 
     os.environ["VERBOSE"] = str(config.get("verbose", "false"))
     os.environ["ENABLE_CACHING"] = str(config.get("cache_prompt", "true")).lower()
-
+    os.environ["REVIEWED_MANIFESTS"] = config.get("reviewed_manifests_path", "final_manifests")
+    os.environ["RESULTS"] = config.get("analysis_results_path", "results")
+    os.environ["SEVERITY_CONFIG"] = config.get("severity_config", "resources/validation/severity_config.yaml")
     logger.debug("Environment values: {os.environ}")
 
 

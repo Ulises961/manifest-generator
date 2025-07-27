@@ -1,13 +1,18 @@
+import json
 import logging
+from operator import contains
 import os
-import sys
-from typing import Any, Dict, Optional, List
+import re
+import resource
+from typing import Any, Dict, List, cast
 
 import jsondiff
 from jsondiff import symbols
 import yaml
 
 from embeddings.embeddings_engine import EmbeddingsEngine
+from validation.severity import Severity, analyze_component_severity, get_issue_type
+
 
 
 class ManifestsValidator:
@@ -16,12 +21,12 @@ class ManifestsValidator:
         self.embeddings_engine = embeddings_engine
 
     def validate(
-        self, llm_manifests_path: str, heuristics_manifests_path: str
+        self, analyzed_cluster_path: str, reference_manifests_path: str
     ) -> Dict[str, Any]:
-        # Implement validation logic here
-        heuristics_cluster = self._generate_cluster(heuristics_manifests_path)
-        llm_cluster = self._generate_cluster(llm_manifests_path)
-        return self._validate_microservices(llm_cluster, heuristics_cluster)
+        self.logger.info(f"Validating manifests at {analyzed_cluster_path} against reference {reference_manifests_path}")
+        reference_cluster = self._generate_cluster(reference_manifests_path)
+        analyzed_cluster = self._generate_cluster(analyzed_cluster_path)
+        return self._validate_microservices(analyzed_cluster, reference_cluster)
 
     def _generate_cluster(self, manifests_path: str) -> Any:
         """Generate a cluster object from the manifests."""
@@ -83,7 +88,7 @@ class ManifestsValidator:
         for microservice_name, resources in cluster.items():
             for resource_name, resource in resources.items():
                 self._merge_supporting_resources(resource, supporting_resources)
-
+        self._sort_lists(cluster)
         return cluster
 
     def _merge_supporting_resources(
@@ -110,7 +115,7 @@ class ManifestsValidator:
         for container in containers:
             # Merge ConfigMaps and Secrets into env vars
             self._merge_env_vars(container, supporting_resources)
-
+        
     def _merge_env_vars(
         self, container: Dict[str, Any], supporting_resources: Dict[str, Any]
     ):
@@ -159,33 +164,62 @@ class ManifestsValidator:
         if "envFrom" in container:
             del container["envFrom"]
 
+    def _sort_lists(self, cluster: Dict[str, Any]):
+        # Sort env vars and other lists for consistency
+        for microservice_name, resources in cluster.items():
+            for resource_name, resource in resources.items():
+                if "spec" in resource and "template" in resource["spec"]:
+                    pod_spec = resource["spec"]["template"].get("spec", {})
+                    if "containers" in pod_spec:
+                        for container in pod_spec["containers"]:
+                            if "env" in container:
+                                container["env"].sort(key=lambda x: x.get("name", ""))
+                            if "ports" in container:
+                                container["ports"].sort(key=lambda x: x.get("containerPort", 0))
+                            if "volumeMounts" in container:
+                                container["volumeMounts"].sort(
+                                    key=lambda x: x.get("name", "")
+                                )
+                elif "env" in resource:
+                    resource["env"].sort(key=lambda x: x.get("name", ""))
+
     def _validate_microservices(
-        self, llm_cluster: Dict[str, Dict], heuristics_cluster: Dict[str, Dict]
+        self, analyzed_cluster: Dict[str, Dict], reference_cluster: Dict[str, Dict]
     ) -> Dict[str, Any]:
-        """Validate microservices by comparing LLM-generated manifests with heuristics."""
-        diff = jsondiff.diff(llm_cluster, heuristics_cluster, syntax="explicit")
+        """Validate microservices by comparing a target manifests with a reference."""
+        diff = jsondiff.diff(reference_cluster,analyzed_cluster, syntax="explicit")
         summary = {
             "resources_analyzed": [],
-            "resources_extra": {},  # LLM has but Heuristics doesn't
-            "resources_missing": {},  # Heuristics has but LLM doesn't
+            "resources_extra": {},  # Analyzed has but reference doesn't
+            "resources_missing": {},  # Reference has but Analyzed doesn't
             "resource_differences": {},  # Value differences
         }
         # Process each microservice in the diff
         for verb, action in diff.items():
-            if verb is symbols.update or verb is symbols.insert:
+            if verb is symbols.insert:
+                if isinstance(action, dict):
+                    for microservice, resource in action.items():
+                        summary["resources_extra"].setdefault(microservice, [])
+                        summary["resources_extra"][microservice].append(
+                            {"path": microservice, "value": resource}
+                        )
+                        summary["resources_analyzed"].append(microservice)
+            elif verb is symbols.update:
                 if isinstance(action, dict):
                     for microservice, intervention in action.items():
                         summary["resources_analyzed"].append(microservice)
                         summary["resources_extra"][microservice] = []
                         summary["resources_missing"][microservice] = []
                         summary["resource_differences"][microservice] = []
-
+                        self.logger.debug(
+                            f"Processing microservice {microservice} with intervention {intervention}"
+                        )
                         self._process_diff(
                             microservice,
                             intervention,
                             summary,
                             f"{microservice}",
-                            llm_cluster,
+                            reference_cluster,
                         )
             elif verb is symbols.delete:
 
@@ -194,7 +228,7 @@ class ManifestsValidator:
                         summary["resources_analyzed"].append(microservice)
                         summary["resources_missing"][microservice] = {
                             "path": microservice,
-                            "value": llm_cluster[microservice],
+                            "value": reference_cluster[microservice],
                         }
         return summary
 
@@ -219,20 +253,29 @@ class ManifestsValidator:
         for key, value in diff.items():
 
             if key is symbols.insert:
-                # LLM has extra fields that Heuristics doesn't have
+                # Analyzed has extra fields that reference doesn't have
+                self.logger.debug(f"Analyzing insert key {value}")
+
                 summary["resources_extra"][microservice].append(
                     {"path": path, "value": value}  # Use parent path, not current_path
                 )
             elif key is symbols.delete:
-                # LLM is missing fields that Heuristics has
-                content = self._get_value(cluster, path.split("//")[:], value)
+                # Analyzed is missing fields that reference has
+                # Delete value is always a list of keys of deleted elements
+                self.logger.debug(f"Analyzing delete key {value}")
+
+                content = self._get_manifest_value(cluster, path.split("//")[:], value)
                 summary["resources_missing"][microservice].append(
                     {"path": path, "value": content}  # Use parent path, not current_path
                 )
             elif key is symbols.update:
                 # Both have the field but with different values/structure
                 if isinstance(value, dict):
+                    self.logger.debug(f"Analyzing update key {value}")
+
                     self._process_diff(microservice, value, summary, path, cluster)
+                else: 
+                    self.logger.warning(f"Update non processed {value}")
 
             else:
                 # Regular field name - continue recursion
@@ -245,24 +288,160 @@ class ManifestsValidator:
                     summary["resource_differences"][microservice].append(
                         {
                             "path": current_path,
-                            "heuristics_value": self._get_value_by_path(
+                            "reference_value": self._get_value_by_path(
                                 cluster, current_path.split("//")[:]
                             ),
-                            "llm_value": value,
+                            "analyzed": value,
                         }
                     )
 
-    def _get_value_by_path(self, data: Dict[str, Any], path: List[str],) -> Any:
+    def _get_value_by_path(self, data: Dict[str, Any], path: List[str]) -> Any:
         """Retrieve a value from a nested dictionary using a list of keys as the path."""
         current = data
         for key in path:
             if isinstance(current, dict) and key in current:
-                current = current[key]
+                current = current.get(key, None)
             elif isinstance(current, list):
                 current = current[int(key)]
+        self.logger.debug(f"Retrieved value by path {path}: {current}")
         return current
 
-    def _get_value(self, data: Dict[str, Any], path: List[str],  diff_keys: list) -> Any:
+    def _get_manifest_value(self, cluster: Dict[str, Any], path: List[str],  diff_keys: List[str | int]) -> Any:
+        """Retrieve the list of elements deleted on the original manifest using the keys provided by the diff_keys parameter
+        If the keys are indexes we return the list of manifest's values. If the keys are strings we compose a list of dicts with the shape {key: manifest_value} and return it
+        """
         if isinstance(diff_keys[0], str):
-            return [{key: self._get_value_by_path(data, path)[key] } for key in diff_keys]
-        return  [self._get_value_by_path(data, path)[key] for key in diff_keys]
+            diffs = [{key: self._get_value_by_path(cluster, path)[key] } for key in diff_keys]
+        else:
+            diffs =  [self._get_value_by_path(cluster, path)[key] for key in diff_keys]
+    
+        self.logger.debug(f"path {path}, diff_keys: {diffs}")
+        return diffs
+
+    def _analyze_path_severity(self, path: str, issue_type: str = "missing") -> Severity:
+        """Analyze a path and return nuanced severity based on component and issue type."""
+        
+        # Extract the component from the path
+        component = self._extract_component_from_path(path)
+        
+        # Use enhanced severity analysis
+        return analyze_component_severity(component, issue_type, path)
+
+    def evaluate_issue_severity(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Determine the severity with enhanced nuanced analysis."""
+        if not analysis:
+            return {"low": [{"severity": "LOW", "description": "No differences found between manifests."}]}
+       
+        # Check for missing resources with nuanced analysis
+        if analysis.get("resources_missing"):
+            for microservice, resources in analysis["resources_missing"].items():
+                if isinstance(resources, dict) and resources.get("path") == microservice:
+                    self.logger.critical(f"Entire microservice missing: {microservice}")
+                    resources.setdefault("severity", Severity("CRITICAL", f"Missing entire microservice {microservice}."))
+                    continue
+                
+                if isinstance(resources, list):
+                    for resource in resources:
+                        path = resource.get("path", "")
+                        component = self._extract_component_from_path(path)
+                        # Determine if this is a missing component or missing attribute
+                        issue_type, sub_issue_type = get_issue_type(path, resource.get("value", ""))
+                        severity_level = analyze_component_severity(component, issue_type, sub_issue_type)
+                        resource.setdefault("severity", severity_level)
+    
+        # Check for extra resources with nuanced analysis
+        if analysis.get("resources_extra"):
+            for microservice, resources in analysis["resources_extra"].items():
+                for resource in resources:
+                    path = resource.get("path", "")
+                    component = self._extract_component_from_path(path)
+
+                    issue_type = "extra"
+                    severity_level = analyze_component_severity(component, issue_type)
+                    resource.setdefault("severity", severity_level)
+
+        # Check for value differences with nuanced analysis
+        if analysis.get("resource_differences"):
+            for microservice, differences in analysis["resource_differences"].items():
+                for diff in differences:
+                    path = diff.get("path", "")
+                    component = self._extract_component_from_path(path)
+                    issue_type = "value_difference"
+                    severity_level = analyze_component_severity(component, issue_type)
+
+                    # Slightly reduce severity for value differences vs missing
+                    if severity_level.level == "CRITICAL":
+                        adjusted_severity = Severity("HIGH", f"Value difference in {path} for {microservice}")
+                    else:
+                        adjusted_severity = severity_level
+                    
+                    diff.setdefault("severity", adjusted_severity)
+    
+        return self._serialize_severity_objects(analysis)
+
+    def _serialize_severity_objects(self, obj) -> Any:
+        """Recursively convert all Severity objects to dictionaries for JSON serialization."""
+        if isinstance(obj, Severity):
+            return obj.to_dict()
+        elif isinstance(obj, dict):
+            return {key: self._serialize_severity_objects(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._serialize_severity_objects(item) for item in obj]
+        else:
+            return obj
+
+
+
+    def _extract_component_from_path(self, path: str) -> str:
+        """Extract the main component name from a path."""
+        if not path:
+            return "unknown"
+        
+        path_parts = path.split("//")
+        
+        # Common component mappings
+        component_map = {
+            "env": "env",
+            "ports": "ports", 
+            "port": "ports",
+            "image": "image",
+            "volume": "volumeMounts",
+            "command": "commandArgs",
+            "args": "commandArgs",
+            "workingdir": "workingDir",
+            "probe": "readinessProbe",
+            "liveness": "livenessProbe",
+            "readiness": "readinessProbe",
+            "resource": "resources",
+            "security": "securityContext",
+            "selector": "selector",
+            "annotation": "annotations",
+            "replica": "replicas",
+            "serviceaccount": "serviceAccount",
+            "matchlabels": "selector",
+            "spec": "template",
+            "labels": "metadata",
+            "metadata": "metadata",
+            "containers": "containers",
+
+        }
+        
+        if len(path_parts) == 1:
+            return "microservice"
+
+        # Look for known components in the path
+        for part in reversed(path_parts):
+            part_lower = part.lower()
+            for key, value in component_map.items():
+                if key in part_lower:
+                    return value
+                if str.isdigit(part_lower):
+                    continue
+            
+        return "configuration"
+    
+    def save_analysis(self, analysis: Dict[str, Any], file_path: str) -> None:
+        """Save the analysis to a file."""
+        with open(file_path, 'w') as file:
+            json.dump(analysis, file, indent=2)
+            self.logger.info(f"Analysis saved to {file_path}")

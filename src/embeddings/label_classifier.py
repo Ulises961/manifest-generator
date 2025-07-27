@@ -3,7 +3,7 @@ from typing import Dict
 
 from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
-from utils.file_utils import load_file
+from utils.file_utils import load_json_file
 
 
 class LabelClassifier:
@@ -53,7 +53,7 @@ class LabelClassifier:
             os.getenv("LABELS_PATH", "resources/knowledge_base/docker_labels.json")
         )
         
-        labels: Dict[str, Dict[str, str]] = load_file(labels_path)
+        labels: Dict[str, Dict[str, str]] = load_json_file(labels_path)
 
         return {
             category_name: {label: self._engine.encode(label) for label in label_dict.keys()}

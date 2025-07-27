@@ -2,7 +2,7 @@ from copy import deepcopy
 import os
 from typing import Any, cast, Dict
 import yaml
-from utils.file_utils import load_file
+from utils.file_utils import load_json_file
 
 class ConfigMapBuilder:
     def __init__(self, k8s_manifests_path: str = "k8s"):
@@ -10,7 +10,7 @@ class ConfigMapBuilder:
 
     def _get_configmap_template(self) -> Dict[str, Any]:
         """Get the config map template."""
-        template = load_file(
+        template = load_json_file(
             os.path.join(
                 os.path.dirname(__file__),
                 "..",

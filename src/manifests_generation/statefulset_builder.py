@@ -1,13 +1,13 @@
 from copy import deepcopy
 import os
 from typing import Any, List, cast, Dict
-from utils.file_utils import load_file, remove_none_values
+from utils.file_utils import load_json_file, remove_none_values
 
 
 class StatefulSetBuilder:
     def _get_stateful_set_template(self) -> dict:
         """Get the stateful set template."""
-        template = load_file(
+        template = load_json_file(
             os.path.join(
                 os.path.dirname(__file__),
                 "..",
@@ -35,6 +35,7 @@ class StatefulSetBuilder:
             "workdir": stateful_set.get("workdir", None),
             "liveness_probe": stateful_set.get("liveness_probe", None),
             "user": stateful_set.get("user", None),
+            "service_account": stateful_set["name"]
         }
 
         template = self._get_stateful_set_template()
@@ -50,6 +51,11 @@ class StatefulSetBuilder:
             "labels"
         ]
 
+        if "ports" in stateful_set:
+            template["spec"]["template"]["spec"]["serviceAccountName"] = (
+                stateful_set_entry["service_account"]
+            )
+            
         template["spec"]["template"]["spec"]["containers"][0]["name"] = (
             stateful_set_entry["name"]
         )

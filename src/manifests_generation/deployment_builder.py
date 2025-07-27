@@ -2,13 +2,13 @@ from copy import deepcopy
 import os
 from typing import Any, List, cast, Dict
 
-from utils.file_utils import load_file, remove_none_values
+from utils.file_utils import load_json_file, remove_none_values
 
 
 class DeploymentBuilder:
     def _get_deployment_template(self) -> Dict[str, Any]:
         """Get the deployment template."""
-        template = load_file(
+        template = load_json_file(
             os.path.join(
                 os.path.dirname(__file__),
                 "..",
@@ -80,7 +80,7 @@ class DeploymentBuilder:
                 "volumes"
             ]
 
-        if "ports" in deployment_entry:
+        if "ports" in deployment_entry and len(deployment_entry["ports"].keys()) > 0:
             template["spec"]["template"]["spec"]["containers"][0]["ports"] = [
                 deployment_entry["ports"]
             ]

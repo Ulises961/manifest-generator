@@ -2,14 +2,14 @@ from copy import deepcopy
 import os
 from typing import Any, List, cast, Dict
 import yaml
-from utils.file_utils import load_file, remove_none_values
+from utils.file_utils import load_json_file, remove_none_values
 
 
 class PVCBuilder:
 
     def _get_pvc_template(self) -> Dict[str, Any]:
         """Get the PVC template."""
-        template = load_file(
+        template = load_json_file(
             os.path.join(
                 os.path.dirname(__file__),
                 "..",

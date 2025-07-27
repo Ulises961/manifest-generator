@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from numpy import log
 from torch import Tensor
 from embeddings.embeddings_engine import EmbeddingsEngine
-from utils.file_utils import load_file
+from utils.file_utils import load_json_file
 
 
 class SecretClassifier:
@@ -38,7 +38,7 @@ class SecretClassifier:
 
     def _load_secrets(self, path: str) -> Dict[str, List[Tensor]]:
         """Load secrets from a file."""
-        secrets: Dict[str, List[Any]] = load_file(path)
+        secrets: Dict[str, List[Any]] = load_json_file(path)
 
         embeddings_list: List[Tensor] = []
 

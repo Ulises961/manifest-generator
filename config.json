@@ -1,5 +1,5 @@
 {
-    "llm_model": "",
+    "llm_model": "claude-3-5-haiku-20241022",
     "llm_token": "",
     "embeddings_model": "sentence-transformers/all-MiniLM-L6-v2",
     "repository_path": "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/microservices-demo/src",
@@ -23,5 +23,9 @@
     "manual_manifests_path": "manual",
     "k8s_manifests_path": "k8s",
     "llm_manifests_path": "llm",
-    "dry_run": false
+    "reviewed_manifests_path": "final_manifests",
+    "analysis_results_path": "results",
+    "severity_config": "resources/validation/severity_config.yaml",
+    "dry_run": false,
+    "cache_prompt": true
 }

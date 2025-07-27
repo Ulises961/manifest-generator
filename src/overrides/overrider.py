@@ -156,6 +156,26 @@ class Overrider:
             if "metadata" in service_config:
                     self._apply_metadata(template, service_config["metadata"])
 
+            if "initContainers" in service_config:
+                # Ensure initContainers section exists
+                if "spec" not in template:
+                    template["spec"] = {}
+                if "template" not in template["spec"]:
+                    template["spec"]["template"] = {}
+                if "spec" not in template["spec"]["template"]:
+                    template["spec"]["template"]["spec"] = {}
+                if "initContainers" not in template["spec"]["template"]["spec"]:
+                    template["spec"]["template"]["spec"]["initContainers"] = []
+
+                # Add init containers
+                for init_container in service_config["initContainers"]:
+                    found = False
+                    for existing_container in template["spec"]["template"]["spec"]["initContainers"]:
+                        if existing_container.get("name") == init_container.get("name"):
+                            found = True
+                            break
+                    if not found:
+                        template["spec"]["template"]["spec"]["initContainers"].append(init_container)
             # Process dependencies and generate dependency graph
             if any(
                 "dependencies"
