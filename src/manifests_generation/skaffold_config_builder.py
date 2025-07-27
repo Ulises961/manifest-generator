@@ -93,6 +93,15 @@ class SkaffoldConfigBuilder:
                 if file.endswith(".yaml"):
                     resources.add(f"{pvcs_dir_rel}/{file}")
 
+        # Add service accounts
+        service_accounts_dir_rel = f"{k8s_folder}/service_account"
+        service_accounts_dir = os.path.join(output_dir, service_accounts_dir_rel)
+        if os.path.exists(service_accounts_dir):
+            self.logger.info(f"Adding service accounts from {service_accounts_dir}")
+            for file in os.listdir(service_accounts_dir):
+                if file.endswith(".yaml"):
+                    resources.add(f"{service_accounts_dir_rel}/{file}")
+
         # Add any file in the k8s folder that is not a directory
         parent_dir = os.path.join(output_dir, k8s_folder)
         for file in os.listdir(parent_dir):

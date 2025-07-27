@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple, cast
 from manifests_generation.configmap_builder import ConfigMapBuilder
 from manifests_generation.deployment_builder import DeploymentBuilder
+from manifests_generation.service_account_builder import ServiceAccountBuilder
 from overrides.overrider import Overrider
 from manifests_generation.pvc_builder import PVCBuilder
 from manifests_generation.secret_builder import SecretBuilder
@@ -39,10 +40,11 @@ class ManifestBuilder:
         self._configmap_builder = ConfigMapBuilder(self.k8s_manifests_path)
         self._servicebuilder = ServiceBuilder()
         self._deployment_builder = DeploymentBuilder()
-        self.statefulset_builder = StatefulSetBuilder()
-        self.pvc_builder = PVCBuilder()
+        self._statefulset_builder = StatefulSetBuilder()
+        self._pvc_builder = PVCBuilder()
         self._secret_builder = SecretBuilder(self.k8s_manifests_path)
-        self.skaffold_builder = SkaffoldConfigBuilder()
+        self._skaffold_builder = SkaffoldConfigBuilder()
+        self._service_account_builder = ServiceAccountBuilder()
 
     def generate_manifests(self, microservice: Dict[str, Any]) -> None:
         """Generate manifests for the microservice and its dependencies."""
@@ -64,8 +66,10 @@ class ManifestBuilder:
             microservice["manifests"].update({"deployment": saved})
 
         if microservice.get("ports", None):
-            saved = self.build_service_yaml(microservice)
-            microservice["manifests"].update({"service": saved})
+            saved_service = self.build_service_yaml(microservice)
+            saved_service_account = self.build_service_account_yaml(microservice)
+            microservice["manifests"].update({"service": saved_service})
+            microservice["manifests"].update({"service_account": saved_service_account})
 
         if microservice.get("persistent_volumes", None):
             for pvc in microservice["persistent_volumes"]:
@@ -141,7 +145,7 @@ class ManifestBuilder:
         """Build a YAML file from the template and data."""
 
         # Prepare the stateful set entry
-        template = self.statefulset_builder.build_template(stateful_set)
+        template = self._statefulset_builder.build_template(stateful_set)
         # Convert the template to YAML string
         stateful_set_path = os.path.join(
             self.k8s_manifests_path,
@@ -165,7 +169,7 @@ class ManifestBuilder:
     def build_pvc_yaml(self, pvc: dict) -> Tuple[str, Dict[str, Any]]:
         """Build a YAML file from the template and data."""
         
-        template = self.pvc_builder.build_template(pvc)
+        template = self._pvc_builder.build_template(pvc)
 
         # Convert the template to YAML string
         pvc_path = os.path.join(
@@ -174,12 +178,24 @@ class ManifestBuilder:
 
         return pvc_path, cast(Dict[str, Any], template)
 
+    def build_service_account_yaml(self, service_account: dict) -> Tuple[str, Dict[str, Any]]:
+        """Build a YAML file from the template and data."""
+        
+        template = self._service_account_builder.build_template(service_account)
+
+        # Convert the template to YAML string
+        service_account_path = os.path.join(
+            self.k8s_manifests_path, "service_account", f"{service_account['name']}.yaml"
+        )
+
+        return service_account_path, cast(Dict[str, Any], template)
+    
     def generate_skaffold_config(self, microservices: List[Dict[str, Any]], output_dir: Optional[str]) -> str:
         """Generate a Skaffold configuration file."""
 
         output_dir = output_dir or self.manual_manifests_path
 
-        skaffold_config = self.skaffold_builder.build_template(microservices, output_dir)
+        skaffold_config = self._skaffold_builder.build_template(microservices, output_dir)
    
         self.generate_kustomization_file(output_dir)
 
@@ -194,7 +210,7 @@ class ManifestBuilder:
     def generate_kustomization_file(self, output_dir: Optional[str] = None):
         """Generate a kustomization.yaml file for the manifests in the output directory."""
         output_dir = output_dir or self.k8s_manifests_path
-        kustomization = self.skaffold_builder.build_kustomization_template(output_dir)
+        kustomization = self._skaffold_builder.build_kustomization_template(output_dir)
 
         # Write the kustomization file
         kustomization_path = os.path.join(
@@ -222,6 +238,7 @@ class ManifestBuilder:
                 file,
                 Dumper=NoAliasDumper,
                 sort_keys=False,
+                width=1000,  # Prevent automatic line wrapping
                 default_flow_style=False,
             )
         self.logger.debug(f"YAML file saved to {path}")

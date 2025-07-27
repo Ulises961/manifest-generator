@@ -16,6 +16,7 @@
         "labels": {}
       },
       "spec": {
+        "serviceAccountName": null,
         "containers": [
           {
             "name": "",

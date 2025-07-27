@@ -35,7 +35,8 @@ class DeploymentBuilder:
             "workdir": deployment.get("workdir"),
             "liveness_probe": deployment.get("liveness_probe"),
             "user": deployment.get("user"),
-        }
+            "service_account": deployment["name"]
+            }
 
 
         template = self._get_deployment_template()
@@ -84,6 +85,11 @@ class DeploymentBuilder:
             template["spec"]["template"]["spec"]["containers"][0]["ports"] = [
                 deployment_entry["ports"]
             ]
+
+            template["spec"]["template"]["spec"]["serviceAccountName"] = (
+                deployment_entry["service_account"]
+            )
+        
 
         if "workdir" in deployment:
             template["spec"]["template"]["spec"]["containers"][0]["workingDir"] = (
