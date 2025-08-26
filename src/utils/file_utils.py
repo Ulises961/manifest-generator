@@ -8,6 +8,7 @@ import logging
 from sentence_transformers import SentenceTransformer
 import torch
 import yaml
+import csv
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,11 @@ def load_json_file(path: str) -> Any:
     """Load a JSON file."""
     with open(path, "r") as file:
         return json.load(file)
-    
+
+def save_json(content: Dict[Any, Any], path: str):
+    with open(path, "w") as file:
+        json.dump(content, file, indent=2)
+
 def load_yaml_file(path: str) -> dict:
     """Load a YAML file."""
     with open(path, "r") as file:
@@ -32,6 +37,15 @@ def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
     model_path = os.path.join(models_dir, model_name)
     return model_name, model_path
 
+def save_csv(csv_lines:List[str], file_path: str):
+    with open(file_path, 'w') as file:
+        file.write("\n".join(csv_lines))
+
+def load_csv(path: str) -> List[List[str]]:
+    """Load a CSV file and return its contents as a list of rows."""
+    with open(path, 'r', newline='') as file:
+        reader = csv.reader(file)
+        return [row for row in reader]
 
 def remove_none_values(d) -> Optional[Dict[str, Any]] | Any:
     """Recursively remove all None values from dictionary"""
