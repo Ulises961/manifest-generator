@@ -16,6 +16,9 @@ class Severity:
         description: str = "",
         component: str = "",
         issue_type: str = "",
+        reviewed: bool = False,
+        false_positive: bool = False,
+        comments: str = "",
     ):
         self.level = level
         self.description = description
@@ -23,6 +26,9 @@ class Severity:
         self.issue_type = (
             issue_type  # e.g., "missing", "incorrect_value", "missing_attribute"
         )
+        self.reviewed = reviewed
+        self.false_positive = false_positive
+        self.comments = comments
 
     def __str__(self):
         return self.level
@@ -45,8 +51,23 @@ class Severity:
             "description": self.description,
             "component": self.component,
             "issue_type": self.issue_type,
+            "reviewed": self.reviewed,
+            "false_positive": self.false_positive,
+            "comments": self.comments,
         }
-
+    
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "Severity":
+        """Create Severity object from dictionary."""
+        return Severity(
+            level=data.get("severity", "MEDIUM"),
+            description=data.get("description", ""),
+            component=data.get("component", ""),
+            issue_type=data.get("issue_type", ""),
+            reviewed=data.get("reviewed", False),
+            false_positive=data.get("false_positive", False),
+            comments=data.get("comments", ""),
+        )
 
 # Enhanced severity analysis function
 def analyze_component_severity(
@@ -273,42 +294,6 @@ def _extract_missing_keys(issues: Any) -> List[str]:
         missing_keys.append(issues)
 
     return missing_keys
-
-
-def _determine_component_from_path(path: str) -> str:
-    """Determine the main component from the path for better attribute detection."""
-    path_parts = path.split("//")
-
-    # Component hierarchy mapping
-    component_hierarchy = [
-        "env",
-        "ports",
-        "resources",
-        "volumemounts",
-        "securitycontext",
-        "readinessprobe",
-        "livenessprobe",
-        "labels",
-        "annotations",
-        "volumes",
-        "initcontainers",
-        "command",
-        "args",
-        "image",
-    ]
-
-    # Find the most specific component in the path
-    for part in reversed(path_parts):
-        part_lower = part.lower()
-        if part_lower in component_hierarchy:
-            return part_lower
-
-        # Handle compound names
-        for component in component_hierarchy:
-            if component in part_lower:
-                return component
-
-    return "unknown"
 
 
 __all__ = ["Severity", "analyze_component_severity"]
