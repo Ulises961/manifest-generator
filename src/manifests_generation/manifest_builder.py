@@ -1,15 +1,9 @@
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple, cast
-from manifests_generation.configmap_builder import ConfigMapBuilder
-from manifests_generation.deployment_builder import DeploymentBuilder
-from manifests_generation.service_account_builder import ServiceAccountBuilder
 from overrides.overrider import Overrider
-from manifests_generation.pvc_builder import PVCBuilder
-from manifests_generation.secret_builder import SecretBuilder
-from manifests_generation.service_builder import ServiceBuilder
+
 from manifests_generation.skaffold_config_builder import SkaffoldConfigBuilder
-from manifests_generation.statefulset_builder import StatefulSetBuilder
 import yaml
 
 
@@ -35,161 +29,10 @@ class ManifestBuilder:
         )
 
         os.makedirs(os.path.dirname(self.k8s_manifests_path), exist_ok=True)
-
-        self.overrider = overrider
-        self._configmap_builder = ConfigMapBuilder(self.k8s_manifests_path)
-        self._servicebuilder = ServiceBuilder()
-        self._deployment_builder = DeploymentBuilder()
-        self._statefulset_builder = StatefulSetBuilder()
-        self._pvc_builder = PVCBuilder()
-        self._secret_builder = SecretBuilder(self.k8s_manifests_path)
+        self.overrider = overrider     
         self._skaffold_builder = SkaffoldConfigBuilder()
-        self._service_account_builder = ServiceAccountBuilder()
 
-    def generate_manifests(self, microservice: Dict[str, Any]) -> None:
-        """Generate manifests for the microservice and its dependencies."""
-        
-        microservice.setdefault("manifests", {})
-
-        if microservice.get("workload", None):
-            if microservice["workload"] == "StatefulSet":
-                saved = self.build_stateful_set_yaml(microservice)
-
-                microservice["manifests"].update({"stateful_set": saved})
-
-            elif microservice["workload"] == "Deployment":
-                saved = self.build_deployment_yaml(microservice)
-
-                microservice["manifests"].update({"deployment": saved})
-        else:
-            saved = self.build_deployment_yaml(microservice)
-            microservice["manifests"].update({"deployment": saved})
-
-        if microservice.get("ports", None):
-            saved_service = self.build_service_yaml(microservice)
-            saved_service_account = self.build_service_account_yaml(microservice)
-            microservice["manifests"].update({"service": saved_service})
-            microservice["manifests"].update({"service_account": saved_service_account})
-
-        if microservice.get("persistent_volumes", None):
-            for pvc in microservice["persistent_volumes"]:
-                saved = self.build_pvc_yaml(pvc)
-                microservice["manifests"].update({"pvc": saved})
-
-        if microservice.get("secrets", None):
-            for secret in microservice["secrets"]:
-                saved = self.build_secrets_yaml(secret)
-                microservice["manifests"].update({"secret": saved})
-                self._save_yaml(saved[1], saved[0])
-
-        if microservice.get("env", None):
-            for env in microservice["env"]:
-                saved = self.build_config_map_yaml(env)
-                microservice["manifests"].update({"config_map": saved})
-                self._save_yaml(saved[1], saved[0])
-
-        # Apply overrides to the microservice manifests
-        self.overrider.apply_configuration_overrides(microservice, microservice['name'])
-
-        # Save templates
-        for (path,manifest) in microservice['manifests'].values():
-            self._save_yaml(manifest, path)
-
-        # Store the overriden values for later reference
-        microservice["overrides"] = self.overrider.get_microservice_overrides(microservice['name'])
-    
-    def build_secrets_yaml(self, secret: dict) -> Tuple[str, Dict[str, Any]]:
-        """Build a YAML file from the template and data."""
-
-        secrets_path = os.path.join(
-            self.k8s_manifests_path,
-            "secrets.yaml",
-        )
-
-        template = self._secret_builder.build_template(secret)
-
-        self.logger.debug(f"Secret updated: {secrets_path}")
-
-        return secrets_path, cast(Dict[str, Any], template)
-
-    def build_config_map_yaml(self, config_map: dict) -> Tuple[str, Dict[str, Any]]:
-        """Build a YAML file from the template and data."""
-
-        # Prepare the Kubernetes ConfigMap template
-        template = self._configmap_builder.build_template(config_map)
-
-        # Write the updated content back to the config map file
-        config_map_path = os.path.join(
-            self.k8s_manifests_path,
-            "config_map.yaml",
-        )
-
-        self.logger.debug(f"Config map updated: {config_map_path}")
-
-        return config_map_path,cast(Dict[str, Any], template)
-
-    def build_deployment_yaml(self, deployment: dict) -> Tuple[str, Dict[str, Any]]:
-        """Build a YAML file from the template and data."""
-
-        template = self._deployment_builder.build_template(deployment)
-        # Convert the template to YAML string
-        deployment_path = os.path.join(
-            self.k8s_manifests_path,
-            "deployment",
-            f"{deployment['name']}.yaml",
-        )
-
-        return deployment_path, cast(Dict[str, Any], template)
-
-    def build_stateful_set_yaml(self, stateful_set: dict) -> Tuple[str, Dict[str, Any]]:
-        """Build a YAML file from the template and data."""
-
-        # Prepare the stateful set entry
-        template = self._statefulset_builder.build_template(stateful_set)
-        # Convert the template to YAML string
-        stateful_set_path = os.path.join(
-            self.k8s_manifests_path,
-            "stateful_set",
-            f"{stateful_set['name']}.yaml",
-        )
-
-        return stateful_set_path, cast(Dict[str, Any], template)
-
-    def build_service_yaml(self, service: dict) -> Tuple[str, Dict[str, Any]]:
-        """Build a YAML file from the template and data."""
-
-        template = self._servicebuilder.build_template(service)
-        # Convert the template to YAML string
-        service_path = os.path.join(
-            self.k8s_manifests_path, "service", f"{service['name']}.yaml"
-        )
-
-        return service_path, cast(Dict[str, Any], template)
-
-    def build_pvc_yaml(self, pvc: dict) -> Tuple[str, Dict[str, Any]]:
-        """Build a YAML file from the template and data."""
-        
-        template = self._pvc_builder.build_template(pvc)
-
-        # Convert the template to YAML string
-        pvc_path = os.path.join(
-            self.k8s_manifests_path, "pvc", f"{pvc['name']}.yaml"
-        )
-
-        return pvc_path, cast(Dict[str, Any], template)
-
-    def build_service_account_yaml(self, service_account: dict) -> Tuple[str, Dict[str, Any]]:
-        """Build a YAML file from the template and data."""
-        
-        template = self._service_account_builder.build_template(service_account)
-
-        # Convert the template to YAML string
-        service_account_path = os.path.join(
-            self.k8s_manifests_path, "service_account", f"{service_account['name']}.yaml"
-        )
-
-        return service_account_path, cast(Dict[str, Any], template)
-    
+ 
     def generate_skaffold_config(self, microservices: List[Dict[str, Any]], output_dir: Optional[str]) -> str:
         """Generate a Skaffold configuration file."""
 

@@ -23,7 +23,6 @@ class ManifestsValidator:
     def validate(
         self, analyzed_cluster_path: str, reference_manifests_path: str
     ) -> Dict[str, Any]:
-        self.logger.info(f"Validating manifests at {analyzed_cluster_path} against reference {reference_manifests_path}")
         reference_cluster = self._generate_cluster(reference_manifests_path)
         analyzed_cluster = self._generate_cluster(analyzed_cluster_path)
         return self._validate_microservices(analyzed_cluster, reference_cluster)

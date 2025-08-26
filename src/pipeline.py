@@ -1,5 +1,6 @@
 import json
 from typing import Any, Dict, List
+
 from inference.anthropic_client import AnthropicClient
 from embeddings.embeddings_engine import EmbeddingsEngine
 from embeddings.label_classifier import LabelClassifier
@@ -18,7 +19,8 @@ import os
 from validation.metrics_analyzer import MetricsAnalyzer
 from validation.kubescape_validator import KubescapeValidator
 from validation.manifests_validator import ManifestsValidator
-
+from validation.skaffold_validator import SkaffoldValidator
+    
 # Get module-specific logger
 logger = logging.getLogger(__name__)
 
@@ -72,71 +74,36 @@ def run():
 
     enriched_services: List[Dict[str, Any]] = []
 
-    for child in repository_tree.children:
-        logging.info(f"Generating manifests for child... {child.name}")
-        microservice = treebuilder.prepare_microservice(child)
-        enriched_services.append(microservice)
-        manifest_builder.generate_manifests(microservice)
+    # for child in repository_tree.children:
+    #     logging.info(f"Generating manifests for child... {child.name}")
+    #     microservice = treebuilder.prepare_microservice(child)
+    #     microservice["overrides"] = overrider.get_microservice_overrides(microservice['name'])
+    #     enriched_services.append(microservice)
 
-    # Introduce extra manifests included in the overrides.yaml file
-    if config := overrider.override_config:
-        if config.get("customManifests", None):
-            for manifest_name, manifest_content in config["customManifests"].items():
-                # Log the manifest name and content
-                logger.debug(f"Processing custom manifest: {manifest_name}")
+    # generator = AnthropicClient()
+    # evaluator = AnthropicClient()
+    # validator = KubescapeValidator()
 
-                # Save the custom manifest
-                manifest_path = os.path.join(manifest_builder.k8s_manifests_path, f"{manifest_name}.yaml")
-                manifest_builder._save_yaml(manifest_content, manifest_path)
-                logger.info(f"Custom manifest saved: {manifest_path}")
-               
-    ## Add Skaffold config to build its image
-    manual_manifests_path = os.path.join(
-        os.getenv("OUTPUT_DIR", "target"),
-        os.getenv("MANIFESTS_PATH", "manifests"),
-        os.getenv("MANUAL_MANIFESTS_PATH", "manual"),
-    )
+    # feedback_loop = ManifestFeedbackLoop(
+    #     generator,
+    #     evaluator,
+    #     validator,
+    #     manifest_builder,
+    #     overrider
+    # )
 
-    manifest_builder.generate_skaffold_config(enriched_services, manual_manifests_path)
+    # feedback_loop.generate_manifests(enriched_services)
 
-    # # ### Phase 3: Generate manifests from the repository tree ###
-    generator = AnthropicClient()
-    evaluator = AnthropicClient()
-    validator = KubescapeValidator()
-
-    if os.getenv("DRY_RUN", "false").lower() == "true":
-        logger.info("Running in dry run mode, skipping LLM inference.")
-    
-    else:
-        logger.info("Running in production mode, generating manifests with LLM.")
-        feedback_loop = ManifestFeedbackLoop(
-            generator,
-            evaluator,
-            validator,
-            manifest_builder,
-            overrider
-        )
-
-        feedback_loop.generate_manifests(enriched_services)
-
-        feedback_loop.refine_manifests(enriched_services)
+    # feedback_loop.review_manifests(enriched_services)
     
 
-    # ### Phase 4: Validate the generated manifests ###
-    logger.info("Validating generated manifests by comparison.")
+    # # ### Phase 4: Validate the generated manifests ###
+    # logger.info("Validating generated manifests by comparison.")
     manifests_validator = ManifestsValidator(embeddings_engine)
     metrics_analyzer = MetricsAnalyzer()
 
-    manual_manifests_path = os.path.join(manual_manifests_path, "k8s")
-    llm_manifests_path_v0 = os.path.join(
-        os.getenv("OUTPUT_DIR", "target"),
-        os.getenv("MANIFESTS_PATH", "manifests"),
-        os.getenv("LLM_MANIFESTS_PATH", "llm"),
-        os.getenv("V0", "v0")
-    )
-
     llm_manifests_path_final = os.path.join(
-        os.getenv("OUTPUT_DIR", "target"),
+        os.getenv("OUTPUT_DIR", "output"),
         os.getenv("MANIFESTS_PATH", "manifests"),
         os.getenv("LLM_MANIFESTS_PATH", "llm"),
         os.getenv("REVIEWED_MANIFESTS", "final_manifests")
@@ -149,68 +116,35 @@ def run():
         "k8s"
     )
 
-    validation_results_path =  os.path.join(os.getenv("OUTPUT_DIR", "target"), os.getenv("RESULTS", "results"))
+    validation_results_path =  os.path.join(os.getenv("OUTPUT_DIR", "output"), os.getenv("RESULTS", "results"))
     os.makedirs(validation_results_path, exist_ok= True)
 
-    ## LLM (V0) - MWC 
-    validated_llm_mwc_microservices = manifests_validator.validate(llm_manifests_path_v0, manual_manifests_path)
-    enriched_analysis =    manifests_validator.evaluate_issue_severity(validated_llm_mwc_microservices)
-    # Save the summary of the validation
-    manifests_validator.save_analysis(
-        enriched_analysis,
-        os.path.join(validation_results_path, "llm_v0_mwc_validation_output.json")
-    )
-    # Generate a csv summary of the validation
-    analysis = metrics_analyzer.analyze(validated_llm_mwc_microservices)
-    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "llm_v0_mwc_diff_analysis.csv"))
-
-    ## LLM (V0)- GROUND TRUTH
-    validated_gt_llm_microservices = manifests_validator.validate(llm_manifests_path_v0, ground_truth_manifests)
-    enriched_analysis = manifests_validator.evaluate_issue_severity(validated_gt_llm_microservices)
-    # Save the summary of the validation
-    manifests_validator.save_analysis(
-        enriched_analysis,
-        os.path.join(validation_results_path, "gt_llm_v0_validation_output.json")
-    )
-    # Generate a csv summary of the validation
-    analysis = metrics_analyzer.analyze(validated_gt_llm_microservices)
-    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "ground_truth_llm_v0_summary.csv"))
-
-
-    ## LLM (FINAL) - MWC 
-    validated_llm_mwc_microservices = manifests_validator.validate(llm_manifests_path_final, manual_manifests_path)
-    enriched_analysis =    manifests_validator.evaluate_issue_severity(validated_llm_mwc_microservices)
-    # Save the summary of the validation
-    manifests_validator.save_analysis(
-        enriched_analysis,
-        os.path.join(validation_results_path, "llm_final_mwc_validation_output.json")
-    )
-    # Generate a csv summary of the validation
-    analysis = metrics_analyzer.analyze(validated_llm_mwc_microservices)
-    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "llm_final_mwc_diff_analysis.csv"))
 
     ## LLM (FINAL) - GROUND TRUTH
     validated_gt_llm_microservices = manifests_validator.validate(llm_manifests_path_final, ground_truth_manifests)
     enriched_analysis = manifests_validator.evaluate_issue_severity(validated_gt_llm_microservices)
+    #Add validation stage
+    enriched_analysis.update({"stage": "before_manual_intervention"})
     # Save the summary of the validation
     manifests_validator.save_analysis(
         enriched_analysis,
         os.path.join(validation_results_path, "gt_llm_final_validation_output.json")
     )
+
+    # Save the enriched analysis as csv
+    manifests_validator.save_as_csv(enriched_analysis, os.path.join(validation_results_path, "gt_llm_final_validation_output.csv"))
+        
     # Generate a csv summary of the validation
     analysis = metrics_analyzer.analyze(validated_gt_llm_microservices)
-    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "ground_truth_llm_final_summary.csv"))
+    analysis_csv = metrics_analyzer.summary_to_csv(analysis)
+    metrics_analyzer.save_csv(analysis_csv, os.path.join(validation_results_path, "ground_truth_llm_final_summary.csv"))
 
 
-    ## MWC - GROUND TRUTH
-    validated_gt_mwc_microservices = manifests_validator.validate(manual_manifests_path, ground_truth_manifests)
-    enriched_analysis = manifests_validator.evaluate_issue_severity(validated_gt_mwc_microservices)
-    # Save the summary of the validation
-    manifests_validator.save_analysis(
-        enriched_analysis,
-        os.path.join(validation_results_path, "gt_mwc_validation_output.json")
-    )
-    # Generate a csv summary of the validation
-    analysis = metrics_analyzer.analyze(validated_gt_mwc_microservices)
-    metrics_analyzer.save_summary(analysis, os.path.join(validation_results_path, "ground_truth_mwc_summary.csv"))
-
+    # ## DYNAMIC VALIDATION WITH SKAFFOLD
+    # skaffold_validator = SkaffoldValidator()
+    # skaffold_results = skaffold_validator.validate_cluster_deployment(llm_manifests_path_final)
+    
+    # # Save skaffold validation results
+    # with open(os.path.join(validation_results_path, "skaffold_validation_results.json"), 'w') as f:
+    #     json.dump(skaffold_results, f, indent=2)
+    

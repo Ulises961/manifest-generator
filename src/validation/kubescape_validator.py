@@ -167,13 +167,11 @@ class KubescapeValidator:
     def save_metrics_to_csv(
         self,
         iteration_metrics: Dict[str, Dict],
-        iteration: int,
         output_file: str = "scan_results.csv",
     ):
         """Save validation metrics to CSV file."""
 
         fieldnames = [
-            "iteration",
             "name",
             "file", 
             "resource_type",
@@ -207,7 +205,6 @@ class KubescapeValidator:
                 for metric_name, metrics in iteration_metrics.items():
                     try:
                         row = {
-                            "iteration": iteration,
                             "name": metric_name,
                             "file": metrics.get("file", "Unknown"),
                             "resource_type": metrics.get("resource_type", "Unknown"),

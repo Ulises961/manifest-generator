@@ -1,4 +1,5 @@
 from calendar import c
+from datetime import date
 import sys
 import click
 import os
@@ -10,6 +11,9 @@ import json
 import gnureadline as readline
 import glob
 import logging
+
+from validation import metrics_analyzer
+from validation.metrics_analyzer import MetricsAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +143,7 @@ def cli():
     default=False,
     help="Force overwrite existing output directory",
 )
-def main(
+def generate(
     config_file: Optional[str],
     interactive: bool,
     repository_path: Optional[str],
@@ -161,16 +165,16 @@ def main(
 
     Examples:
         # Basic usage
-        python main.py main -r ./my-repo -o ./output
+        python main.py generate -r ./my-repo -o ./output
 
         # Interactive mode
-        python main.py main --interactive
+        python main.py generate --interactive
 
         # Dry run with custom iterations
-        python main.py main -r ./repo --dry-run --refinement-iterations 5
+        python main.py generate -r ./repo --dry-run --refinement-iterations 5
 
         # Force overwrite existing output
-        python main.py main -r ./repo -o ./existing-output --force
+        python main.py generate -r ./repo -o ./existing-output --force
     """
 
     # Load environment variables
@@ -493,7 +497,7 @@ def set_environment_variables(config: Dict[str, str]):
 
     ### Required variables ###
     os.environ["TARGET_REPOSITORY"] = os.path.expanduser(os.path.expandvars(config["repository_path"]))
-    os.environ["OUTPUT_DIR"] = os.path.expanduser(os.path.expandvars(config.get("output_path", "target")))
+    os.environ["OUTPUT_DIR"] = f"{os.path.expanduser(os.path.expandvars(config.get("output_path", "output")))}"
 
     ### DEFAULT variables ###
     os.environ["EMBEDDINGS_MODEL"] = config.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2")
@@ -551,8 +555,40 @@ def set_environment_variables(config: Dict[str, str]):
     os.environ["SEVERITY_CONFIG"] = config.get("severity_config", "resources/validation/severity_config.yaml")
     logger.debug("Environment values: {os.environ}")
 
+@cli.command()
+@click.option(
+    "--metrics-file",
+    "-m",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    required=True,
+    help="Path to the JSON file containing metrics to analyze",
+)
+@click.option(
+    "--skaffold-file",
+    "-s",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    required=True,
+    help="Path to the JSON file containing Skaffold results",
+)
+def analyze_metrics(metrics_file: Dict[str, Any], skaffold_file: Dict[str, Any]) -> None:
+    """Analyze the metrics and return a summary.
+    Args:
+        metrics (Dict[str, Any]): The metrics to analyze.
+        skaffold (Dict[str, Any]): The Skaffold results to consider.
+    Returns:
+        None
+    Examples:
+        python main.py analyze-metrics -m ./metrics.json -s ./skaffold.json
+    """
+    validation_results_path =  os.path.join(os.getenv("OUTPUT_DIR", "output"), os.getenv("RESULTS", "results"))
+    os.makedirs(validation_results_path, exist_ok= True)
+    metrics_analyzer = MetricsAnalyzer()
+    # Combine static and dynamic metrics
+    return
+    combined_metrics = metrics_analyzer.combine_static_dynamic_metrics(metrics_file, skaffold_file)
+    results = metrics_analyzer.prepare_results_for_reporting(combined_metrics)
+    metrics_analyzer.save_summary(results, os.path.join(validation_results_path, "combined_validation_summary.csv"))
 
-cli.add_command(main)
 
 if __name__ == "__main__":
     cli()

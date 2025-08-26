@@ -94,7 +94,7 @@ class MicroservicesTree:
 
         for file in files:
             if file.startswith('.'):
-                    self.logger.debug(f"Skipping hidden file: {file}")
+                    self.logger.warning(f"Skipping hidden file: {file}")
                     continue
             if file == "Dockerfile":
                 dockerfile_found = True
