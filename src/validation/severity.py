@@ -1,11 +1,10 @@
-import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
-
-import yaml
-
 from utils.file_utils import load_yaml_file
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 class Severity:
     """Enhanced severity class with nuanced classification support."""
@@ -96,16 +95,15 @@ def analyze_component_severity(
         return DefaultRules.get(component, issue_type, attribute)
 
     if issue_type == "missing_attribute":
-        attr_rules = severity_rules.get("missing_attribute", {})
+        attr_rules = severity_rules.get(component, {}).get("missing_attribute", {})
         if attribute and attribute in attr_rules:
-            level, desc = attr_rules[attribute]
-            return Severity(level, desc, component, f"missing_attribute:{attribute}")
+            return Severity(attr_rules[attribute]["level"], attr_rules[attribute]["description"], component, f"missing_attribute:{attribute}")
         return DefaultRules.get(component, issue_type, attribute)
 
-    rule = severity_rules.get(issue_type)
+    rule = severity_rules.get(attribute, {}).get(issue_type)
+  
     if rule:
-        level, desc = rule
-        return Severity(level, desc, component, issue_type)
+        return Severity(rule["level"], rule["description"], attribute or component, issue_type)
 
     return DefaultRules.get(component, issue_type, attribute)
 
@@ -129,7 +127,10 @@ def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
     # Analyze based on path context
     for i, part in enumerate(path_parts):
         part_lower = part.lower()
-
+        # If the part is in the list of missing keys, the whole part is missing
+        if part in missing_keys:
+            return "missing", part
+      
         # Environment variables
         if part_lower == "env":
             if isinstance(issues, list):
@@ -200,7 +201,7 @@ def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
         # Probes
         elif part_lower in ["readinessprobe", "livenessprobe"]:
             probe_type = (
-                "readinessProbe" if "readiness" in part_lower else "livenessProbe"
+                "readinessProbe" if "readinessProbe" in part_lower else "livenessProbe"
             )
             if "httpGet" in missing_keys:
                 return "missing_attribute", "httpGet"
@@ -223,7 +224,10 @@ def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
         # Service Account
         elif part_lower == "serviceaccount":
             return "missing", None
-
+        
+        elif part_lower == "serviceaccountname":
+            return "missing_attribute", "serviceAccountName"
+        
         # Command/Args
         elif part_lower in ["command", "args"]:
             return "missing", None
@@ -258,6 +262,22 @@ def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
 
         # Tolerations
         elif part_lower == "tolerations":
+            return "missing", None
+
+        elif part_lower == "terminationgraceperiodseconds":
+            return "missing", None
+        
+        elif part_lower == "restartpolicy":
+            return "missing", None
+        
+        # Match Labels
+        elif part_lower == "matchlabels":
+            if "app" in missing_keys in missing_keys:
+                return "missing", "app"
+            elif "app.kubernetes.io/name" in missing_keys:
+                return "missing", "app.kubernetes.io/name"
+            elif "version" in missing_keys:
+                return "missing_attribute", "version"
             return "missing", None
 
     # Default fallback

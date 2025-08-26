@@ -273,13 +273,13 @@ class ManifestsValidator:
                     )
             elif key is symbols.delete:
                 # Analyzed cluster is missing fields that reference has
-                content = self._get_manifest_value(cluster, path.split("//")[:], value)
+                for diff_key in value:
+                    content = self._get_manifest_value(cluster, path.split("//")[:], diff_key)
                 
-                for item in content:
                     summary["resources_missing"][microservice].append(
                         {
-                            "path": path,
-                            "value": item,
+                            "path": f"{path}//{diff_key}",
+                            "value": content,
                         }  # Use parent path, not current_path
                     )
 
@@ -322,17 +322,15 @@ class ManifestsValidator:
         return current
 
     def _get_manifest_value(
-        self, cluster: Dict[str, Any], path: List[str], diff_keys: List[str | int]
+        self, cluster: Dict[str, Any], path: List[str], diff_key: str | int
     ) -> Any:
         """Retrieve the list of elements deleted on the original manifest using the keys provided by the diff_keys parameter
         We compose a list of dicts with the shape {key: manifest_value} and return it
         """
-        diffs = [
-            {key: self._get_value_by_path(cluster, path)[key]} for key in diff_keys
-        ]
-       
-        self.logger.debug(f"path {path}, diff_keys: {diffs}")
-        return diffs
+        diff = {diff_key: self._get_value_by_path(cluster, path)[diff_key]} 
+               
+        self.logger.debug(f"path {path}, diff_keys: {diff}")
+        return diff
 
 
     def evaluate_issue_severity(self, analysis: Dict[str, Any]) -> Dict[str, Any]:

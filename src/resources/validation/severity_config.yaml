@@ -51,6 +51,16 @@ severity_rules:
     missing:
       level: CRITICAL
       description: Missing labels break service selectors
+    missing_attribute:
+      app:
+        level: HIGH
+        description: Missing 'app' label breaks common selectors
+      "app.kubernetes.io/name":
+        level: HIGH
+        description: Missing 'app.kubernetes.io/name' label breaks common selectors
+      version:
+        level: MEDIUM
+        description: Missing 'version' label may affect version-based routing
     value_difference:
       level: HIGH
       description: Different label values can break selectors
@@ -97,7 +107,7 @@ severity_rules:
   resources:
     missing:
       level: HIGH
-      description: Missing resource limits affect scheduling
+      description: Missing resources affect scheduling
     missing_attribute:
       limits:
         level: MEDIUM
