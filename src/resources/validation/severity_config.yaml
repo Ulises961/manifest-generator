@@ -57,9 +57,46 @@ severity_rules:
     extra:
       level: LOW
       description: Extra labels are generally harmless
-  resources:
+  matchLabels:
+    missing:
+      level: CRITICAL
+      description: Missing matchLabels break pod selection
+    value_difference:
+      level: HIGH
+      description: Different matchLabel values can break pod selection
+    extra:
+      level: LOW
+      description: Extra matchLabels are generally harmless
+  metadata:
+    missing:
+      level: HIGH
+      description: Missing metadata affects identification
+    missing_attribute:
+      name:
+        level: HIGH
+        description: Missing name prevents resource identification
+      namespace:
+        level: MEDIUM
+        description: Missing namespace defaults to 'default', may cause conflicts
+    value_difference:
+      level: MEDIUM
+      description: Different metadata values affect identification
+    extra:
+      level: LOW
+      description: Extra metadata fields are generally harmless
+  replicas:
     missing:
       level: MEDIUM
+      description: Missing replicas may lead to single instance deployment
+    value_difference:
+      level: MEDIUM
+      description: Different replica counts affect availability
+    extra:
+      level: LOW
+      description: Extra replica specifications are ignored
+  resources:
+    missing:
+      level: HIGH
       description: Missing resource limits affect scheduling
     missing_attribute:
       limits:
@@ -102,7 +139,7 @@ severity_rules:
       description: Extra volume mounts may affect container behavior
   securityContext:
     missing:
-      level: MEDIUM
+      level: HIGH
       description: Missing security context affects security posture
     missing_attribute:
       runAsUser:
@@ -132,7 +169,7 @@ severity_rules:
       description: Extra readiness settings are harmless
   livenessProbe:
     missing:
-      level: MEDIUM
+      level: HIGH
       description: Missing liveness probe reduces fault detection.
     value_difference:
       level: LOW
