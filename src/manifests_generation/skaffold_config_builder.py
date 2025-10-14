@@ -25,7 +25,9 @@ class SkaffoldConfigBuilder:
         # Add artifacts for each service
         for service in microservices:
             service_name = service.get("name", "").lower()
-            context_path = f"{service['metadata']['dockerfile']}"
+            if service_name == "app" or "metadata" not in service or "dockerfile_path" not in service["metadata"] or not service["metadata"]["dockerfile_path"]:
+                continue
+            context_path = f"{service['metadata']['dockerfile_path']}"
 
             artifact = {"image": service_name, "context": context_path}
 
@@ -86,7 +88,7 @@ class SkaffoldConfigBuilder:
                     resources.add(f"{statefulsets_dir_rel}/{file}")
 
         # Add PVCs
-        pvcs_dir_rel = f"{k8s_folder}/pvc"
+        pvcs_dir_rel = f"{k8s_folder}/persistent_volume_claim"
         pvcs_dir = os.path.join(output_dir, pvcs_dir_rel)
         if os.path.exists(pvcs_dir):
             for file in os.listdir(pvcs_dir):
@@ -104,6 +106,7 @@ class SkaffoldConfigBuilder:
 
         # Add any file in the k8s folder that is not a directory
         parent_dir = os.path.join(output_dir, k8s_folder)
+        os.makedirs(parent_dir, exist_ok=True)
         for file in os.listdir(parent_dir):
             if file.endswith(".yaml") and not os.path.isdir(os.path.join(parent_dir, file)):
                 # We save the relative path to the file

@@ -13,6 +13,6 @@ class LLMClient:
         """Process the model's response and return a list of named manifests."""
         raise NotImplementedError
     
-    def process_response(self, response: Any) -> List[Dict[str, str]]:
+    def process_response(self, response: Any) -> List[Dict[str, Any]]:
         """Process the model's response and return a list of named manifests."""
         raise NotImplementedError

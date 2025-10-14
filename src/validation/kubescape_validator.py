@@ -34,7 +34,7 @@ class KubescapeValidator:
             self.kubescape_path,
             "scan",
             "framework",
-            "nsa,cis-v1.23-t1.0.1",
+            "nsa,cis-v1.10.0",
             "--format",
             "json",
             manifest_path,
@@ -51,31 +51,22 @@ class KubescapeValidator:
             )
 
         except subprocess.TimeoutExpired as e:
-            self.logger.error(
-                f"Kubescape scan timed out after {timeout} seconds for {manifest_path}"
-            )
             raise RuntimeError(
                 f"Kubescape scan timed out after {timeout} seconds"
             ) from e
         
         except FileNotFoundError as e:
-            self.logger.error(f"Kubescape binary not found at {self.kubescape_path}")
             raise RuntimeError(
                 f"Kubescape binary not found at {self.kubescape_path}"
             ) from e
 
         if result.returncode != 0:
-            self.logger.warning(
-                f"Kubescape scan failed for {manifest_path}: {result.stderr}"
-            )
+
             raise RuntimeError(f"Kubescape scan failed: {result.stderr}")
 
         try:
             report = json.loads(result.stdout)
         except json.JSONDecodeError as e:
-            self.logger.error(
-                f"Failed to parse Kubescape output as JSON: {result.stdout[:200]}..."
-            )
             raise RuntimeError(f"Failed to parse Kubescape output as JSON") from e
 
         summary = report.get("summaryDetails", {})

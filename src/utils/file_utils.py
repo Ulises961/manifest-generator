@@ -41,7 +41,7 @@ def save_csv(csv_lines:List[str], file_path: str):
     with open(file_path, 'w') as file:
         file.write("\n".join(csv_lines))
 
-def load_csv(path: str) -> List[List[str]]:
+def load_csv_file(path: str) -> List[List[str]]:
     """Load a CSV file and return its contents as a list of rows."""
     with open(path, 'r', newline='') as file:
         reader = csv.reader(file)

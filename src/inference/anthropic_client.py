@@ -29,12 +29,12 @@ class AnthropicClient(LLMClient):
         response = self.client.messages.create(**request_params)
         return response
 
-    def generate_named_manifests(self, response: List[Any]) -> List[Dict[str, str]]:
+    def generate_named_manifests(self, response: List[Any]) -> List[Dict[str, Any]]:
         """
         Process the model's response from Anthropic API (list of TextBlock or YAML strings).
         Returns a list of dicts with 'name' and 'manifest' (YAML string, indentation preserved).
         """
-        named_manifests: List[Dict[str, str]] = []
+        named_manifests: List[Dict[str, Any]] = []
 
         for content in response:
             # Split on YAML document separator

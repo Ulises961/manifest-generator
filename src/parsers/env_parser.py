@@ -50,8 +50,9 @@ class EnvParser:
     def create_env_node(self, key: str, value: str) -> Node:
         """Create an Node from a key-value pair."""
         is_secret = self.secret_classifier.decide_secret(key)
-        if is_secret:
+        encoded = value
+        if is_secret and type(value) is str:
             encoded = value.encode("utf-8")
             encoded = base64.b64encode(encoded)
-        return Node(name=key, type=NodeType.SECRET if is_secret else NodeType.ENV, value=encoded if is_secret else value)
+        return Node(name=key, type=NodeType.SECRET if is_secret else NodeType.ENV, value=encoded)
     

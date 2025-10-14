@@ -1,7 +1,10 @@
+from calendar import c
 import logging
 import os
+import re
 from typing import Any, Dict, List
 
+from attr import field
 import jsondiff
 from jsondiff import symbols
 from regex import F
@@ -14,9 +17,8 @@ import csv
 
 
 class ManifestsValidator:
-    def __init__(self, embeddings_engine: EmbeddingsEngine):
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.embeddings_engine = embeddings_engine
 
     def validate(
         self, analyzed_cluster_path: str, reference_manifests_path: str
@@ -199,6 +201,7 @@ class ManifestsValidator:
                 if isinstance(action, dict):
                     for microservice, resource in action.items():
                         summary["resources_extra"].setdefault(microservice, [])
+                        self.logger.debug(f"Extra resource found: {resource}")
                         summary["resources_extra"][microservice].append(
                             {"path": microservice, "value": resource}
                         )
@@ -223,6 +226,7 @@ class ManifestsValidator:
                 if isinstance(action, list):
                     for microservice in action:
                         summary["resources_analyzed"].append(microservice)
+                        self.logger.debug(f"Missing resource found: {microservice}")
                         summary["resources_missing"][microservice] = {
                             "path": microservice,
                             "value": reference_cluster[microservice],
@@ -244,7 +248,7 @@ class ManifestsValidator:
         diff: Dict[str, Any],
         summary: Dict[str, Any],
         path: str,
-        cluster: Dict[str, Any],
+        reference_cluster: Dict[str, Any],
     ):
         """Process diff recursively."""
         for key, value in diff.items():
@@ -254,7 +258,7 @@ class ManifestsValidator:
                 if isinstance(value, dict):
                     for sub_key, sub_value in value.items():
                         summary["resources_extra"][microservice].append(
-                            {"path": path, "value": {sub_key: sub_value}}
+                            {"path": f"{path}//{sub_key}", "value": {sub_key: sub_value}}
                         )
                 elif isinstance(value, list):
                     for item in value:
@@ -274,13 +278,13 @@ class ManifestsValidator:
             elif key is symbols.delete:
                 # Analyzed cluster is missing fields that reference has
                 for diff_key in value:
-                    content = self._get_manifest_value(cluster, path.split("//")[:], diff_key)
+                    content = self._get_manifest_value(reference_cluster, path.split("//")[:], diff_key)
                 
                     summary["resources_missing"][microservice].append(
                         {
                             "path": f"{path}//{diff_key}",
                             "value": content,
-                        }  # Use parent path, not current_path
+                        } 
                     )
 
             elif key is symbols.update:
@@ -288,7 +292,7 @@ class ManifestsValidator:
                 if isinstance(value, dict):
                     self.logger.debug(f"Analyzing update key {value}")
 
-                    self._process_diff(microservice, value, summary, path, cluster)
+                    self._process_diff(microservice, value, summary, path, reference_cluster)
                 else:
                     self.logger.warning(f"Update non processed {value}")
 
@@ -297,14 +301,14 @@ class ManifestsValidator:
                 current_path = f"{path}//{key}"
                 if isinstance(value, dict):
                     self._process_diff(
-                        microservice, value, summary, current_path, cluster
+                        microservice, value, summary, current_path, reference_cluster
                     )
                 else:
                     summary["resource_differences"][microservice].append(
                         {
                             "path": current_path,
                             "reference_value": self._get_value_by_path(
-                                cluster, current_path.split("//")[:]
+                                reference_cluster, current_path.split("//")[:]
                             ),
                             "analyzed": value,
                         }
@@ -317,24 +321,46 @@ class ManifestsValidator:
             if isinstance(current, dict) and key in current:
                 current = current.get(key, None)
             elif isinstance(current, list):
-                current = current[int(key)]
+                if key.isdigit() and int(key) < len(current):
+                    current = current[int(key)]  # type: ignore
+                elif key in current:
+                    index = current.index(key)
+                    current = current[index] # type: ignore
         self.logger.debug(f"Retrieved value by path {path}: {current}")
         return current
-
+    
+    def get_key_by_path(self, data: Dict[str, Any], path: List[str]) -> Any:
+        """Retrieve a key from a nested dictionary using a list of keys as the path."""
+        current = data
+        for key in path[:-1]:
+            if isinstance(current, dict) and key in current:
+                current = current.get(key, None)
+            elif isinstance(current, list):
+                if key.isdigit() and int(key) < len(current):
+                    current = current[int(key)]  # type: ignore
+                elif key in current:
+                    index = current.index(key)
+                    current = current[index] # type: ignore
+        self.logger.debug(f"Retrieved key by path {path}: {current}")
+        return list(current.keys())[0] if isinstance(current, dict) and current else None
+    
     def _get_manifest_value(
         self, cluster: Dict[str, Any], path: List[str], diff_key: str | int
     ) -> Any:
-        """Retrieve the list of elements deleted on the original manifest using the keys provided by the diff_keys parameter
+        """Retrieve the list of elements deleted on the original manifest using the keys provided by the diff_keys parameter. 
         We compose a list of dicts with the shape {key: manifest_value} and return it
         """
         diff = {diff_key: self._get_value_by_path(cluster, path)[diff_key]} 
                
-        self.logger.debug(f"path {path}, diff_keys: {diff}")
+        self.logger.debug(f"path {path}, diff_key: {diff_key}, diff: {diff}")
         return diff
 
 
-    def evaluate_issue_severity(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+    def evaluate_issue_severity(self, analysis: Dict[str, Any], reference_manifests_path: str) -> Dict[str, Any]:
         """Determine the severity with enhanced nuanced analysis."""
+
+        reference_cluster = self._generate_cluster(reference_manifests_path)
+
         if not analysis:
             return {
                 "low": [
@@ -369,8 +395,9 @@ class ManifestsValidator:
                         issue_type, sub_issue_type = get_issue_type(
                             path, resource.get("value", "")
                         )
+                        reference_value = self.get_key_by_path(reference_cluster, path.split("//")[:])
                         severity_level = analyze_component_severity(
-                            component, issue_type, sub_issue_type
+                            component, issue_type, sub_issue_type, reference_value
                         )
                         resource.setdefault("severity", severity_level)
 
@@ -382,7 +409,9 @@ class ManifestsValidator:
                     component = self._extract_component_from_path(path)
 
                     issue_type = "extra"
-                    severity_level = analyze_component_severity(component, issue_type)
+                    reference_value = self.get_key_by_path(reference_cluster, path.split("//")[:])
+
+                    severity_level = analyze_component_severity(component, issue_type, path.split("//")[-1])
                     resource.setdefault("severity", severity_level)
 
         # Check for value differences with nuanced analysis
@@ -428,39 +457,52 @@ class ManifestsValidator:
         path_parts = path.split("//")
 
         # Common component mappings
-        component_map = {
-            "env": "env",
-            "ports": "ports",
-            "port": "ports",
-            "image": "image",
-            "volume": "volumeMounts",
-            "command": "command",
-            "workingdir": "workingDir",
-            "readinessProbe": "readinessProbe",
-            "livenessProbe": "livenessProbe",
-            "resources": "resources",
-            "securityContext": "securityContext",
-            "selector": "selector",
-            "annotations": "annotations",
-            "replica": "replicas",
-            "serviceaccount": "serviceAccount",
-            "matchlabels": "matchLabels",
-            "spec": "template",
-            "labels": "labels",
-            "metadata": "metadata",
-            "containers": "containers",
-        }
+        component_map = [
+            "env",
+            "ports",
+            "image",
+            "volume",
+            "command",
+            "workingDir",
+            "readinessProbe",
+            "livenessProbe",
+            "resources",
+            "securityContext",
+            "selector",
+            "annotations",
+            "replicas",
+            "serviceAccount",
+            "matchLabels",
+            "spec",
+            "labels",
+            "metadata",
+            "containers",
+            "spec",
+            "terminationGracePeriodSeconds",
+            "serviceAccountName",
+            "restartPolicy",
+        ]
+        resource_list = [
+            "deployment",
+            "service",
+            "configmap",
+            "secret",
+            "statefulset",
+            "persistentvolumeclaim",
+        ]
 
         if len(path_parts) == 1:
             return "microservice"
 
+        if len(path_parts) == 2 and path_parts[-1].lower() in resource_list:
+            return path_parts[-1]
+        
         # Look for known components in the path
         for part in reversed(path_parts):
-            part_lower = part.lower()
-            for key, value in component_map.items():
-                if key in part_lower:
+            for value in component_map:
+                if value.lower() == part.lower():
                     return value
-                if str.isdigit(part_lower):
+                if str.isdigit(part):
                     continue
 
         return "configuration"
@@ -481,7 +523,7 @@ class ManifestsValidator:
             "Analyzed Value",
             "Severity Level",
             "Severity Description",
-            "Reviewed (Y/N)",
+            "Reviewed Level",
             "Comments",
         ]
 
@@ -500,7 +542,7 @@ class ManifestsValidator:
                 )
 
                 csv_lines.append(
-                    f"{stage},{microservice},{severity.issue_type},{microservice},N/A,N/A,{severity.level},{severity.description},{severity.reviewed},{severity.comments or 'N/A'}"
+                    f"{stage},{microservice},{severity.issue_type},{microservice},N/A,N/A,{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
                 )
                 continue
 
@@ -515,7 +557,7 @@ class ManifestsValidator:
                     )
 
                     csv_lines.append(
-                        f"{stage},{microservice},{severity.issue_type},{path},\"{resource.get('value', '')}\",N/A,{severity.level},{severity.description},{severity.reviewed},{severity.comments or 'N/A'}"
+                        f"{stage},{microservice},{severity.issue_type},{path},\"{resource.get('value', '')}\",N/A,{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
                     )
 
         for microservice, resources in analysis.get("resources_extra", {}).items():
@@ -528,7 +570,7 @@ class ManifestsValidator:
                     )
                 )
                 csv_lines.append(
-                    f"{stage},{microservice},{severity.issue_type},{path},N/A,\"{resource.get('value', '')}\",{severity.level},{severity.description},{severity.reviewed},{severity.comments or 'N/A'}"
+                    f"{stage},{microservice},{severity.issue_type},{path},N/A,\"{resource.get('value', '')}\",{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
                 )
         for microservice, differences in analysis.get(
             "resource_differences", {}
@@ -542,7 +584,8 @@ class ManifestsValidator:
                     )
                 )
                 csv_lines.append(
-                    f"{stage},{microservice},{severity.issue_type},{path},\"{diff.get('reference_value', '')}\",\"{diff.get('analyzed', '')}\",{severity.level},{severity.description},{severity.reviewed},{severity.comments or 'N/A'}"
+                    f"{stage},{microservice},{severity.issue_type},{path},\"{diff.get('reference_value', '')}\",\"{diff.get('analyzed', '')}\",{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
                 )
 
         save_csv(csv_lines, file_path)
+

@@ -1,9 +1,14 @@
+from calendar import c
+from gc import collect
+from math import e
 import os
 import traceback
-from typing import Any, Dict, Optional, List, cast
+from typing import Any, Dict, Optional, List, Tuple, cast
+
+import docker
+from sympy import root
 from embeddings.volumes_classifier import VolumesClassifier
 from parsers.env_parser import EnvParser
-from tree.attached_file import AttachedFile
 from tree.command_mapper import CommandMapper
 from embeddings.embeddings_engine import EmbeddingsEngine
 
@@ -14,23 +19,24 @@ from embeddings.service_classifier import ServiceClassifier
 from tree.node_types import NodeType
 from tree.node import Node
 from parsers.bash_parser import BashScriptParser
+from tree.compose_mapper import ComposeMapper
 import logging
 
 from utils.docker_utils import parse_key_value_string
+from utils.file_utils import load_yaml_file
 
 
 class MicroservicesTree:
     def __init__(
         self,
-        root_path: str,
         embeddings_engine: EmbeddingsEngine,
         secret_classifier: SecretClassifier,
         service_classifier: ServiceClassifier,
         label_classifier: LabelClassifier,
-        volumes_classifier: VolumesClassifier
+        volumes_classifier: VolumesClassifier,
+        compose_mapper: ComposeMapper,
     ):
         self.logger = logging.getLogger(__name__)
-        self.root_path = root_path
         self.embeddings_engine: EmbeddingsEngine = embeddings_engine
         self.secret_classifier = secret_classifier
         self.service_classifier = service_classifier
@@ -42,6 +48,7 @@ class MicroservicesTree:
         self.bash_parser: BashScriptParser = BashScriptParser(
             secret_classifier, self.env_parser, embeddings_engine
         )
+        self.compose_mapper = compose_mapper
 
         self.file_extensions = {
             "markdown": [".md", ".markdown"],
@@ -54,27 +61,40 @@ class MicroservicesTree:
             "env": [".env"],
         }
 
-    def build(self) -> Node:
-        root_node = Node(name=os.path.basename(self.root_path), type=NodeType.ROOT)
+    def build(self, root_path: str) -> Tuple[Node, Dict[str,Any]]:
+        root_node = Node(name=os.path.basename(root_path), type=NodeType.ROOT)
+        collected_files: Dict[str,Any] = {}
 
-        self.logger.info(f"Scanning directory: {self.root_path}")
+        self.logger.info(f"Scanning directory: {root_path}")
+        # Scan for docker-compose files
+        compose_files = [
+            file
+            for file in os.listdir(root_path)
+            if file.endswith(("compose.yaml", "compose.yml"))
+        ]
+        if len(compose_files) > 0:
+            for compose_file in compose_files:
+                self.logger.info(f"Found compose file: {compose_file}")
+                self.build_tree_from_compose(
+                    os.path.join(root_path, compose_file), root_node, collected_files
+                )    
+        else:
+            # Only scan top-level directories
+            for item in os.listdir(root_path):
+                item_path = os.path.join(root_path, item)
+                if os.path.isdir(item_path):
+                    if str(item).startswith("."):
+                        self.logger.debug(f"Skipping hidden directory: {item}")
+                        continue
+                    else:
+                        self.logger.info(f"Scanning directory: {item_path}")
+                        self._scan_helper(item_path, root_node, item, None, collected_files)
 
-        # Only scan top-level directories
-        for item in os.listdir(self.root_path):
-            item_path = os.path.join(self.root_path, item)
-            if os.path.isdir(item_path):
-                if str(item).startswith("."):
-                    self.logger.debug(f"Skipping hidden directory: {item}")
-                    continue
-                else:
-                    self.logger.info(f"Scanning directory: {item_path}")
-                    self._scan_helper(item_path, root_node, item)
+            self.logger.info(
+                f"Finished scanning directory: {root_path}, found {len(root_node.children)} microservices."
+            )
 
-        self.logger.info(
-            f"Finished scanning directory: {self.root_path}, found {len(root_node.children)} microservices."
-        )
-
-        return root_node
+        return root_node, collected_files
 
     def _scan_helper(
         self,
@@ -82,6 +102,7 @@ class MicroservicesTree:
         parent: Node,
         dir_name: str,
         preferred_name: Optional[str] = None,
+        collected_files: Optional[Dict[str,Any]] = None,
     ) -> None:
         """Scan the directory for microservices and find Dockerfile."""
 
@@ -93,13 +114,17 @@ class MicroservicesTree:
         microservice_node = None
 
         for file in files:
-            if file.startswith('.'):
-                    self.logger.warning(f"Skipping hidden file: {file}")
-                    continue
-            if file == "Dockerfile":
+            if file.startswith("."):
+                self.logger.warning(f"Skipping hidden file: {file}")
+                continue
+
+            if file in self.file_extensions["dockerfile"] or file == "Dockerfile":
                 dockerfile_found = True
                 dockerfile_path = os.path.join(path, file)
-                self.logger.info(f"Found Dockerfile in {dockerfile_path}")
+                if collected_files is not None:
+                    with open(dockerfile_path, "r") as f:
+                        dockerfile_content = f.read()
+                    collected_files.update({dir_name: {"name": dir_name, "type": "dockerfile", "content": dockerfile_content, "metadata": {"dockerfile": dockerfile_path, "dockerfile_path": path}}})
                 # Generate a new node parent
                 if preferred_name is not None:
                     # Use the preferred name if provided
@@ -119,7 +144,7 @@ class MicroservicesTree:
                     f"Adding microservice node: {microservice_node.name} to parent: {parent.name}"
                 )
                 # Parse Dockerfile and add commands as children to the microservice node
-                self._populate_microservice_node(
+                self._enrich_microservice_with_dockerfile(
                     os.path.join(path, file), microservice_node
                 )
 
@@ -150,26 +175,118 @@ class MicroservicesTree:
                 # Use a subdirectory name that combines parent and child for clarity
                 self._scan_helper(subdir_path, parent, subdir, preferred_name=dir_name)
 
-    def prepare_for_manifest(self, node: Node) -> None:
-        """Generate manifests for the given node and its children."""
-        if node.type == NodeType.MICROSERVICE:
-            self.logger.info(
-                f"Preparing microservice: {node.name} for manifest generation"
+    def build_tree_from_compose(self, compose_file_path: str, parent: Node, collected_files: Dict[str, Any]) -> None:
+        """Build the microservices tree from a Docker Compose file."""
+        self.logger.info(
+            f"Building microservices tree from compose: {compose_file_path}"
+        )
+
+        try:
+            compose_dict = load_yaml_file(compose_file_path)
+        except Exception as e:
+            self.logger.error(f"Failed to parse compose file {compose_file_path}: {e}")
+            return
+        
+        collected_files.update({"app": {"name": "app", "type": "docker-compose", "content": compose_dict}})
+
+        for service_name, service_config in compose_dict.get("services", {}).items():
+            build_config = service_config.get("build", None)
+
+            if isinstance(build_config, dict):
+                build_context = build_config.get("context", None)
+                dockerfile = build_config.get("dockerfile", "Dockerfile")
+            elif isinstance(build_config, str):
+                if build_config.startswith("./"):
+                    build_config = build_config.replace("./", "")
+                elif build_config.startswith("."):
+                    build_config = build_config.replace(".", "")            
+                build_context = build_config
+                dockerfile = "Dockerfile"
+            else:
+                build_context = None
+                dockerfile = None
+
+            dockerfile_path = None
+            dockerfile_dir = None
+            if build_context is not None and dockerfile:
+                build_context = build_context.replace("./", "")
+                dockerfile_path = os.path.join(
+                    os.path.dirname(compose_file_path), build_context, dockerfile
+                )
+
+                dockerfile_dir = os.path.join(
+                    os.path.dirname(compose_file_path), build_context)
+    
+                if os.path.exists(dockerfile_path):
+                    with open(dockerfile_path, "r") as f:
+                        dockerfile_content = f.read()
+                    collected_files.update({service_name: {"name": service_name, "type": "dockerfile", "content": dockerfile_content, "metadata": {"dockerfile": dockerfile_path, "dockerfile_path": dockerfile_dir}}})
+
+            microservice_node = Node(
+                name=service_name,
+                type=NodeType.MICROSERVICE,
+                parent=parent,
+                metadata={
+                    "dockerfile_path": dockerfile_dir,
+                    "compose_file": compose_file_path,
+                },
             )
-            self.prepare_microservice(node)
+
+            parent.add_child(microservice_node)
+            self.logger.info(f"Added microservice from compose: {service_name}")
+
+            # Enrich node with compose attributes regardless of Dockerfile presence
+            self.compose_mapper._enrich_microservice_with_compose_info(
+                service_config, microservice_node, os.path.dirname(compose_file_path), compose_dict
+            )
+
+            if dockerfile_path and os.path.isfile(dockerfile_path):
+                self._enrich_microservice_with_dockerfile(
+                    dockerfile_path, microservice_node
+                )
+            else:
+                self.logger.warning(
+                    f"No Dockerfile for service {service_name} (expected at {dockerfile_path})."
+                )
+
+        networks = compose_dict.get("networks", None)
+        if networks and len(networks) > 1:
+            for network in networks:
+                network_node = Node(
+                    name=network,
+                    type=NodeType.NETWORK,
+                    value=network,
+                    parent=parent,
+                )
+                parent.add_child(network_node)
+
+        volumes = compose_dict.get("volumes", None)
+        if volumes:
+            for volume in volumes:
+                volume_node = Node(
+                    name=volume,
+                    type=NodeType.VOLUME_CLAIM,
+                    value=volume,
+                    parent=parent,
+                )
+                parent.add_child(volume_node)
 
     def prepare_microservice(self, node: Node) -> Dict[str, Any]:
         """Generate manifests for the given microservice node."""
         # Generate manifests for the microservice
         microservice: Dict[str, Any] = {"name": node.name}
-        microservice.setdefault("labels", {"app.kubernetes.io/name": node.name})
+        microservice.setdefault("labels", {"app": node.name})
         microservice.setdefault(
-            "metadata", {"dockerfile": node.metadata.get("dockerfile_path", "")}
+            "metadata", {"dockerfile_path": node.metadata.get("dockerfile_path", ""), "dockerfile": node.metadata.get("dockerfile", "")}
         )
         microservice.setdefault("image", node.name.lower())
-        microservice.setdefault("env", []) 
-        microservice.setdefault("volume_mounts", []) 
-        microservice.setdefault("volumes", [])  
+        microservice.setdefault("env", [])
+        microservice.setdefault("volume_mounts", [])
+        microservice.setdefault("volumes", [])
+
+        if len(image := node.get_children_by_type(NodeType.IMAGE)) > 0:
+            # There's a unique image child
+            microservice["image"] = image[0].value
         
         if len(labels := node.get_children_by_type(NodeType.LABEL)) > 0:
 
@@ -204,16 +321,30 @@ class MicroservicesTree:
         microservice.setdefault("ports", [])
 
         if (
-            len(ports := node.get_children_by_type(NodeType.PORT, must_be_active=True))
+            len(
+                ports := node.get_children_by_type(
+                    NodeType.CONTAINER_PORT, must_be_active=True
+                )
+            )
             > 0
         ):
-            microservice["ports"] = [int(cast(str, port.value)) for port in ports]
+            microservice["ports"] = [int(cast(str, port.value)) for port in ports if port.value.isdigit()]# type: ignore
             microservice["service-ports"] = [
-                int(cast(str, port.value)) for port in ports
+                int(cast(str, port.value)) for port in ports if port.value.isdigit()# type: ignore
             ]
             microservice["type"] = "ClusterIP"
             microservice["protocol"] = "TCP"
             microservice["workload"] = "Deployment"
+
+        if len(service_ports := node.get_children_by_type(NodeType.SERVICE_PORT_MAPPING)) > 0:
+            microservice["service-ports"] = []
+            for port in service_ports:
+                port_mapping = str(port.value)
+                if ":" in port_mapping:
+                    values = port_mapping.split(":")
+                    host_port, container_port = values[-2], values[-1]
+                    microservice["ports"].append(int(container_port))
+                    microservice["service-ports"].append(int(host_port))
 
         if (
             len(
@@ -259,40 +390,49 @@ class MicroservicesTree:
                 )  # type: ignore
         if (
             len(
-                volumes := node.get_children_by_type(
-                    NodeType.VOLUME, must_be_active=True
+                volumes_mounts := node.get_children_by_type(
+                    NodeType.VOLUME_MOUNT, must_be_active=True
                 )
             )
             > 0
         ):
-            for index, volume in enumerate(volumes):
-                if volume.is_persistent:
-                    # If the volume is persistent, add it to the persistent volumes list
-                    if "persistent_volumes" not in microservice:
-                        microservice["persistent_volumes"] = []
+            for index, volume_mount in enumerate(volumes_mounts):
+                microservice.setdefault("volume_mounts", [])
+                microservice["volume_mounts"].append(
+                    {"name": f"{volume_mount.name}" if volume_mount.name != volume_mount.type else f"volume-{index}", "mountPath": volume_mount.value}
+                )
 
+                microservice.setdefault("volumes", [])
+                volume_to_add: Dict[str, Any] = {"name": f"{volume_mount.name}" if volume_mount.name != volume_mount.type else f"volume-{index}"}
+                if volume_mount.is_persistent:
+                    # Add volume
+                    volume_to_add["persistentVolumeClaim"] = {
+                        "claimName": f"{volume_mount.name}" if volume_mount.name != volume_mount.type else f"volume-{index}",
+                    }
+                    
+                    # If the volume_mount is persistent, add it to the persistent volumes list
+                    microservice.setdefault("persistent_volumes", [])
                     microservice["persistent_volumes"].append(
                         {
-                            "name": f"volume-{index}",
+                            "name": f"{volume_mount.name}" if volume_mount.name != volume_mount.type else f"volume-{index}",
                             "labels": {
-                                "app": microservice["labels"]["app.kubernetes.io/name"],
+                                "app": microservice["labels"]["app"],
                                 "storage-type": "persistent",
                             },
                             "storage_class": "standard",
                             "access_modes": ["ReadWriteOnce"],
-                            "resources": 1024,
                         }
                     )  # type: ignore
-                microservice.setdefault("volume_mounts", [])
-                microservice["volume_mounts"].append(
-                    {"name": f"volume-{index}", "mountPath": volume.value}
-                )
 
-                microservice.setdefault("volumes", [])
-                volume_to_add: Dict[str, Any] = {"name": f"volume-{index}"}
-                if volume.is_persistent:
-                    volume_to_add["persistentVolumeClaim"] = {
-                        "claimName": f"volume-{index}"
+                elif volume_mount.is_directory:
+                    volume_to_add["hostPath"] = {
+                        "path": volume_mount.children[0].value,
+                        "type": "Directory",
+                    }
+                elif volume_mount.is_file:
+                    volume_to_add["hostPath"] = {
+                        "path": volume_mount.children[0].value,
+                        "type": "File",
                     }
                 else:
                     volume_to_add["emptyDir"] = {}
@@ -303,36 +443,46 @@ class MicroservicesTree:
             microservice.setdefault("workdir", None)
             microservice["workdir"] = workdirs[0].value
 
-
         # Enrich microservice
         container_ports = microservice.get("ports", [])
         service_extra_info = self.service_classifier.decide_service(
             node.name, container_ports
         )
 
-        if service_extra_info is not None:
+        if service_extra_info:
+            # Only use ontology ports if not set in the container configuration
+            if microservice["ports"] == []:
+                container_ports = [int(port) for port in service_extra_info["ports"]]
+
+                # Set service ports fallback to the container ports
+                microservice["service-ports"] = service_extra_info.get(
+                    "servicePorts", container_ports
+                )
             microservice["workload"] = service_extra_info["workload"]
             microservice["protocol"] = service_extra_info["protocol"]
             microservice["type"] = service_extra_info.get("serviceType", "ClusterIP")
-
-            # Set ports
-            container_ports = [int(port) for port in service_extra_info["ports"]]
-
-            # Set service ports fallback to the container ports
-            microservice["service-ports"] = service_extra_info.get(
-                "servicePorts", container_ports
-            )
-
-            # Only use ontology ports of not set in the container configuration
-            if len(microservice["ports"]) == 0:
-                microservice["ports"] = container_ports
-
             microservice["labels"].update(service_extra_info["labels"])
+
+
+        if len(restart := node.get_children_by_type(NodeType.RESTART)) > 0:
+            if "no" == restart[0].value:
+                microservice["restart_policy"] = "Never"
+                # Remove workload information, let the model decide
+                microservice["workload"] = None
+            else:
+                microservice["restart_policy"] = restart[0].value
+        
+        if len(dependencies := node.get_children_by_type(NodeType.DEPENDENCY)) > 0:
+            microservice.setdefault("depends_on", {"deps": []})
+            
+            for dependency in dependencies:
+                dep = {"service": dependency.value, "conditions": [child.value for child  in dependency.children]}
+                microservice["depends_on"]["deps"].append(dep)
 
         self.logger.info(
             f"Microservice {microservice} prepared for manifest generation"
         )
-
+        
         return microservice
 
     def print_tree(self, node: Node, level: int = 0) -> None:
@@ -343,18 +493,25 @@ class MicroservicesTree:
         else:
             indent = ""
             for i in range(level - 1):
-                indent = " " * ((i + 1) * 4) + "|"
-            indent = indent + " " * (level * 4) + "|"
-            print(
-                f"{indent}-- {node.name} ({node.value})"
-                if node.value is not None
-                else f"{indent}-- {node.name}"
-            )
+                if i == 0:
+                    indent = " " * ((i + 1) * 4) + "|"
+                else:
+                    indent += " "
+            if node.value is not None:
+                if level > 1:
+                    indent = indent + " " * (level * 2) + "|"
+                    print(f"{indent}-- {node.name} {node.value} ({node.type})")
+                else:
+                    indent = indent + " " * (level * 4) + "|"
+                    print(f"{indent}-- {node.name}")
+            else:
+                indent = indent + " " * (level * 4) + "|"
+                print(f"{indent}-- {node.name}")
 
         for child in node.children:
             self.print_tree(child, level + 1)
 
-    def _populate_microservice_node(
+    def _enrich_microservice_with_dockerfile(
         self, dockerfile_path: str, microservice_node: Node
     ) -> None:
         """Parse and populate the microservice node with information gathered from the dockerfile"""
@@ -375,8 +532,22 @@ class MicroservicesTree:
                                 f"Removing old WORKDIR node: {child.name}"
                             )
                             microservice_node.children.remove(child)
+                if node.type == NodeType.ENTRYPOINT:
+                    # Keep the latest one
+                    for child in microservice_node.children:
+                        if child.type == NodeType.ENTRYPOINT:
+                            self.logger.debug(
+                                f"Removing old ENTRYPOINT node: {child.name}"
+                            )
+                            microservice_node.children.remove(child)
+                if node.type == NodeType.CMD:
+                    # Keep the latest one
+                    for child in microservice_node.children:
+                        if child.type == NodeType.CMD:
+                            self.logger.debug(f"Removing old CMD node: {child.name}")
+                            microservice_node.children.remove(child)
 
-                if node.metadata == {} or node.metadata["status"] == "active":
+                if node.metadata == {} or node.metadata.get("status", "") == "active":
                     self.logger.debug(
                         f"Adding command node: {node.name} with metadata: {node.metadata}"
                     )
@@ -393,3 +564,12 @@ class MicroservicesTree:
                     # Parse the config file and add it to the node
                     config_nodes = self.env_parser.parse(file_path)
                     node.add_children(config_nodes)
+
+    def prepare_network_policy(self, node: Node) -> Dict[str, Any]:
+        """Generate manifests for the given network policy node."""
+        network_policy: Dict[str, Any] = {
+            "type": "NetworkPolicy",
+            "name": node.name,
+        }
+        self.logger.info(f"Network policy {network_policy} prepared for manifest generation")
+        return network_policy

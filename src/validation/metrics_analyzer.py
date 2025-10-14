@@ -1,7 +1,10 @@
+from email import header
+import json
 import logging
 from typing import Any, Dict
 
 from numpy import isin
+from rpds import List
 
 from validation import severity
 
@@ -13,7 +16,7 @@ class MetricsAnalyzer:
         """
         self.logger = logging.getLogger(__name__)
 
-    def analyze(self, metrics: Dict[str, Any]) -> Dict[str, int]:
+    def analyze_results(self, metrics: Dict[str, Any]) -> Dict[str, int]:
         """
         Count the issues in the metrics and return a summary.
         """
@@ -34,64 +37,116 @@ class MetricsAnalyzer:
                         for issue in issues:
                             if isinstance(issue, dict) and "severity" in issue:
                                 severity = issue["severity"]
-                                if severity.level == "CRITICAL":
+                                if (severity.reviewed_level is not None and severity.reviewed_level == "CRITICAL") or severity.level == "CRITICAL":
                                     summary["critical_issues"] += 1
                                     summary["total_metrics"] += 1
-                                elif severity.level == "HIGH":
+                                elif (severity.reviewed_level is not None and severity.reviewed_level == "HIGH") or severity.level == "HIGH":
                                     summary["high_issues"] += 1
                                     summary["total_metrics"] += 1
-                                elif severity.level == "MEDIUM":
+                                elif (severity.reviewed_level is not None and severity.reviewed_level == "MEDIUM") or severity.level == "MEDIUM":
                                     summary["medium_issues"] += 1
                                     summary["total_metrics"] += 1
-                                elif severity.level == "LOW":
+                                elif (severity.reviewed_level is not None and severity.reviewed_level == "LOW") or severity.level == "LOW":
                                     summary["low_issues"] += 1
                                     summary["total_metrics"] += 1
-                                elif severity.level == "INFO":
+                                elif (severity.reviewed_level is not None and severity.reviewed_level == "INFO") or severity.level == "INFO":
                                     summary["info_issues"] += 1
                                     summary["total_metrics"] += 1
-                                if issue.get("reviewed") and issue.get("false_positive"):
+                                if  severity.reviewed_level is not None:
                                     summary["false_positives"] += 1
 
                                     
                     # A whole component is an issue (missing or extra)
                     elif isinstance(issues, dict) and "severity" in issues:
                         severity = issues["severity"]
-                        if severity.level == "CRITICAL":
+                        if (severity.reviewed_level is not None and severity.reviewed_level == "CRITICAL") or severity.level == "CRITICAL":
                             summary["critical_issues"] += 1
                             summary["total_metrics"] += 1
-                        elif severity.level == "HIGH":
+                        elif (severity.reviewed_level is not None and severity.reviewed_level == "HIGH") or severity.level == "HIGH":
                             summary["high_issues"] += 1
                             summary["total_metrics"] += 1
-                        elif severity.level == "MEDIUM":
+                        elif (severity.reviewed_level is not None and severity.reviewed_level == "MEDIUM") or severity.level == "MEDIUM":
                             summary["medium_issues"] += 1
                             summary["total_metrics"] += 1
-                        elif severity.level == "LOW":
+                        elif (severity.reviewed_level is not None and severity.reviewed_level == "LOW") or severity.level == "LOW":
                             summary["low_issues"] += 1
                             summary["total_metrics"] += 1
-                        elif severity.level == "INFO":
+                        elif (severity.reviewed_level is not None and severity.reviewed_level == "INFO") or severity.level == "INFO":
                             summary["info_issues"] += 1
                             summary["total_metrics"] += 1
-                        if issues.get("reviewed") and issues.get("false_positive"):
+                        if severity.reviewed_level is not None:
                             summary["false_positives"] += 1
 
         return summary
-
-    def summary_to_csv(self, summary: Dict[str, int]) -> str:
+    
+    def analyse_kubescape_results(self, kubescape_results: list[list[str]]) -> Dict[str, int]:
         """
-        Convert the metrics to a CSV format.
+        Count the issues in the kubescape results and return a summary.
         """
-        csv_lines = [
-            "Metric,Value",
-            f"Total Metrics,{summary['total_metrics']}",
-            f"Critical Issues,{summary['critical_issues']}",
-            f"High Issues,{summary['high_issues']}",
-            f"Medium Issues,{summary['medium_issues']}",
-            f"Low Issues,{summary['low_issues']}",
-            f"Info Issues,{summary['info_issues']}",
-            f"False Positives,{summary['false_positives']}"
-        ]
-        return "\n".join(csv_lines)
+        summary = {
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "total_controls": 0
+        }
 
+        header = kubescape_results[0]
+        critical = header.index("critical")
+        high = header.index("high")
+        medium = header.index("medium")
+        low = header.index("low")
+        total_controls_per_manifests = header.index("total_controls")
+        for resource in kubescape_results[1:]:
+            summary["critical"] += int(resource[critical])
+            summary["high"] += int(resource[high])
+            summary["medium"] += int(resource[medium])
+            summary["low"] += int(resource[low])
+            summary["total_controls"] += int(resource[total_controls_per_manifests])
+        return summary
+    
+    def analyze_validation_csv(self, metrics: list[list[str]]) -> Dict[str, Any]:
+        """
+        Count the issues in the CSV metrics and return a summary.
+        """
+        summary = {
+            "total_metrics": 0,
+            "critical_issues": 0,
+            "high_issues": 0,
+            "medium_issues": 0,
+            "low_issues": 0,
+            "info_issues": 0,
+            "false_positives": 0
+        }
+
+        # Assuming the CSV has a header row, find the index of relevant columns
+        header = metrics[0]
+        severity_index = header.index("Severity Level")
+        reviewed_index = header.index("Reviewed Level")
+        for row in metrics[1:]:
+            severity_level = row[severity_index]
+            reviewed_level = row[reviewed_index]
+
+            if reviewed_level == "CRITICAL" or (reviewed_level == "" and severity_level == "CRITICAL"):
+                summary["critical_issues"] += 1
+                summary["total_metrics"] += 1
+            elif reviewed_level == "HIGH" or (reviewed_level == "" and severity_level == "HIGH"):
+                summary["high_issues"] += 1
+                summary["total_metrics"] += 1
+            elif reviewed_level == "MEDIUM" or (reviewed_level == "" and severity_level == "MEDIUM"):
+                summary["medium_issues"] += 1
+                summary["total_metrics"] += 1
+            elif reviewed_level == "LOW" or (reviewed_level == "" and severity_level == "LOW"):
+                summary["low_issues"] += 1
+                summary["total_metrics"] += 1
+            elif reviewed_level == "INFO" or (reviewed_level == "" and severity_level == "INFO"):
+                summary["info_issues"] += 1
+                summary["total_metrics"] += 1
+
+            if reviewed_level in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
+                summary["false_positives"] += 1
+
+        return summary
 
     def save_csv(self, csv_content: str, file_path: str) -> None:
         """
@@ -101,7 +156,7 @@ class MetricsAnalyzer:
             file.write(csv_content)
             self.logger.info(f"Summary saved to {file_path}")
 
-    def calculate_static_score(self, static_analysis: Dict[str, int]) -> float:
+    def calculate_static_score(self, static_analysis: Dict[str, Any]) -> float:
         """
         Calculate normalized static score based on severity-weighted differences 
         relative to cluster size (number of items compared).
@@ -118,7 +173,7 @@ class MetricsAnalyzer:
             "high_issues": 7,
             "medium_issues": 4,
             "low_issues": 2,
-            "info_issues": 1
+            "info_issues": 0
         }
 
         total_items = static_analysis.get("total_metrics", 0)
@@ -143,11 +198,10 @@ class MetricsAnalyzer:
         Normalized to 0-100.
         """
         checks = {
-            "skaffold_config_valid": 25,
-            "manifests_renderable": 25,
-            "deployment_successful": 30,
-            "pods_ready": 10,
-            "services_accessible": 10
+            "manifests_renderable": 30,
+            "deployment_successful": 40,
+            "pods_ready": 15,
+            "services_accessible": 15
         }
         
         # Extract actual results from input
@@ -167,28 +221,22 @@ class MetricsAnalyzer:
         return round((score / max_score) * 100, 2)
 
 
-    def combine_static_dynamic_metrics(self, static_analysis: Dict[str, Any], skaffold_results: Dict[str, Any]) -> Dict[str, Any]:
+    def combine_static_dynamic_metrics(self, static_analysis: list[list[str]], skaffold_results: Dict[str, Any], kubescape_results: Dict[str, int]) -> Dict[str, Any]:
         """Combine static analysis with dynamic Skaffold validation results."""
-        combined = static_analysis.copy()
-        
-        # Add dynamic validation metrics
-        combined["dynamic_validation"] = {
-            "skaffold_config_valid": skaffold_results.get("config_validation", {}).get("valid", False),
-            "manifests_renderable": skaffold_results.get("dry_run_results", {}).get("success", False),
-            "deployment_successful": skaffold_results.get("deployment_results", {}).get("success", False),
-            "services_healthy": skaffold_results.get("service_health_checks", {}).get("pods_ready", False),
-            "overall_deployability": skaffold_results.get("overall_status") == "passed"
-        }
-        
+        combined: Dict[str, Any] = {"static_analysis": {}, "dynamic_analysis": {}, "kubescape_results": kubescape_results}
+
+        # Add static analysis metrics
+        combined["static_analysis"] = self.analyze_validation_csv(static_analysis)
+                
         # Calculate scores
-        static_score = self.calculate_static_score(static_analysis)
-        dynamic_score = self.calculate_dynamic_score(combined["dynamic_validation"])
-        compliance_score = self.calculate_compliance_score(skaffold_results.get("kubescape_results", {}))
+        static_score = self.calculate_static_score(combined["static_analysis"])
+        dynamic_score = self.calculate_dynamic_score(skaffold_results)
 
         combined["static_score"] = static_score
         combined["dynamic_score"] = dynamic_score
-        combined["compliance_score"] = compliance_score
-        combined["overall_score"] = self.calculate_overall_score(static_score, dynamic_score, compliance_score)
+        combined["compliance_score"] = self.calculate_compliance_score(kubescape_results)
+        combined["overall_score"] = self.calculate_overall_score(static_score, dynamic_score, combined["compliance_score"])
+        combined["skaffold_results"] = skaffold_results
 
         return combined
 
@@ -216,38 +264,71 @@ class MetricsAnalyzer:
         
         if max_possible_penalty == 0:
             return 100.0
-        
         score = 100 * (1 - (total_penalty / max_possible_penalty))
+
         return round(max(0, score), 2)
 
     def calculate_overall_score(self, static_score: float, dynamic_score: float, compliance_score: float) -> float:
         """
         Combine scores with predefined weights.
         """
-        weights = {"static": 0.4, "dynamic": 0.4, "compliance": 0.2}
+        weights = {"static": 0.45, "dynamic": 0.55}
         overall = (static_score * weights["static"] +
-                dynamic_score * weights["dynamic"] +
-                compliance_score * weights["compliance"])
+                dynamic_score * weights["dynamic"])
         return round(overall, 2)
     
-    def prepare_results_for_reporting(self, combined_metrics: Dict[str, Any]) -> Dict[str, Any]:
-        """ Prepare a flat dictionary for reporting purposes."""
-        report = {
-            "static_score": combined_metrics.get("static_score", 0),
-            "dynamic_score": combined_metrics.get("dynamic_score", 0),
-            "compliance_score": combined_metrics.get("compliance_score", 0),
-            "overall_score": combined_metrics.get("overall_score", 0),
-            "total_metrics": combined_metrics.get("total_metrics", 0),
-            "critical_issues": combined_metrics.get("critical_issues", 0),
-            "high_issues": combined_metrics.get("high_issues", 0),
-            "medium_issues": combined_metrics.get("medium_issues", 0),
-            "low_issues": combined_metrics.get("low_issues", 0),
-            "info_issues": combined_metrics.get("info_issues", 0),
-            "false_positives": combined_metrics.get("false_positives", 0),
-            "skaffold_config_valid": combined_metrics.get("dynamic_validation", {}).get("skaffold_config_valid", False),
-            "manifests_renderable": combined_metrics.get("dynamic_validation", {}).get("manifests_renderable", False),
-            "deployment_successful": combined_metrics.get("dynamic_validation", {}).get("deployment_successful", False),
-            "services_healthy": combined_metrics.get("dynamic_validation", {}).get("services_healthy", False),
-            "overall_deployability": combined_metrics.get("dynamic_validation", {}).get("overall_deployability", False)
-        }
-        return report
+    def prepare_results_for_reporting(self, combined_metrics: Dict[str, Any]) -> str:
+        """Prepare a CSV-formatted string for reporting purposes."""
+
+        headers = [
+            "Manual Inspection Final Score",
+            "Dynamic (Skaffold) Score",
+            "Weighted Average (Dynamic - Manual)Score",
+            "Kubescape Compliance Score",
+            "Manual Inspection Critical Issues",
+            "Manual Inspection High Issues",
+            "Manual Inspection Medium Issues",
+            "Manual Inspection Low Issues",
+            "Manual Inspection Info Issues",
+            "Manual Inspection False Positives",
+            "Total Analyzed Issues Metrics",
+            "Manifests Renderable",
+            "Deployment Successful",
+            "Services Healthy",
+            "Kubescape Critical Issues",
+            "Kubescape High Issues",
+            "Kubescape Medium Issues",
+            "Kubescape Low Issues",
+            "Kubescape Info Issues",
+            "Total Kubescape Controls"
+        ]
+
+        values = [
+            combined_metrics.get("static_score", 0),
+            combined_metrics.get("dynamic_score", 0),
+            combined_metrics.get("overall_score", 0),
+            combined_metrics.get("compliance_score", 0),
+            combined_metrics.get("static_analysis", {}).get("critical_issues", 0),
+            combined_metrics.get("static_analysis", {}).get("high_issues", 0),
+            combined_metrics.get("static_analysis", {}).get("medium_issues", 0),
+            combined_metrics.get("static_analysis", {}).get("low_issues", 0),
+            combined_metrics.get("static_analysis", {}).get("info_issues", 0),
+            combined_metrics.get("static_analysis", {}).get("false_positives", 0),
+            combined_metrics.get("static_analysis", {}).get("total_metrics", 0),
+            combined_metrics.get("skaffold_results", {}).get("dry_run_results", {}).get("success", False),
+            combined_metrics.get("skaffold_results", {}).get("deployment_results", {}).get("success", False),
+            combined_metrics.get("skaffold_results", {}).get("service_health_checks", {}).get("pods_ready", False),
+            combined_metrics.get("kubescape_results", {}).get("critical", 0),
+            combined_metrics.get("kubescape_results", {}).get("high", 0),
+            combined_metrics.get("kubescape_results", {}).get("medium", 0),
+            combined_metrics.get("kubescape_results", {}).get("low", 0),
+            combined_metrics.get("kubescape_results", {}).get("info", 0),
+            combined_metrics.get("kubescape_results", {}).get("total_controls", 0)
+        ]
+
+        # Convert all values to string
+        values = [str(v) for v in values]
+
+        # Build CSV string with header and values
+        csv_output = ",".join(headers) + "\n" + ",".join(values) + "\n"
+        return csv_output

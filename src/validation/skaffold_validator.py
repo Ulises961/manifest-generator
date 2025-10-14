@@ -1,5 +1,6 @@
 import logging
 import os
+from re import sub
 import subprocess
 import time
 import yaml
@@ -28,6 +29,9 @@ class SkaffoldValidator:
         Returns:
             Dict containing validation results and metrics
         """
+        
+        self.logger.info("Starting skaffold validation")
+
         results = {
             "manifests_path": manifests_path,
             "validation_timestamp": time.time(),
@@ -63,9 +67,9 @@ class SkaffoldValidator:
                     health_results = self._check_service_health(manifests_path)
                     results["service_health_checks"] = health_results
                     
-                    # Clean up deployment
-                    self._cleanup_deployment(manifests_path)
-            
+                # Clean up deployment
+                self._cleanup_deployment(manifests_path, results.get("deployment_results", {}).get("namespace", ""))
+        
             # Determine overall status
             results["overall_status"] = self._determine_overall_status(results)
             
@@ -160,7 +164,7 @@ class SkaffoldValidator:
                 "run",
                 "--namespace", test_namespace,
                 "-f", "skaffold.yaml",
-                
+                "--no-prune=false",                
             ]
             
             result = subprocess.run(
@@ -196,12 +200,18 @@ class SkaffoldValidator:
             "health_check_time": time.time()
         }
     
-    def _cleanup_deployment(self, manifests_path: str):
+    def _cleanup_deployment(self, manifests_path: str, namespace: str):
         """Clean up test deployment."""
         try:
             subprocess.run([
                 self.skaffold_path, "delete"
             ], cwd=manifests_path, capture_output=True, timeout=60)
+
+            self.logger.debug(f"Deleting test namespace {namespace} in {manifests_path}")
+            subprocess.run([
+               "kubectl", "delete", "namespace", namespace, "--wait=false"
+            ], capture_output=True, timeout=120)
+
         except Exception as e:
             self.logger.warning(f"Failed to cleanup deployment: {e}")
     

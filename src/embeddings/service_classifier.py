@@ -31,7 +31,7 @@ class ServiceClassifier:
     def calculate_threshold(self, embeddings_size) -> float:
         # Calculate the threshold for the microservices embeddings
         self._microservices_threshold: float = 0.8 - (
-            (log(embeddings_size) / embeddings_size) * 0.01
+            (log(embeddings_size) / embeddings_size) * 0.1
         )
 
         # Ensure threshold is between 0.1 and 0.9
