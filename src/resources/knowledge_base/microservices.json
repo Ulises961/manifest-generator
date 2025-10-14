@@ -9,8 +9,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "message-broker",
-          "app.kubernetes.io/part-of": "event-streaming"
+          "component": "message-broker",
+          "part-of": "event-streaming"
         },
         "persistence": "persistent"
       },
@@ -23,8 +23,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "message-broker",
-          "app.kubernetes.io/part-of": "messaging"
+          "component": "message-broker",
+          "part-of": "messaging"
         },
         "persistence": "persistent"
       },
@@ -37,8 +37,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "cache",
-          "app.kubernetes.io/part-of": "data-tier"
+          "component": "cache",
+          "part-of": "data-tier"
         },
         "persistence": "optional"
       },
@@ -51,8 +51,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "database",
-          "app.kubernetes.io/part-of": "data-tier"
+          "component": "database",
+          "part-of": "data-tier"
         },
         "persistence": "persistent"
       },
@@ -65,8 +65,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "database",
-          "app.kubernetes.io/part-of": "data-tier"
+          "component": "database",
+          "part-of": "data-tier"
         },
         "persistence": "persistent"
       },
@@ -79,8 +79,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "database",
-          "app.kubernetes.io/part-of": "data-tier"
+          "component": "database",
+          "part-of": "data-tier"
         },
         "persistence": "persistent"
       },
@@ -93,8 +93,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "coordination-service",
-          "app.kubernetes.io/part-of": "messaging"
+          "component": "coordination-service",
+          "part-of": "messaging"
         },
         "persistence": "persistent"
       },
@@ -107,8 +107,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "automation-server",
-          "app.kubernetes.io/part-of": "cicd"
+          "component": "automation-server",
+          "part-of": "cicd"
         },
         "persistence": "ephemeral"
       },
@@ -120,8 +120,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "build-runner",
-          "app.kubernetes.io/part-of": "cicd"
+          "component": "build-runner",
+          "part-of": "cicd"
         },
         "persistence": "ephemeral"
       },
@@ -134,8 +134,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "metrics-server",
-          "app.kubernetes.io/part-of": "monitoring"
+          "component": "metrics-server",
+          "part-of": "monitoring"
         },
         "persistence": "ephemeral"
       },
@@ -148,8 +148,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "dashboard",
-          "app.kubernetes.io/part-of": "monitoring"
+          "component": "dashboard",
+          "part-of": "monitoring"
         },
         "persistence": "ephemeral"
       },
@@ -162,8 +162,8 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/component": "web-server",
-          "app.kubernetes.io/part-of": "frontend",
+          "component": "web-server",
+          "part-of": "frontend",
           "networking.kubernetes.io/ingress-class": "nginx"
         },
         "persistence": "ephemeral"
@@ -177,8 +177,8 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/component": "web-server",
-          "app.kubernetes.io/part-of": "frontend"
+          "component": "web-server",
+          "part-of": "frontend"
         },
         "persistence": "ephemeral"
       },
@@ -191,8 +191,8 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/component": "frontend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "frontend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -205,8 +205,8 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/component": "frontend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "frontend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -219,8 +219,8 @@
         "workload": "Deployment",
         "serviceType": "LoadBalancer",
         "labels": {
-          "app.kubernetes.io/component": "frontend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "frontend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -233,8 +233,8 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "backend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "backend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -247,8 +247,8 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "backend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "backend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -261,8 +261,8 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "backend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "backend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -275,8 +275,8 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "backend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "backend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -289,8 +289,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "workflow-engine",
-          "app.kubernetes.io/part-of": "cicd"
+          "component": "workflow-engine",
+          "part-of": "cicd"
         },
         "persistence": "ephemeral"
       },
@@ -303,8 +303,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "pipeline-controller",
-          "app.kubernetes.io/part-of": "cicd"
+          "component": "pipeline-controller",
+          "part-of": "cicd"
         },
         "persistence": "ephemeral"
       },
@@ -317,8 +317,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "log-aggregator",
-          "app.kubernetes.io/part-of": "monitoring"
+          "component": "log-aggregator",
+          "part-of": "monitoring"
         },
         "persistence": "ephemeral"
       },
@@ -331,8 +331,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "task-worker",
-          "app.kubernetes.io/part-of": "task-queue"
+          "component": "task-worker",
+          "part-of": "task-queue"
         },
         "persistence": "ephemeral"
       },
@@ -345,8 +345,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "task-worker",
-          "app.kubernetes.io/part-of": "task-queue"
+          "component": "task-worker",
+          "part-of": "task-queue"
         },
         "persistence": "ephemeral"
       },
@@ -359,8 +359,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "task-worker",
-          "app.kubernetes.io/part-of": "task-queue"
+          "component": "task-worker",
+          "part-of": "task-queue"
         },
         "persistence": "ephemeral"
       },
@@ -373,8 +373,8 @@
         "workload": "Deployment",
         "serviceType": null,
         "labels": {
-          "app.kubernetes.io/component": "task-worker",
-          "app.kubernetes.io/part-of": "task-queue"
+          "component": "task-worker",
+          "part-of": "task-queue"
         },
         "persistence": "ephemeral"
       },
@@ -387,8 +387,8 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "message-broker",
-          "app.kubernetes.io/part-of": "messaging"
+          "component": "message-broker",
+          "part-of": "messaging"
         },
         "persistence": "ephemeral"
       },
@@ -401,8 +401,8 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "backend",
-          "app.kubernetes.io/part-of": "web-application"
+          "component": "backend",
+          "part-of": "web-application"
         },
         "persistence": "ephemeral"
       },
@@ -415,8 +415,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "search-engine",
-          "app.kubernetes.io/part-of": "elk-stack"
+          "component": "search-engine",
+          "part-of": "elk-stack"
         },
         "persistence": "persistent"
       },
@@ -429,8 +429,8 @@
         "workload": "Deployment",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "message-broker",
-          "app.kubernetes.io/part-of": "iot-platform"
+          "component": "message-broker",
+          "part-of": "iot-platform"
         },
         "persistence": "ephemeral"
       },
@@ -443,8 +443,8 @@
         "workload": "DaemonSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "network-monitor",
-          "app.kubernetes.io/part-of": "monitoring"
+          "component": "network-monitor",
+          "part-of": "monitoring"
         },
         "persistence": "ephemeral"
       },
@@ -457,8 +457,8 @@
         "workload": "Deployment", 
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "service-discovery",
-          "app.kubernetes.io/part-of": "service-mesh"
+          "component": "service-discovery",
+          "part-of": "service-mesh"
         },
         "persistence": "ephemeral"
       },
@@ -471,8 +471,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "storage-cluster",
-          "app.kubernetes.io/part-of": "ceph-cluster"
+          "component": "storage-cluster",
+          "part-of": "ceph-cluster"
         },
         "persistence": "persistent"
       },
@@ -485,8 +485,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "cache",
-          "app.kubernetes.io/part-of": "data-tier"
+          "component": "cache",
+          "part-of": "data-tier"
         },
         "persistence": "ephemeral"  
       },
@@ -499,8 +499,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "database",
-          "app.kubernetes.io/part-of": "data-tier"
+          "component": "database",
+          "part-of": "data-tier"
         },
         "persistence": "persistent"
       },
@@ -513,8 +513,8 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "database",
-          "app.kubernetes.io/part-of": "data-tier"
+          "component": "database",
+          "part-of": "data-tier"
         },
         "persistence": "persistent"
       },
@@ -527,10 +527,24 @@
         "workload": "StatefulSet",
         "serviceType": "ClusterIP",
         "labels": {
-          "app.kubernetes.io/component": "object-storage",
-          "app.kubernetes.io/part-of": "storage-tier"
+          "component": "object-storage",
+          "part-of": "storage-tier"
         },
         "persistence": "persistent"
+      },
+      {
+        "name": "Web",
+        "keywords": ["web", "frontend"],
+        "ports": [80, 443, 3000, 4200, 8080, 5000, 8000],
+        "servicePorts": [80, 443],
+        "protocol": "TCP",
+        "workload": "Deployment",
+        "serviceType": "LoadBalancer",
+        "labels": {
+          "component": "web-server",
+          "part-of": "frontend"
+        },
+        "persistence": "ephemeral"
       }
     ],
     "metadata": {

@@ -1,7 +1,8 @@
+from calendar import c
 from enum import Enum
 import logging
 import traceback
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast, override
 import yaml
 
 from overrides.overrides_validator import OverridesValidator
@@ -23,6 +24,10 @@ class Overrider:
         self.override_config = self.get_config(config_path)
 
     def get_config(self, config_path: str) -> Optional[Dict[str, Any]]:
+        """Load and validate the configuration overrides from a YAML file."""
+        if config_path == "":
+            self.logger.info("No overrides file provided. Skipping overrides.")
+            return None
         try:
             with open(config_path, "r") as file:
                 # Load the configuration file
@@ -48,23 +53,24 @@ class Overrider:
 
     def get_microservice_overrides(self, microservice_name: str) -> Dict[str,Any]:
         """Get the overrides applied to a specific template."""
+        overrides = {}
         if not self.override_config:
             self.logger.warning(
                 "No override configuration loaded. Returning empty overrides."
             )
-            return {}
+            return overrides
         
-        if (config := self.override_config["services"].get(microservice_name, None)) is None:
-            self.logger.warning(
-                f"No overrides found for service {microservice_name}. Returning empty overrides."
-            )
-            return {}
-
+        for key, value in self.override_config.items():
+            if key not in ["version","project","extraManifests"]:
+                for microservice, config in value.items():
+                    if microservice == microservice_name:
+                        overrides[key] = config
+        
         self.logger.info(
-                f"Returning overrides for service {microservice_name}: {config}"
+                f"Returning overrides for service {microservice_name}: {overrides}"
             )
 
-        return cast(Dict[str, Any], config)
-    
-    
+        return cast(Dict[str, Any], overrides)
+
+
  

@@ -4,6 +4,44 @@ default_rules:
   value_difference: LOW
   missing_attribute: MEDIUM
 severity_rules:
+  deployment:
+    missing:
+      level: CRITICAL
+      description: Missing deployment prevents application scaling
+    extra:
+      level: CRITICAL
+      description: Extra deployment may lead to unintended cluster behavior
+  statefulset:
+    missing:
+      level: CRITICAL
+      description: Missing statefulset prevents stateful application deployment
+    extra:
+      level: CRITICAL
+      description: Extra statefulset may lead to unintended cluster behavior
+  service:
+    missing:
+      level: CRITICAL
+      description: Missing service prevents network access to pods
+    extra:
+      level: CRITICAL
+      description: Extra services may lead to port conflicts  
+  serviceAccount:
+    missing:
+      level: HIGH
+      description: Missing service account affects access to Kubernetes API
+    value_difference:
+      level: HIGH
+      description: Changed service account may change permissions
+  name:
+    missing:
+      level: CRITICAL
+      description: Missing name prevents resource identification
+    value_difference:
+      level: HIGH
+      description: Different names prevent resource identification
+    extra:
+      level: LOW
+      description: Extra names are generally harmless
   ports:
     missing:
       level: CRITICAL
@@ -14,13 +52,13 @@ severity_rules:
         description: Missing port name affects service discovery but port still works
       protocol:
         level: LOW
-        description: Missing protocol defaults to TCP, usually acceptable
+        description: Missing protocol defaults to TCP. Usually acceptable
       targetPort:
         level: HIGH
         description: Missing targetPort may cause routing issues
       containerPort:
-        level: CRITICAL
-        description: Missing containerPort prevents container from receiving traffic
+        level: LOW
+        description: containerPort is optional; traffic can still reach the process
     value_difference:
       level: MEDIUM
       description: Port value differences may affect routing
@@ -31,6 +69,13 @@ severity_rules:
     missing:
       level: CRITICAL
       description: Missing environment variables can break application logic
+    missing_attribute:
+      name: 
+        level: CRITICAL
+        description: Missing environment variables can break application logic
+      value:
+        level: CRITICAL
+        description: Missing enviroment variables can break application logic
     value_difference:
       level: HIGH
       description: Different env values can change application behavior
@@ -87,7 +132,7 @@ severity_rules:
         description: Missing name prevents resource identification
       namespace:
         level: MEDIUM
-        description: Missing namespace defaults to 'default', may cause conflicts
+        description: Missing namespace defaults to 'default'. May cause conflicts
     value_difference:
       level: MEDIUM
       description: Different metadata values affect identification
@@ -113,7 +158,7 @@ severity_rules:
         level: MEDIUM
         description: Missing resource limits may cause resource contention
       requests:
-        level: LOW
+        level: MEDIUM
         description: Missing requests affect scheduling efficiency
       memory:
         level: MEDIUM
@@ -161,6 +206,15 @@ severity_rules:
       allowPrivilegeEscalation:
         level: HIGH
         description: Missing privilege escalation control
+      readOnlyRootFilesystem:
+        level: MEDIUM
+        description: Missing readOnlyRootFilesystem may lead to data corruption
+      seccompProfile:
+        level: HIGH
+        description: Missing seccompProfile increases attack surface
+      capabilities:
+        level: HIGH
+        description: Missing capabilities may lead to privilege escalation
     value_difference:
       level: MEDIUM
       description: Different security settings affect security
@@ -170,121 +224,179 @@ severity_rules:
   readinessProbe:
     missing:
       level: HIGH
-      description: Missing readiness probe may delay traffic routing.
+      description: Missing readiness probe may delay traffic routing
+    missing_attribute:
+      initialDelaySeconds:
+        level: MEDIUM
+        description: Missing initial delay may cause premature failure detection
+      periodSeconds:
+        level: LOW
+        description: Missing period defaults to 10 seconds. Usually acceptable
+      timeoutSeconds:
+        level: LOW
+        description: Missing timeout defaults to 1 second. Usually acceptable
+      successThreshold:
+        level: LOW
+        description: Missing success threshold defaults to 1. Usually acceptable
+      failureThreshold:
+        level: MEDIUM
+        description: Missing failure threshold may delay failure detection
     value_difference:
       level: MEDIUM
-      description: Different settings affect startup detection.
+      description: Different settings affect startup detection
     extra:
       level: LOW
       description: Extra readiness settings are harmless
   livenessProbe:
     missing:
       level: HIGH
-      description: Missing liveness probe reduces fault detection.
+      description: Missing liveness probe reduces fault detection
+    missing_attribute:
+      initialDelaySeconds:
+        level: MEDIUM
+        description: Missing initial delay may cause premature restarts
+      periodSeconds:
+        level: LOW
+        description: Missing period defaults to 10 seconds. Usually acceptable
+      timeoutSeconds:
+        level: LOW
+        description: Missing timeout defaults to 1 second. Usually acceptable
+      successThreshold:
+        level: LOW
+        description: Missing success threshold defaults to 1. Usually acceptable
+      failureThreshold:
+        level: MEDIUM
+        description: Missing failure threshold may delay restart detection
     value_difference:
       level: LOW
-      description: Changes may affect pod restart frequency.
+      description: Changes may affect pod restart frequency
     extra:
       level: LOW
       description: Extra liveness settings are harmless
   commandArgs:
     missing:
       level: HIGH
-      description: Missing command args may prevent container startup.
+      description: Missing command args may prevent container startup
     value_difference:
       level: MEDIUM
-      description: Args may change runtime behavior.
+      description: Args may change runtime behavior
     extra:
       level: LOW
-      description: Extra args are usually benign.
+      description: Extra args are usually benign
   workingDir:
     missing:
       level: HIGH
-      description: Missing workingDir may affect file execution context.
+      description: Missing workingDir may affect file execution context
     value_difference:
       level: MEDIUM
-      description: Changed working directory affects behavior.
-  serviceAccount:
-    missing:
-      level: HIGH
-      description: Missing service account affects access to Kubernetes API.
-    value_difference:
-      level: HIGH
-      description: Changed service account may change permissions.
+      description: Changed working directory affects behavior
+    extra:
+      level: LOW
+      description: Extra workingDir settings are ignored
   affinity:
     missing:
       level: LOW
-      description: Missing affinity rules may reduce placement control.
+      description: Missing affinity rules may reduce placement control
     value_difference:
       level: LOW
-      description: Minor placement behavior changes.
+      description: Minor placement behavior changes
     extra:
       level: LOW
-      description: Generally harmless.
+      description: Generally harmless
   annotations:
     missing:
       level: LOW
-      description: Usually metadata; rarely critical.
+      description: Usually metadata. Rarely critical
     value_difference:
       level: LOW
-      description: Has low impact.
+      description: Has low impact
     extra:
       level: LOW
-      description: Ignored unless interpreted by controllers.
+      description: Ignored unless interpreted by controllers
   volumes:
     missing:
       level: HIGH
-      description: Missing volumes break mount targets.
+      description: Missing volumes break mount targets
     value_difference:
       level: HIGH
-      description: Volume source mismatch affects access.
+      description: Volume source mismatch affects access
     extra:
       level: LOW
-      description: Extra volumes ignored unless mounted.
+      description: Extra volumes ignored unless mounted
   initContainers:
     missing:
       level: LOW
-      description: Init containers are usually optional.
+      description: Init containers are usually optional
     extra:
       level: LOW
-      description: Extra init containers are rarely harmful.
+      description: Extra init containers are rarely harmful
     value_difference:
       level: MEDIUM
-      description: Changes may affect bootstrapping.
+      description: Changes may affect bootstrapping
   nodeSelector:
     missing:
       level: LOW
-      description: May schedule pod to unintended nodes.
+      description: May schedule pod to unintended nodes
     value_difference:
       level: MEDIUM
-      description: May affect node affinity.
+      description: May affect node affinity
   tolerations:
     missing:
       level: LOW
-      description: May affect pod scheduling.
+      description: May affect pod scheduling
     extra:
       level: LOW
-      description: Harmless unless conflicting.
-  restartPolicy:
-    value_difference:
-      level: MEDIUM
-      description: Restart policy changes affect pod lifecycle.
+      description: Harmless unless conflicting
   priorityClassName:
     value_difference:
       level: LOW
-      description: May affect scheduling preference.
+      description: May affect scheduling preference
   hostNetwork:
     value_difference:
       level: HIGH
-      description: Can expose pod directly to host network.
+      description: Can expose pod directly to host network
   dnsPolicy:
     value_difference:
       level: LOW
-      description: May affect DNS resolution modes.
+      description: May affect DNS resolution modes
   lifecycle:
     missing:
       level: LOW
-      description: Lifecycle hooks are optional.
+      description: Lifecycle hooks are optional
     value_difference:
       level: LOW
-      description: May affect container shutdown behavior.
+      description: May affect container shutdown behavior
+  terminationGracePeriodSeconds:
+    missing:
+      level: LOW
+      description: Missing value defaults to 30 seconds. Usually acceptable
+    value_difference:
+      level: LOW
+      description: May affect pod termination timing
+  serviceAccountName:
+    missing:
+      level: HIGH
+      description:  May change projected token and RBAC access
+    value_difference:
+      level: HIGH
+      description: Changed service account may change permissions
+    extra:
+      level: LOW
+      description: Extra service account settings are ignored
+  restartPolicy:
+    missing:
+      level: LOW
+      description: Missing restart policy defaults to Always. Usually acceptable
+    value_difference:
+      level: CRITICAL
+      description: Different restart policies affect pod lifecycle management
+  selector:
+    missing:
+      level: CRITICAL
+      description: Missing selector breaks service to pod mapping
+    value_difference:
+      level: HIGH
+      description: Different selector values can break service to pod mapping
+    extra:
+      level: LOW
+      description: Extra selector fields are generally harmless
