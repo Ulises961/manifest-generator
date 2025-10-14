@@ -45,7 +45,7 @@ def test_prepare_microservice_with_labels(tree):
 
 def test_prepare_microservice_with_ports(tree):
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
-    port_node = Node(name="port", type=NodeType.PORT, value="8080")
+    port_node = Node(name="port", type=NodeType.CONTAINER_PORT, value="8080")
     node.add_child(port_node)
     
     result = tree.prepare_microservice(node)
@@ -155,8 +155,8 @@ def test_prepare_microservice_with_multiple_ports(tree):
     )
 
     node = Node(name="test-service", type=NodeType.MICROSERVICE)
-    port_node1 = Node(name="port1", type=NodeType.PORT, value="8080")
-    port_node2 = Node(name="port2", type=NodeType.PORT, value="9090")
+    port_node1 = Node(name="port1", type=NodeType.CONTAINER_PORT, value="8080")
+    port_node2 = Node(name="port2", type=NodeType.CONTAINER_PORT, value="9090")
     node.add_child(port_node1)
     node.add_child(port_node2)
     

@@ -61,7 +61,7 @@ def test_generate_expose_node(command_mapper):
     expose = {"instruction": "EXPOSE", "value": "80"}
     nodes = command_mapper._generate_expose_nodes(expose, None)
     node = nodes[0]
-    assert node.type == NodeType.PORT
+    assert node.type == NodeType.CONTAINER_PORT
     assert node.value == "80"
 
 @patch("embeddings.label_classifier.LabelClassifier.classify_label")

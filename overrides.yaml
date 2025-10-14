@@ -1,206 +1,51 @@
 version: "v1.0.0"
 project:
-  name: "microservices-demo"
+  name: "voting-app"
   namespace: "default"
 
-services:
-  # Service specific configuration
-  frontend:
-    replicas: 3
-    environment:
-      - name: PORT
-        value: "8080"
-      - name: PRODUCT_CATALOG_SERVICE_ADDR
-        value: "productcatalogservice:3550"
-      - name: CURRENCY_SERVICE_ADDR
-        value: "currencyservice:7000"
-      - name: CART_SERVICE_ADDR
-        value: "cartservice:7070"
-      - name: RECOMMENDATION_SERVICE_ADDR
-        value: "recommendationservice:8080"
-      - name: SHIPPING_SERVICE_ADDR
-        value: "shippingservice:50051"
-      - name: CHECKOUT_SERVICE_ADDR
-        value: "checkoutservice:5050"
-      - name: AD_SERVICE_ADDR
-        value: "adservice:9555"
-      - name: SHOPPING_ASSISTANT_SERVICE_ADDR
-        value: "shoppingassistantservice:80"
-      - name: ENABLE_PROFILER
-        value: "0"
-  adservice:
-    replicas: 2
-    environment:
-      - name: PORT
-        value: "9555"
-  cartservice:
-    environment:
-      - name: REDIS_ADDR
-        value: "redis-cart:6379"
-  checkoutservice:
-    environment:
-      - name: PORT
-        value: "5050"
-      - name: PRODUCT_CATALOG_SERVICE_ADDR
-        value: "productcatalogservice:3550"
-      - name: SHIPPING_SERVICE_ADDR
-        value: "shippingservice:50051"
-      - name: PAYMENT_SERVICE_ADDR
-        value: "paymentservice:50051"
-      - name: EMAIL_SERVICE_ADDR
-        value: "emailservice:5000"
-      - name: CURRENCY_SERVICE_ADDR
-        value: "currencyservice:7000"
-      - name: CART_SERVICE_ADDR
-        value: "cartservice:7070"
-      - name: ENABLE_PROFILER
-        value: "0"
-  currencyservice:
-    environment:
-      - name: PORT
-        value: "7000"
-      - name: DISABLE_PROFILER
-        value: "1"
-  emailservice:
-    environment:
-      - name: PORT
-        value: "8080"
-      - name: DISABLE_PROFILER
-        value: "1"
-  loadgenerator:
-    initContainers:
-        - command:
-          - /bin/sh
-          - -exc
-          - |
-            MAX_RETRIES=12
-            RETRY_INTERVAL=10
-            for i in $(seq 1 $MAX_RETRIES); do
-              echo "Attempt $i: Pinging frontend: ${FRONTEND_ADDR}..."
-              STATUSCODE=$(wget --server-response http://${FRONTEND_ADDR} 2>&1 | awk '/^  HTTP/{print $2}')
-              if [ $STATUSCODE -eq 200 ]; then
-                  echo "Frontend is reachable."
-                  exit 0
-              fi
-              echo "Error: Could not reach frontend - Status code: ${STATUSCODE}"
-              sleep $RETRY_INTERVAL
-            done
-            echo "Failed to reach frontend after $MAX_RETRIES attempts."
-            exit 1
-          name: frontend-check
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: true
-          env:
-            - name: FRONTEND_ADDR
-              value: frontend:80
-          image: busybox:latest
-    environment:
-      - name: FRONTEND_ADDR
-        value: "frontend:80"
-      - name: USERS
-        value: "10"
-      - name: RATE
-        value: "1"
-  paymentservice:
-    environment:
-      - name: PORT
-        value: "50051"
-      - name: DISABLE_PROFILER
-        value: "1"
-  productcatalogservice:
-    environment:
-    - name: PORT
-      value: "3550"
-    - name: DISABLE_PROFILER
-      value: "1"
-  recommendationservice:
-    environment:
-      - name: PORT
-        value: "8080"
-      - name: PRODUCT_CATALOG_SERVICE_ADDR
-        value: "productcatalogservice:3550"
-      - name: DISABLE_PROFILER
-        value: "1"
-  shippingservice:
-    environment:
-      - name: PORT
-        value: "50051"
-      - name: DISABLE_PROFILER
-        value: "1"
-
 customManifests:
-  redis-cart:
+  db:
     apiVersion: apps/v1
     kind: Deployment
     metadata:
-      name: redis-cart
+      name: db
       labels:
-        app: redis-cart
+        app: db
     spec:
       selector:
         matchLabels:
-          app: redis-cart
+          app: db
       template:
         metadata:
           labels:
-            app: redis-cart
+            app: db
         spec:
-          securityContext:
-            fsGroup: 1000
-            runAsGroup: 1000
-            runAsNonRoot: true
-            runAsUser: 1000
           containers:
-          - name: redis
-            securityContext:
-              allowPrivilegeEscalation: false
-              capabilities:
-                drop:
-                  - ALL
-              privileged: false
-              readOnlyRootFilesystem: true
-            image: redis:alpine
-            ports:
-            - containerPort: 6379
-            readinessProbe:
-              periodSeconds: 5
-              tcpSocket:
-                port: 6379
-            livenessProbe:
-              periodSeconds: 5
-              tcpSocket:
-                port: 6379
-            volumeMounts:
-            - mountPath: /data
-              name: redis-data
-            resources:
-              limits:
-                memory: 256Mi
-                cpu: 125m
-              requests:
-                cpu: 70m
-                memory: 200Mi
+            - name: db
+              image: postgres:10.0-alpine
+              ports:
+                - containerPort: 5432
+                  name: db
+              volumeMounts:
+                - name: db-schema
+                  mountPath: /docker-entrypoint-initdb.d
           volumes:
-          - name: redis-data
-            emptyDir: {}
-
-  redis-cart-service:
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: redis-cart
-      labels:
-        app: redis-cart
-    spec:
-      type: ClusterIP
-      selector:
-        app: redis-cart
-      ports:
-      - name: tcp-redis
-        port: 6379
-        targetPort: 6379
+            - name: db-schema
+              configMap:
+                name: db-schema
+  
+  db-service:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: db
+        labels:
+          app: db
+      spec:
+        ports:
+          - port: 5432
+            targetPort: 5432
+            name: db
+        selector:
+          app: db
+        clusterIP: None

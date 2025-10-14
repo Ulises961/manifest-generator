@@ -1,18 +1,15 @@
-from calendar import c
-from datetime import date
 import sys
 import click
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
-from pipeline import run
-from utils.file_utils import load_environment
+from typing import Any, Dict, List, Optional
+from pipeline import review_repository, run
+from utils.file_utils import load_csv_file, load_environment, load_json_file
 import json
 import gnureadline as readline
 import glob
 import logging
 
-from validation import metrics_analyzer
 from validation.metrics_analyzer import MetricsAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -83,7 +80,6 @@ def cli():
     '"dry_run": false, '
     '"verbose": false, '
     '"overrides": "/path/to/overrides.yaml"'
-    '"refinement_iterations": 3'
     "}",
 )
 @click.option(
@@ -111,7 +107,6 @@ def cli():
 )
 @click.option("--llm-token", "-t", help="LLM API token")
 @click.option("--embeddings-model", help="Sentence transformer model name")
-@click.option("--refinement-iterations", type=int)
 @click.option(
     "--overrides-file",
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
@@ -129,6 +124,10 @@ def cli():
     is_flag=True,
     default=False,
     help="Enable verbose logging for detailed output",
+)
+@click.option(
+    "--selected-repositories",
+    help="Comma-separated list of services to review after manual corrections",
 )
 @click.option(
     "--cache-prompt",
@@ -152,9 +151,9 @@ def generate(
     llm_token: Optional[str],
     embeddings_model: Optional[str],
     overrides_file: Optional[str],
-    refinement_iterations: Optional[int],
     dry_run: bool = False,
     verbose=False,
+    selected_repositories: Optional[List[str]] = None,
     cache_prompt: Optional[bool] = None,
     force: bool = False,
 ):
@@ -171,14 +170,11 @@ def generate(
         python main.py generate --interactive
 
         # Dry run with custom iterations
-        python main.py generate -r ./repo --dry-run --refinement-iterations 5
+        python main.py generate -r ./repo --dry-run 
 
         # Force overwrite existing output
         python main.py generate -r ./repo -o ./existing-output --force
     """
-
-    # Load environment variables
-    load_environment()
 
     # Handle bash-like expansions
     if repository_path:
@@ -235,11 +231,10 @@ def generate(
     elif interactive or not all(
         [
             repository_path,
-            (refinement_iterations, llm_model) or dry_run,
+            (llm_model) or dry_run,
             output_path,
         ]
     ):
-        click.echo(f"{refinement_iterations},{cache_prompt}" )
         config = interactive_setup(
             repository_path,
             output_path,
@@ -247,9 +242,9 @@ def generate(
             llm_token,
             embeddings_model,
             overrides_file,
-            refinement_iterations,
             dry_run,
             verbose,
+            selected_repositories,
             cache_prompt,
             force=force,
         )
@@ -261,9 +256,9 @@ def generate(
             "llm_token": llm_token,
             "embeddings_model": embeddings_model,
             "overrides_file": overrides_file,
-            "refinement_iterations": refinement_iterations,
             "dry_run": dry_run,
             "verbose": verbose,
+            "selected_repositories": selected_repositories,
             "cache_prompt": cache_prompt,
             "force": force,
         }
@@ -281,9 +276,9 @@ def interactive_setup(
     llm_token=None,
     embeddings_model=None,
     overrides_file=None,
-    refinement_iterations=None,
     dry_run=False,
     verbose=False,
+    selected_repositories: Optional[List[str]] = None,
     cache_prompt: Optional[bool]= None,
     force: bool = False,
 ):
@@ -347,7 +342,7 @@ def interactive_setup(
             output_input = output_path or click.prompt(
                 "📂 Path to save generated manifests",
                 type=str,
-                default="./target",
+                default="./output",
             )
         
         expanded_output = os.path.expanduser(os.path.expandvars(output_input.strip()))
@@ -368,7 +363,6 @@ def interactive_setup(
     config["embeddings_model"] = embeddings_model or click.prompt(
         "📊 Sentence transformer model name", default="all-MiniLM-L6-v2"
     )
-
 
     # Overrides file (optional) - use enhanced input for file paths
     if not overrides_file:
@@ -420,21 +414,10 @@ def interactive_setup(
     if not config.get("dry_run", False):
         # LLM Configuration
         click.echo(click.style("\n🤖 LLM Configuration - Anthropic only", fg="green", bold=True))
-        config["llm_model"] = llm_model or click.prompt("🎯 LLM model name")
+        config["llm_model"] = llm_model or click.prompt("🎯 LLM model name", default="claude-3-5-haiku-20241022")
         config["llm_token"] = llm_token or click.prompt(
             "🔑 LLM API token (optional)", default="", show_default=False
         )
-
-        # Refinement iterations
-        if not refinement_iterations:
-            config["refinement_iterations"] = click.prompt(
-                "\n🔄 Number of refinement iterations",
-                type=int,
-                default=3,
-                show_default=True,
-            )
-        else:
-            config["refinement_iterations"] = refinement_iterations
         
         if not cache_prompt:
             config["cache_prompt"] = click.confirm(
@@ -474,10 +457,9 @@ def interactive_setup(
         click.echo(f"🤖 LLM Model: {config['llm_model']}")
         click.echo(f"🔑 LLM Token: {config['llm_token']}")
         click.echo(f"📊 Embeddings Model: {config['embeddings_model']}")
-        click.echo(f"🔄 Refinement Iterations: {config['refinement_iterations']}")
         click.echo(f"💾 Caching Enabled: {config['cache_prompt']}")
     click.echo(f"🔍 Verbose Mode: {config['verbose']}")
-    
+    click.echo(f"🔄 Selected Repositories: {config['selected_repositories']}")
     if not click.confirm("\nProceed with this configuration?", default=True):
         click.echo("Setup cancelled.")
         raise click.Abort()
@@ -494,7 +476,7 @@ def interactive_setup(
 
 def set_environment_variables(config: Dict[str, str]):
     """Set environment variables based on configuration with path expansion"""
-
+    load_environment()
     ### Required variables ###
     os.environ["TARGET_REPOSITORY"] = os.path.expanduser(os.path.expandvars(config["repository_path"]))
     os.environ["OUTPUT_DIR"] = f"{os.path.expanduser(os.path.expandvars(config.get("output_path", "output")))}"
@@ -544,15 +526,15 @@ def set_environment_variables(config: Dict[str, str]):
     ### Optional variables ###
     os.environ["LLM_MODEL"] = config.get("llm_model", "claude-3-5-haiku-latest")
     os.environ["LLM_API_KEY"] = config.get("llm_token", "")
-    os.environ["OVERRIDES_FILE_PATH"] = config.get("overrides_file", "")
-    os.environ["REFINEMENT_ITERATIONS"] = str(config.get("refinement_iterations", 3))
+    os.environ["OVERRIDES_PATH"] = config.get("overrides_file", "")
     os.environ["DRY_RUN"] = str(config.get("dry_run", "false"))
 
     os.environ["VERBOSE"] = str(config.get("verbose", "false"))
     os.environ["ENABLE_CACHING"] = str(config.get("cache_prompt", "true")).lower()
-    os.environ["REVIEWED_MANIFESTS"] = config.get("reviewed_manifests_path", "final_manifests")
     os.environ["RESULTS"] = config.get("analysis_results_path", "results")
     os.environ["SEVERITY_CONFIG"] = config.get("severity_config", "resources/validation/severity_config.yaml")
+    os.environ["SELECTED_REPOSITORIES"] = str(config.get("selected_repositories", []))
+
     logger.debug("Environment values: {os.environ}")
 
 @cli.command()
@@ -570,25 +552,110 @@ def set_environment_variables(config: Dict[str, str]):
     required=True,
     help="Path to the JSON file containing Skaffold results",
 )
-def analyze_metrics(metrics_file: Dict[str, Any], skaffold_file: Dict[str, Any]) -> None:
+@click.option(
+    "--kubescape-file",
+    "-k",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    required=False,
+    help="Path to the CSV file containing Kubescape results (optional)",
+)
+@click.option(
+    "--after-manual-intervention",
+    "-a",
+    is_flag=True,
+    default=False,
+    help="Path to the JSON file containing results after manual intervention (optional)",
+)
+def analyze_metrics(metrics_file: str, skaffold_file: str, kubescape_file: str, after_manual_intervention: bool) -> None:
     """Analyze the metrics and return a summary.
     Args:
-        metrics (Dict[str, Any]): The metrics to analyze.
-        skaffold (Dict[str, Any]): The Skaffold results to consider.
+        metrics (csv): The metrics to analyze.
+        skaffold (json): The Skaffold results to consider.
     Returns:
         None
     Examples:
-        python main.py analyze-metrics -m ./metrics.json -s ./skaffold.json
+        python main.py analyze-metrics -m ./metrics.csv -s ./skaffold.json -k ./kubescape.json
     """
-    validation_results_path =  os.path.join(os.getenv("OUTPUT_DIR", "output"), os.getenv("RESULTS", "results"))
+    output_dir = "output-before-intervention" if not after_manual_intervention else "output-after-intervention"
+    validation_results_path =  os.path.join(output_dir, os.getenv("RESULTS", "results"))
     os.makedirs(validation_results_path, exist_ok= True)
     metrics_analyzer = MetricsAnalyzer()
     # Combine static and dynamic metrics
-    return
-    combined_metrics = metrics_analyzer.combine_static_dynamic_metrics(metrics_file, skaffold_file)
-    results = metrics_analyzer.prepare_results_for_reporting(combined_metrics)
-    metrics_analyzer.save_summary(results, os.path.join(validation_results_path, "combined_validation_summary.csv"))
+    if metrics_file.endswith(".csv"):
+        metrics = load_csv_file(metrics_file)
+    else:
+        raise ValueError("Unsupported metrics file format. Use .csv")
 
+    if skaffold_file.endswith(".json"):
+        skaffold_results: Dict[str, Any] = load_json_file(skaffold_file)
+    else:
+        raise ValueError("Unsupported skaffold file format. Use .json")
+    
+    if kubescape_file.endswith(".csv"):
+        kubescape_results_list = load_csv_file(kubescape_file)
+        kubescape_results = metrics_analyzer.analyse_kubescape_results(kubescape_results_list)
+    else:
+        raise ValueError("Unsupported kubescape file format. Use .csv")
+
+    combined_metrics = metrics_analyzer.combine_static_dynamic_metrics(metrics, skaffold_results, kubescape_results)
+    results = metrics_analyzer.prepare_results_for_reporting(combined_metrics)
+    metrics_analyzer.save_csv(results, os.path.join(validation_results_path, "combined_validation_summary.csv"))
+
+@cli.command()
+@click.option("review_repository_path", "--repository-path", "-r", type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True, help="Path to the repository containing the manifests to review")
+@click.option("original_repository_path", "--original-repository-path", "-o", type=click.Path(exists=True, file_okay=False, dir_okay=True), required=True, help="Path to the original repository containing the manifests before manual corrections (optional)")
+@click.option("verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Enable verbose logging for detailed output",
+)
+@click.option("dry_run",
+    "-d",
+    is_flag=True,
+    default=False,
+    help="Run in dry-run mode, generating only heuristics based manifests without LLM inference",
+)
+@click.option("config_file",
+    "-c",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    help="Path to a config file (optional) "
+    "Shape: {"
+    '"repository_path": "/path/to/repo", '
+    '"output_path": "/path/to/produced/manifests",'
+    '"dry_run": false,'
+    '"verbose": false, '
+    '"selected_services": "service1,service2"'
+    "}",
+)
+
+def review_manifests(review_repository_path: str, original_repository_path: str) -> None:
+    """Review the generated manifests using the LLM for best practices, security, and correctness.
+    Args:
+        review_repository_path (str): Path to the repository containing the manifests to review.
+    Returns:
+        None
+    Examples:
+        python main.py review-manifests -r ./manifests-repo -o ./original-manifests-repo
+    """
+
+    # Handle bash-like expansions
+    review_repository_path = os.path.expanduser(review_repository_path)
+    review_repository_path = os.path.expandvars(review_repository_path)
+
+    if not os.path.exists(review_repository_path) or not os.path.isdir(review_repository_path):
+        click.echo(click.style(f"❌ Directory '{review_repository_path}' does not exist.", fg='red'))
+        sys.exit(1)
+
+
+    if not os.path.exists(original_repository_path) or not os.path.isdir(original_repository_path):
+        click.echo(click.style(f"❌ Directory '{original_repository_path}' does not exist.", fg='red'))
+        sys.exit(1)
+    
+    click.echo("Starting review of manifests...")
+
+    review_repository(original_repository_path, review_repository_path)
+    
 
 if __name__ == "__main__":
     cli()
