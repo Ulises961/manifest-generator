@@ -131,8 +131,7 @@ class ComposeMapper:
                 name="IMAGE", type=NodeType.IMAGE, value=image, parent=microservice_node
             )
             microservice_node.add_child(image_node)
-            microservice_node.metadata["dockerfile"] = None  # No Dockerfile if image is used
-            microservice_node.metadata["dockerfile_path"] = None  # No Dockerfile if image is used
+            microservice_node.metadata["use_image"] = True  # No Dockerfile if image is used
 
         # Extract dependencies
         depends_on = service_config.get("depends_on", [])
@@ -321,7 +320,7 @@ class ComposeMapper:
         )
         
         # Check if it's a file
-        if os.path.isfile(external_dir):
+        if os.path.isfile(external_dir) or external_dir.endswith((".txt", ".log", ".conf", ".cfg", ".ini", ".json", ".xml", ".yml", ".yaml", ".toml")):
             volume_mount.is_file = True
             volume_mount.is_directory = False
         else:

@@ -25,11 +25,19 @@ class SkaffoldConfigBuilder:
         # Add artifacts for each service
         for service in microservices:
             service_name = service.get("name", "").lower()
-            if service_name == "app" or "metadata" not in service or "dockerfile_path" not in service["metadata"] or not service["metadata"]["dockerfile_path"]:
+            metadata = service.get("metadata", None)
+            dockerfile = metadata.get("dockerfile", None) if metadata else None
+            use_image = metadata.get("use_image", False) if metadata else False 
+            if service_name == "app" or not metadata or not dockerfile or use_image:
                 continue
-            context_path = f"{service['metadata']['dockerfile_path']}"
+            context_path = f"{metadata['dockerfile_path']}"
 
             artifact = {"image": service_name, "context": context_path}
+            
+            # Add target if specified
+            # target = metadata.get("target", None)
+            # if target:
+            #     artifact["docker"] = {"target": target}
 
             skaffold_config["build"]["artifacts"].append(artifact)
 

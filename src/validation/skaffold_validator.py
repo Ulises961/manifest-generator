@@ -14,7 +14,7 @@ class SkaffoldValidator:
     Validates Kubernetes manifests by attempting to deploy them using Skaffold.
     """
     
-    def __init__(self, skaffold_path: str = "skaffold", timeout: int = 300):
+    def __init__(self, skaffold_path: str = "skaffold", timeout: int = 240):
         self.skaffold_path = skaffold_path
         self.timeout = timeout
         self.logger = logging.getLogger(__name__)

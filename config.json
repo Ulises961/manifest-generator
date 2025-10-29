@@ -3,9 +3,10 @@
     "llm_token": "",
     "embeddings_model": "sentence-transformers/all-MiniLM-L6-v2",
     "repository_path": "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/Repositories",
-    "overrides_file": "",
+    "overrides_file": "overrides.yaml",
     "default_config": true,
-    "output_path": "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/Results-2/",
+    "output_path": "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/Results/",
+    "analysis_repository": "/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/Analysis",
     "verbose": true,
     "services_path": "resources/knowledge_base/microservices.json",
     "secrets_path": "resources/knowledge_base/secrets.json",
@@ -20,10 +21,11 @@
     "manifests_path": "manifests",
     "k8s_manifests_path": "k8s",
     "llm_manifests_path": "llm",
-    "analysis_results_path": "results",
+    "results_path": "results",
     "severity_config": "resources/validation/severity_config.yaml",
-    "dry_run": false,
+    "dry_run": true,
     "cache_prompt": true,
     "manual_intervention": false,
-    "selected_repositories": "nextcloud-redis-mariadb,nginx-golang-mysql,react-express-mongodb, react-java-mysql, sparkjava-mysql, wordpress, "
+    "selected_repositories": ""
+
 }

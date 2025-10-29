@@ -52,7 +52,6 @@ class MicroservicesTree:
 
         self.file_extensions = {
             "markdown": [".md", ".markdown"],
-            "json": [".json"],
             "yaml": [".yml", ".yaml"],
             "text": [".txt"],
             "config": [".ini", ".cfg", ".conf", ".toml"],
@@ -66,12 +65,16 @@ class MicroservicesTree:
         collected_files: Dict[str,Any] = {}
 
         self.logger.info(f"Scanning directory: {root_path}")
+
+        compose_files = []
         # Scan for docker-compose files
-        compose_files = [
-            file
-            for file in os.listdir(root_path)
-            if file.endswith(("compose.yaml", "compose.yml"))
-        ]
+        for file in os.listdir(root_path):
+            if file.endswith(("compose.yaml", "compose.yml")):
+                compose_files.append(file)
+            else:
+               self._process_contextual_file(file, os.path.join(root_path, file), root_node, 500, collected_files)
+
+
         if len(compose_files) > 0:
             for compose_file in compose_files:
                 self.logger.info(f"Found compose file: {compose_file}")
@@ -134,7 +137,7 @@ class MicroservicesTree:
                     name=dir_name,
                     type=NodeType.MICROSERVICE,
                     parent=parent,
-                    metadata={"dockerfile_path": path},
+                    metadata={"dockerfile_path": path, "dockerfile": file},
                 )
 
                 # Add the microservice node to the parent node
@@ -149,7 +152,7 @@ class MicroservicesTree:
                 )
 
                 break  # Stop looking for more Dockerfiles in this directory
-
+            
         # Only process environment files and scripts if a Dockerfile was found
         if dockerfile_found and microservice_node is not None:
 
@@ -195,6 +198,7 @@ class MicroservicesTree:
             if isinstance(build_config, dict):
                 build_context = build_config.get("context", None)
                 dockerfile = build_config.get("dockerfile", "Dockerfile")
+                target = build_config.get("target", None)  # Add this line
             elif isinstance(build_config, str):
                 if build_config.startswith("./"):
                     build_config = build_config.replace("./", "")
@@ -202,9 +206,11 @@ class MicroservicesTree:
                     build_config = build_config.replace(".", "")            
                 build_context = build_config
                 dockerfile = "Dockerfile"
+                target = None  # Add this line
             else:
                 build_context = None
                 dockerfile = None
+                target = None  # Add this line
 
             dockerfile_path = None
             dockerfile_dir = None
@@ -216,7 +222,7 @@ class MicroservicesTree:
 
                 dockerfile_dir = os.path.join(
                     os.path.dirname(compose_file_path), build_context)
-    
+
                 if os.path.exists(dockerfile_path):
                     with open(dockerfile_path, "r") as f:
                         dockerfile_content = f.read()
@@ -231,6 +237,12 @@ class MicroservicesTree:
                     "compose_file": compose_file_path,
                 },
             )
+
+            if dockerfile:
+                microservice_node.metadata["dockerfile"] = dockerfile
+            
+            if target:  # Add this block
+                microservice_node.metadata["target"] = target
 
             parent.add_child(microservice_node)
             self.logger.info(f"Added microservice from compose: {service_name}")
@@ -277,7 +289,11 @@ class MicroservicesTree:
         microservice: Dict[str, Any] = {"name": node.name}
         microservice.setdefault("labels", {"app": node.name})
         microservice.setdefault(
-            "metadata", {"dockerfile_path": node.metadata.get("dockerfile_path", ""), "dockerfile": node.metadata.get("dockerfile", "")}
+            "metadata", {
+                "dockerfile_path": node.metadata.get("dockerfile_path", ""), 
+                "dockerfile": node.metadata.get("dockerfile", ""),
+                "target": node.metadata.get("target", None)  # Add this line
+            }
         )
         microservice.setdefault("image", node.name.lower())
         microservice.setdefault("env", [])
@@ -547,14 +563,14 @@ class MicroservicesTree:
                             self.logger.debug(f"Removing old CMD node: {child.name}")
                             microservice_node.children.remove(child)
 
-                if node.metadata == {} or node.metadata.get("status", "") == "active":
+                if node.metadata == {} or node.metadata.get("status", "active") == "active":
                     self.logger.debug(
                         f"Adding command node: {node.name} with metadata: {node.metadata}"
                     )
                     microservice_node.add_child(node)
 
     def _process_contextual_file(
-        self, file_name: str, file_path: str, node: Node, max_file_size_kb: int = 500
+        self, file_name: str, file_path: str, node: Node, max_file_size_kb: int = 500, collected_files: Optional[Dict] = None
     ) -> None:
         name, ext = os.path.splitext(file_name)
         for file_type, extensions in self.file_extensions.items():
@@ -564,6 +580,26 @@ class MicroservicesTree:
                     # Parse the config file and add it to the node
                     config_nodes = self.env_parser.parse(file_path)
                     node.add_children(config_nodes)
+                else:
+                    try:
+                        file_size_kb = os.path.getsize(file_path) / 1024
+                        if file_size_kb > max_file_size_kb:
+                            self.logger.warning(
+                                f"Skipping file {file_name} due to size {file_size_kb:.2f}KB exceeding limit of {max_file_size_kb}KB."
+                            )
+                            return
+                        with open(file_path, "r") as f:
+                            content = f.read()
+                        if collected_files is not None:
+                            collected_files.update({file_name: {"name": file_name, "type": "contextual", "content": content, "metadata": {"path": file_path}}})
+                        self.logger.debug(
+                            f"Added contextual file node: {file_name} of type {file_type} to microservice {node.name}"
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Failed to read or process file {file_name}: {e}"
+                        )
+                
 
     def prepare_network_policy(self, node: Node) -> Dict[str, Any]:
         """Generate manifests for the given network policy node."""

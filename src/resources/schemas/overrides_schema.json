@@ -96,6 +96,9 @@
             "additionalProperties": {
                 "type": "object",
                 "properties": {
+                    "name": {
+                        "type": "string"
+                    },
                     "apiVersion": {
                         "type": "string"
                     },
@@ -133,8 +136,7 @@
                 "required": [
                     "apiVersion",
                     "kind",
-                    "metadata",
-                    "spec"
+                    "metadata"
                 ]
             }
         },
@@ -241,15 +243,9 @@
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "required": [
-                                "name",
-                                "mountPath"
-                            ],
+                            "required": ["name"],
                             "properties": {
                                 "name": {
-                                    "type": "string"
-                                },
-                                "mountPath": {
                                     "type": "string"
                                 },
                                 "subPath": {
@@ -260,11 +256,17 @@
                                 },
                                 "persistentVolumeClaim": {
                                     "type": "object",
-                                    "required": [
-                                        "claimName"
-                                    ],
+                                    "required": ["claimName"],
                                     "properties": {
                                         "claimName": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "secret": {
+                                    "type": "object",
+                                    "properties": {
+                                        "secretName": {
                                             "type": "string"
                                         }
                                     }
@@ -704,30 +706,136 @@
                                         "type": "object",
                                         "properties": {
                                             "containers": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "volumeMounts": {
-                                                        "type": "array",
-                                                        "items": {
-                                                            "type": "object",
-                                                            "required": ["name", "mountPath"],
-                                                            "properties": {
-                                                                "name": {
-                                                                    "type": "string"
-                                                                },
-                                                                "mountPath": {
-                                                                    "type": "string"
-                                                                },
-                                                                "subPath": {
-                                                                    "type": "string"
-                                                                },
-                                                                "readOnly": {
-                                                                    "type": "boolean"
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "name": {
+                                                            "type": "string"
+                                                        },
+                                                        "volumeMounts": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["name", "mountPath"],
+                                                                "properties": {
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "mountPath": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "subPath": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "readOnly": {
+                                                                        "type": "boolean"
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        "environment": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["name"],
+                                                                "properties": {
+                                                                    "name": { "type": "string" },
+                                                                    "value": { "type": "string" },
+                                                                    "valueFrom": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "configMapKeyRef": {
+                                                                                "type": "object",
+                                                                                "required": ["name", "key"],
+                                                                                "properties": {
+                                                                                    "name": { "type": "string" },
+                                                                                    "key": { "type": "string" }
+                                                                                }
+                                                                            },
+                                                                            "secretKeyRef": {
+                                                                                "type": "object",
+                                                                                "required": ["name", "key"],
+                                                                                "properties": {
+                                                                                    "name": { "type": "string" },
+                                                                                    "key": { "type": "string" }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": ["name"]
+                                                }
+                                            },
+                                            "initContainers":{
+                                                "type":"array",
+                                                "items":{
+                                                    "type":"object",
+                                                    "properties":{
+                                                        "name":{
+                                                            "type":"string"
+                                                        },
+                                                        "image":{
+                                                            "type":"string"
+                                                        },
+                                                        "command":{
+                                                            "type":"array",
+                                                            "items":{
+                                                                "type":"string"
+                                                            }
+                                                        },
+                                                        "args":{
+                                                            "type":"array",
+                                                            "items":{
+                                                                "type":"string"
+                                                            }
+                                                        },
+                                                        "volumeMounts":{
+                                                            "type":"array",
+                                                            "items":{
+                                                                "type":"object",
+                                                                "required":["name","mountPath"],
+                                                                "properties":{
+                                                                    "name":{
+                                                                        "type":"string"
+                                                                    },
+                                                                    "mountPath":{
+                                                                        "type":"string"
+                                                                    },
+                                                                    "subPath":{
+                                                                        "type":"string"
+                                                                    },
+                                                                    "readOnly":{
+                                                                        "type":"boolean"
+                                                                    }
                                                                 }
                                                             }
                                                         }
                                                     }
-                                                }
+                                                } 
+                                            }
+                                        }
+                                    },
+                                    "status": {
+                                        "type": "object",
+                                        "properties": {
+                                            "replicas": {
+                                                "type": "integer"
+                                            },
+                                            "readyReplicas": {
+                                                "type": "integer"
+                                            },
+                                            "currentReplicas": {
+                                                "type": "integer"
+                                            },
+                                            "updatedReplicas": {
+                                                "type": "integer"
+                                            },
+                                            "collisionCount": {
+                                                "type": "integer"
                                             }
                                         }
                                     }
@@ -894,15 +1002,9 @@
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "required": [
-                                "name",
-                                "mountPath"
-                            ],
+                            "required": ["name"], 
                             "properties": {
                                 "name": {
-                                    "type": "string"
-                                },
-                                "mountPath": {
                                     "type": "string"
                                 },
                                 "subPath": {
@@ -913,11 +1015,17 @@
                                 },
                                 "persistentVolumeClaim": {
                                     "type": "object",
-                                    "required": [
-                                        "claimName"
-                                    ],
+                                    "required": ["claimName"],
                                     "properties": {
                                         "claimName": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "secret": {
+                                    "type": "object",
+                                    "properties": {
+                                        "secretName": {
                                             "type": "string"
                                         }
                                     }
@@ -1357,36 +1465,204 @@
                                         "type": "object",
                                         "properties": {
                                             "containers": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "volumeMounts": {
-                                                        "type": "array",
-                                                        "items": {
-                                                            "type": "object",
-                                                            "required": ["name", "mountPath"],
-                                                            "properties": {
-                                                                "name": {
-                                                                    "type": "string"
-                                                                },
-                                                                "mountPath": {
-                                                                    "type": "string"
-                                                                },
-                                                                "subPath": {
-                                                                    "type": "string"
-                                                                },
-                                                                "readOnly": {
-                                                                    "type": "boolean"
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "name": {
+                                                            "type": "string"
+                                                        },
+                                                        "volumeMounts": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["name", "mountPath"],
+                                                                "properties": {
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "mountPath": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "subPath": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "readOnly": {
+                                                                        "type": "boolean"
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        "environment": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": ["name"],
+                                                                "properties": {
+                                                                    "name": { "type": "string" },
+                                                                    "value": { "type": "string" },
+                                                                    "valueFrom": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "configMapKeyRef": {
+                                                                                "type": "object",
+                                                                                "required": ["name", "key"],
+                                                                                "properties": {
+                                                                                    "name": { "type": "string" },
+                                                                                    "key": { "type": "string" }
+                                                                                }
+                                                                            },
+                                                                            "secretKeyRef": {
+                                                                                "type": "object",
+                                                                                "required": ["name", "key"],
+                                                                                "properties": {
+                                                                                    "name": { "type": "string" },
+                                                                                    "key": { "type": "string" }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": ["name"]
+                                                }
+                                            },
+                                            "initContainers":{
+                                                "type":"array",
+                                                "items":{
+                                                    "type":"object",
+                                                    "properties":{
+                                                        "name":{
+                                                            "type":"string"
+                                                        },
+                                                        "image":{
+                                                            "type":"string"
+                                                        },
+                                                        "command":{
+                                                            "type":"array",
+                                                            "items":{
+                                                                "type":"string"
+                                                            }
+                                                        },
+                                                        "args":{
+                                                            "type":"array",
+                                                            "items":{
+                                                                "type":"string"
+                                                            }
+                                                        },
+                                                        "volumeMounts":{
+                                                            "type":"array",
+                                                            "items":{
+                                                                "type":"object",
+                                                                "required":["name","mountPath"],
+                                                                "properties":{
+                                                                    "name":{
+                                                                        "type":"string"
+                                                                    },
+                                                                    "mountPath":{
+                                                                        "type":"string"
+                                                                    },
+                                                                    "subPath":{
+                                                                        "type":"string"
+                                                                    },
+                                                                    "readOnly":{
+                                                                        "type":"boolean"
+                                                                    }
                                                                 }
                                                             }
                                                         }
                                                     }
-                                                }
+                                                } 
+                                            }
+                                        }
+                                    },
+                                    "status": {
+                                        "type": "object",
+                                        "properties": {
+                                            "replicas": {
+                                                "type": "integer"
+                                            },
+                                            "readyReplicas": {
+                                                "type": "integer"
+                                            },
+                                            "currentReplicas": {
+                                                "type": "integer"
+                                            },
+                                            "updatedReplicas": {
+                                                "type": "integer"
+                                            },
+                                            "collisionCount": {
+                                                "type": "integer"
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "persistentVolumeClaims": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "required": [
+                    "storageClassName",
+                    "accessModes",
+                    "resources"
+                ],
+                "properties": {
+                    "storageClassName": {
+                        "type": "string"
+                    },
+                    "accessModes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "resources": {
+                        "type": "object",
+                        "properties": {
+                            "requests": {
+                                "type": "object",
+                                "properties": {
+                                    "storage": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "storage"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "secrets":
+        {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "stringData": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "type": {
+                        "type": "string"
                     }
                 }
             }

@@ -1,19 +1,16 @@
 import logging
 import os
-from re import I
-import sys
+import json
 from typing import Any, Dict, List, Optional
 
 from caseutil import to_snake
-from click import prompt
 from inference.prompt_builder import PromptBuilder
 from inference.llm_client import LLMClient
 from manifests_generation.manifest_builder import ManifestBuilder
 from overrides import overrider
 from overrides.overrider import Overrider
-from utils.file_utils import load_json_file, load_yaml_file
+from utils.file_utils import load_yaml_file
 from validation.kubescape_validator import KubescapeValidator
-import traceback
 
 
 class ManifestFeedbackLoop:
@@ -80,8 +77,11 @@ class ManifestFeedbackLoop:
                 Details:\n"""
 
             for key, value in microservice.items():
-                if key != "manifests" and key != "metadata":
+                if key != "manifests" and key != "metadata" and key != "overrides":
                     prompt += f"  {key}: {value}\n"
+
+            if microservice.get("overrides", None):
+                prompt += f"Consider the following overrides:\n{microservice['overrides']}\n and use them in the generation.\n"
 
             user_prompt = self.prompt_builder.generate_user_prompt(prompt)
             self.logger.info(f"User prompt: {user_prompt}")
@@ -98,56 +98,132 @@ class ManifestFeedbackLoop:
                 alternative_path,
             )
 
-    def review_with_llm(self, manifests_path: str) -> Dict[str, Any]:
+    def review_with_llm(self, manifests_path: str, collected_files: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Review the generated manifests with the LLM to ensure quality and compliance.
+        Review the generated manifests to determine if they can be deployed.
+        Focuses on deployment viability, not security/optimization.
         """
-        self.logger.info("Starting the review process with LLM.")
+        self.logger.info("Checking cluster deployment viability with LLM.")
 
         system_prompt = (
-            "You are a Kubernetes manifests reviewer.\n"
-            "You will be provided with Kubernetes manifests.\n"
-            "Your task is to review them for best practices, security, and correctness.\n"
-            "Guidelines:\n"
-            " - Output a two sections json: 'Valid Cluster: True/False' and 'Feedback'. \n"
-            " - In 'Valid Cluster', state 'True' if the cluster is valid: in your opinion would correctly execute; 'False' otherwise.\n"
-            " - In 'Feedback', provide specific suggestions for improvement or highlight any issues found.\n"
-            " - If the manifests are valid and follow best practices, state 'No issues found'.\n"
-            "**No other output is allowed. Do not explain, do not reason, do not output markdown or comments.**\n"
+            "You are a semantic validator.\n"
+            "Your ONLY task is to determine if the set of manifests reproduces the desired application behavior. The application has been tested to deploy successfully, your task is to determine to the best of your capability whether the application aligns with the original intent of interactions inferrable from the gathered application metadata.\n\n"
+            
+            "Output Format (ONLY valid JSON):\n"
+            "{\n"
+            '  "aligned_to_intent": boolean,\n'
+            '  "confidence": "high" | "medium" | "low",\n'
+            '  "reasoning": string,  # Brief explanation of your assessment\n'
+            "}\n\n"
+            
+            "Rules:\n"
+            "- aligned_to_intent=false ONLY if the application behavior does not match the original intent\n"
+            "**Output ONLY the JSON object. No markdown, no explanations.**\n"
         )
 
-        manifest_files = [
-            load_yaml_file(os.path.join(dp, f))
-            for dp, dn, filenames in os.walk(manifests_path)
-            for f in filenames
-            if f.endswith(".yaml")
-        ]
+        # Load all manifests
+        manifest_files = []
+        for dp, dn, filenames in os.walk(manifests_path):
+            for f in filenames:
+                if f.endswith(".yaml") and not f.startswith(("skaffold", "kustomization")):
+                    manifest_content = load_yaml_file(os.path.join(dp, f))
+                    manifest_files.append(manifest_content)
 
-        prompt = "Please review the following Kubernetes cluster:\n"
-        for manifest in manifest_files:
-            prompt += f"---\n{manifest}\n"
-        user_prompt = self.prompt_builder.generate_user_prompt(prompt)
-
-        self.logger.info(f"User prompt: {user_prompt}")
-
-        if os.getenv("DRY_RUN", "false").lower() == "true":
-            self.logger.info(f"Dry mode enabled, skipping LLM inference.\n\n----\n")
+        if not manifest_files:
+            self.logger.warning("No manifest files found to review")
             return {
-                "Valid Cluster": False,
-                "Feedback": "Dry run enabled, skipping LLM inference.",
+                "aligned_to_intent": False,
+                "confidence": "high",
+                "reasoning": "No manifest files found to review"
             }
 
-        ## Generate the response
-        response = self.generator.chat(
-            messages=user_prompt,  # type: ignore
-            system_prompt=self.prompt_builder._generate_system_prompt(system_prompt),
-        )
+        # Build prompt with all manifests
+        prompt = "Evaluate deployment viability for this Kubernetes cluster:\n\n"
+        for idx, manifest in enumerate(manifest_files, 1):
+            prompt += f"--- Manifest {idx} ---\n{manifest}\n\n"
+        
+        prompt += ("Consider the following contextual information about the application:\n")
+        is_compose_present = (compose := collected_files.get("app", None)) is not None
+        if is_compose_present:
+            prompt += f"- The application is defined by a docker-compose file with the following content:\n{compose['content']}\n"
+        else:
+            prompt += "- The application is defined by a set of Dockerfiles for its microservices.\n"
+            prompt += "The microservices are:\n"
+            for microservice in collected_files.values():
+                if microservice["type"] == "contextual" or microservice["name"] == "app":
+                    continue
+                prompt += f"  - {microservice['name']}\n"
+                if docker := collected_files.get(microservice["name"], None):
+                    prompt += f"    - Dockerfile content:\n{docker['content']}\n"
+        prompt += "\n You can consider also the following contextual files:\n"
 
-        processed_response = self.generator.pre_process_response(response.content)  # type: ignore
-        self.logger.info(f"Processed response: {processed_response}")
-        result = load_json_file(processed_response[0])  # type: ignore
-        self.logger.info(f"Review result: {result}")
-        return result
+        for file in collected_files.values():
+            if file["type"] == "contextual":
+                prompt += f"- {file['name']}:\n{file['content']}\n"
+
+        user_prompt = self.prompt_builder.generate_user_prompt(prompt)
+
+        if os.getenv("DRY_RUN", "false").lower() == "true":
+            self.logger.info("Dry mode enabled, skipping LLM inference.")
+            return {
+                "aligned_to_intent": True,
+                "confidence": "low",
+                "reasoning": "Dry run mode, no actual review performed."
+            }
+
+        # Query LLM
+        try:
+            response = self.generator.chat(
+                messages=user_prompt,
+                system_prompt=self.prompt_builder._generate_system_prompt(system_prompt),
+            )
+
+            processed_response = self.generator.pre_process_response(response.content)
+            self.logger.debug(f"Raw LLM response: {processed_response}")
+            
+            result = json.loads(processed_response[0])
+            
+            # Validate response structure
+            self._validate_viability_response(result)
+            
+            # Log summary
+            aligned_to_intent = result.get("aligned_to_intent", False)
+            resoning = result.get("reasoning", "")
+            self.logger.info(
+                f"Deployment viability check complete: "
+                f"aligned_to_intent={aligned_to_intent}, "
+                f"confidence={result.get('confidence', 'unknown')}, "
+                f" reasoning={resoning[:100]}..."  # Log first 100 chars of reasoning
+                
+            )
+                        
+            return result
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse LLM response as JSON: {e}")
+            self.logger.error(f"Raw response: {processed_response if 'processed_response' in locals() else 'N/A'}") # type: ignore
+            raise ValueError(f"LLM did not return valid JSON: {e}")
+        except Exception as e:
+            self.logger.error(f"Error during viability check: {e}")
+            raise
+
+    def _validate_viability_response(self, result: Dict[str, Any]):
+        """Validate that the LLM response matches expected schema."""
+        required_keys = ["aligned_to_intent", "confidence", "reasoning"]
+        missing = [k for k in required_keys if k not in result]
+        
+        if missing:
+            raise ValueError(f"LLM response missing required keys: {missing}")
+        
+        if not isinstance(result["aligned_to_intent"], bool):
+            raise ValueError("'aligned_to_intent' must be a boolean")
+        
+        if result["confidence"] not in ["high", "medium", "low"]:
+            raise ValueError("'confidence' must be 'high', 'medium', or 'low'")
+
+        if not isinstance(result["reasoning"], str):
+            raise ValueError("'reasoning' must be a string")
+
 
     def review_manifests_hardening(
         self, manifests_path: str, output_dir: str = "output-after-ir"
@@ -222,6 +298,8 @@ class ManifestFeedbackLoop:
         else:
             system_prompt += "You only output valid raw Kubernetes YAML manifests starting off from a set of microservices described by a set of docker files, the services are the described as follow.\n"
             for microservice in collected_files.values():
+                if microservice["type"] == "contextual" or microservice["name"] == "app":
+                    continue
                 system_prompt += f"- {microservice['name']}\n"
 
         system_prompt += (
@@ -242,6 +320,9 @@ class ManifestFeedbackLoop:
         if is_compose_present:
             microservices: Dict[str, Any] = compose["content"].get("services", {})
             for name, microservice in microservices.items():
+                if microservice.get("type", "") == "contextual":
+                    continue
+
                 prompt = f"""Now generate Kubernetes manifests in YAML format for the microservice '{name}'.\n
                 Docker-Compose details:\n {microservice}\n"""
                 if docker := collected_files.get(name, None):
@@ -260,7 +341,7 @@ class ManifestFeedbackLoop:
                     self.query_llm(user_prompt, system_prompt, manifests_path, name)
         else:
             for microservice in collected_files.values():
-                if microservice["name"] == "app":
+                if microservice["name"] == "app" or microservice["type"] == "contextual":
                     continue
 
                 prompt = f"""Now generate Kubernetes manifests in YAML format for the microservice '{microservice['name']}'.\n
@@ -315,35 +396,9 @@ class ManifestFeedbackLoop:
     def prepare_for_execution(
         self,
         enriched_services: List[Dict[str, Any]],
-        manifests_path: str,
-        include_overrides: bool = False,
-    ):
+        manifests_path: str):
 
-        self.logger.info("Preparing for execution...")
-
-        # Introduce extra manifests included in the overrides.yaml file
-        if (
-            include_overrides
-            and self.overrider
-            and (config := self.overrider.override_config)
-        ):
-            if config.get("customManifests", None):
-                for manifest_name, manifest_content in config[
-                    "customManifests"
-                ].items():
-                    # Log the manifest name and content
-                    self.logger.debug(f"Processing custom manifest: {manifest_name}")
-
-                    # Save the custom manifest
-                    manifest_path = os.path.join(
-                        manifests_path,
-                        os.getenv("K8S_MANIFESTS_PATH", "k8s"),
-                        f"{manifest_name}.yaml",
-                    )
-
-                    self.manifest_builder._save_yaml(manifest_content, manifest_path)
-                    self.logger.info(f"Custom manifest saved: {manifest_path}")
-
+        self.logger.info("Preparing for execution...")      
         self.manifest_builder.generate_skaffold_config(
             enriched_services,  # For the Dockerfile paths of the repository scanned
             manifests_path,

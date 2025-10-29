@@ -1,46 +1,364 @@
-from calendar import c
+import json
 import logging
 import os
-import re
 from typing import Any, Dict, List
 
-from attr import field
 import jsondiff
 from jsondiff import symbols
-from regex import F
 import yaml
 
-from embeddings.embeddings_engine import EmbeddingsEngine
-from utils.file_utils import save_csv, save_json
-from validation.severity import Severity, analyze_component_severity, get_issue_type
-import csv
+from utils.file_utils import save_json
+import Levenshtein
 
 
 class ManifestsValidator:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
-    def validate(
-        self, analyzed_cluster_path: str, reference_manifests_path: str
-    ) -> Dict[str, Any]:
-        reference_cluster = self._generate_cluster(reference_manifests_path)
-        analyzed_cluster = self._generate_cluster(analyzed_cluster_path)
-        return self._validate_microservices(analyzed_cluster, reference_cluster)
+    def levenshtein_manifests_distance(
+        self,
+        analyzed_cluster_path: str,
+        reference_cluster_path: str,
+    ):
+        analyzed_cluster = self._generate_cluster_for_levenshtein(analyzed_cluster_path)
+        reference_cluster = self._generate_cluster_for_levenshtein(
+            reference_cluster_path
+        )
+        
+        diff = self._structure_diff(analyzed_cluster, reference_cluster)
+        levenshtein_similarity = self.manifest_similarity(json.dumps(analyzed_cluster, sort_keys=True), json.dumps(reference_cluster, sort_keys=True))
+        report_path = os.path.join(reference_cluster_path, "..", "results","diff_report.json")
+        self.export_diff_report(diff, levenshtein_similarity, report_path)
+        
+    def count_value_lines(self, value, is_removed=False, details=None, path_prefix=""):
+        """
+        Recursively count lines in a value, handling different data types.
+        Records detailed information about what's being counted for explainability.
+        """
+        count = 0
+        
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if isinstance(v, dict) or isinstance(v, list):
+                    count += 1  # Count the key as a line
+                    if details is not None:
+                        details['dict_keys'] += 1
+                        details['items'].append({
+                            'type': 'dict_key',
+                            'path': f"{path_prefix}.{k}" if path_prefix else str(k),
+                            'key': str(k),
+                            'lines': 1
+                        })
+                count += self.count_value_lines(v, is_removed, details, 
+                                            f"{path_prefix}.{k}" if path_prefix else str(k))
+        elif isinstance(value, list):
+            if details is not None:
+                details['list_items'] += len(value)
+            for idx, item in enumerate(value):
+                count += self.count_value_lines(item, is_removed, details, 
+                                            f"{path_prefix}[{idx}]")
+        elif isinstance(value, str):
+            # Count multi-line strings as multiple lines
+            lines = value.split('\n')
+            count += len(lines)
+            if details is not None:
+                details['string_lines'] += len(lines)
+                if len(lines) > 1:
+                    details['multiline_strings'] += 1
+                details['items'].append({
+                    'type': 'string',
+                    'path': path_prefix,
+                    'value': value,
+                    'lines': len(lines),
+                    'is_multiline': len(lines) > 1
+                })
+        elif value is not None:
+            # Count any other non-null value as one line
+            count += 1
+            if details is not None:
+                details['primitive_values'] += 1
+                details['items'].append({
+                    'type': type(value).__name__,
+                    'path': path_prefix,
+                    'value': value,
+                    'lines': 1
+                })
+            
+        return count
 
-    def _generate_cluster(self, manifests_path: str) -> Any:
+    def count_diff_lines(self, diff_result, verbose=True):
+        """
+        Count the number of actual lines that represent changes in the diff.
+        Returns a tuple: (added_lines, removed_lines, modified_lines, report)
+        """
+        added_lines = 0
+        removed_lines = 0
+        modified_lines = 0
+        
+        # Detailed reporting structure
+        report = {
+            'additions': {'total': 0, 'by_resource': {}, 'details': []},
+            'removals': {'total': 0, 'by_resource': {}, 'details': []},
+            'modifications': {'total': 0, 'by_resource': {}, 'details': []}
+        }
+        
+        # Count resources_extra (added lines)
+        self.logger.debug("="*80)
+        self.logger.debug("ANALYZING ADDITIONS (resources_extra)")
+        self.logger.debug("="*80)
+
+        for resource_type, resources in diff_result.get('resources_extra', {}).items():
+            resource_added = 0
+            if isinstance(resources, list):
+                for resource in resources:
+                    if isinstance(resource, dict) and 'value' in resource:
+                        details = {
+                            'dict_keys': 0, 'list_items': 0, 
+                            'string_lines': 0, 'multiline_strings': 0, 
+                            'primitive_values': 0, 'items': []
+                        }
+                        lines = self.count_value_lines(resource['value'], details=details, 
+                                                    path_prefix=f"{resource_type}")
+                        added_lines += lines
+                        resource_added += lines
+                        
+                        report['additions']['details'].append({
+                            'resource': resource_type,
+                            'path': resource.get('path', 'N/A'),
+                            'lines': lines,
+                            'breakdown': {k: v for k, v in details.items() if k != 'items'},
+                            'items': details['items']
+                        })
+                        
+        
+                        self.logger.debug(f"[{resource_type}] ADDITION")
+                        self.logger.debug(f"Path: {resource.get('path', 'N/A')}")
+                        self.logger.debug(f"Total lines added: {lines}")
+                        if details['items']:
+                            self.logger.info(f"Items:")
+                            for item in details['items']:
+                                if item['type'] == 'string':
+                                    self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                                else:
+                                    self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+            
+            if resource_added > 0:
+                report['additions']['by_resource'][resource_type] = resource_added
+        
+        # Count resources_missing (removed lines)
+        self.logger.debug("="*80)
+        self.logger.debug("ANALYZING REMOVALS (resources_missing)")
+        self.logger.debug("="*80)
+
+        for resource_type, resources_data in diff_result.get('resources_missing', {}).items():
+            resource_removed = 0
+            
+            # Handle the special case where the entire resource is missing (like redis-cart)
+            if isinstance(resources_data, dict) and 'value' in resources_data:
+                details = {
+                    'dict_keys': 0, 'list_items': 0, 
+                    'string_lines': 0, 'multiline_strings': 0, 
+                    'primitive_values': 0, 'items': []
+                }
+                lines = self.count_value_lines(resources_data['value'], is_removed=True, 
+                                            details=details, path_prefix=f"{resource_type}")
+                removed_lines += lines
+                resource_removed += lines
+                
+                report['removals']['details'].append({
+                    'resource': resource_type,
+                    'path': resources_data.get('path', 'N/A'),
+                    'lines': lines,
+                    'type': 'complete_resource',
+                    'breakdown': {k: v for k, v in details.items() if k != 'items'},
+                    'items': details['items']
+                })
+                
+
+                self.logger.debug(f"[{resource_type}] COMPLETE RESOURCE REMOVED")
+                self.logger.debug(f"  Path: {resources_data.get('path', 'N/A')}")
+                self.logger.debug(f"  Total lines removed: {lines}")
+
+                if details['items']:
+                    self.logger.info(f"Items:")
+                    for item in details['items']:
+                        if item['type'] == 'string':
+                            self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                        else:
+                            self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+                    
+            elif isinstance(resources_data, list):
+                # This is a list of missing items
+                for resource in resources_data:
+                    if isinstance(resource, dict) and 'value' in resource:
+                        # The 'value' here is typically a dict with an index: actual_value structure
+                        for idx, actual_value in resource['value'].items():
+                            details = {
+                                'dict_keys': 0, 'list_items': 0, 
+                                'string_lines': 0, 'multiline_strings': 0, 
+                                'primitive_values': 0, 'items': []
+                            }
+                            lines = self.count_value_lines(actual_value, is_removed=True, 
+                                                        details=details, 
+                                                        path_prefix=f"{resource_type}[{idx}]")
+                            removed_lines += lines
+                            resource_removed += lines
+                            
+                            report['removals']['details'].append({
+                                'resource': resource_type,
+                                'path': resource.get('path', 'N/A'),
+                                'index': idx,
+                                'lines': lines,
+                                'type': 'indexed_item',
+                                'breakdown': {k: v for k, v in details.items() if k != 'items'},
+                                'items': details['items']
+                            })
+                            
+            
+                            self.logger.debug(f"[{resource_type}] INDEXED ITEM REMOVED")
+                            self.logger.debug(f"  Path: {resource.get('path', 'N/A')}")
+                            self.logger.debug(f"  Index: {idx}")
+                            self.logger.debug(f"  Total lines removed: {lines}")
+
+                            if details['items']:
+                                self.logger.info(f"Items:")
+                                for item in details['items']:
+                                    if item['type'] == 'string':
+                                        self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                                    else:
+                                        self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+        
+            if resource_removed > 0:
+                report['removals']['by_resource'][resource_type] = resource_removed
+        
+        # Count resource_differences (modified lines)
+        self.logger.debug("="*80)
+        self.logger.debug("ANALYZING MODIFICATIONS (resource_differences)")
+        self.logger.debug("="*80)
+        
+        for resource_type, differences in diff_result.get('resource_differences', {}).items():
+            resource_modified = 0
+            if isinstance(differences, list):
+                for diff in differences:
+                    if isinstance(diff, dict) and 'value' in diff:
+                        details = {
+                            'dict_keys': 0, 'list_items': 0, 
+                            'string_lines': 0, 'multiline_strings': 0, 
+                            'primitive_values': 0, 'items': []
+                        }
+                        lines = self.count_value_lines(diff['value'], details=details, 
+                                                    path_prefix=f"{resource_type}")
+                        modified_lines += lines
+                        resource_modified += lines
+                        
+                        report['modifications']['details'].append({
+                            'resource': resource_type,
+                            'path': diff.get('path', 'N/A'),
+                            'lines': lines,
+                            'breakdown': {k: v for k, v in details.items() if k != 'items'},
+                            'items': details['items'][:5]
+                        })
+                        
+        
+                        self.logger.debug(f"[{resource_type}] MODIFICATION")
+                        self.logger.debug(f"  Path: {diff.get('path', 'N/A')}")
+                        self.logger.debug(f"  Total lines modified: {lines}")                            
+                        if details['items']:
+                            self.logger.info(f"Items:")
+                            for item in details['items']:
+                                if item['type'] == 'string':
+                                    self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                                else:
+                                    self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+
+            if resource_modified > 0:
+                report['modifications']['by_resource'][resource_type] = resource_modified
+        
+        # Update totals
+        report['additions']['total'] = added_lines
+        report['removals']['total'] = removed_lines
+        report['modifications']['total'] = modified_lines
+        
+        return added_lines, removed_lines, modified_lines, report
+
+    def analyze_diff_for_levenshtein(self, diff_data, verbose=True):
+        """
+        Comprehensive analysis of the diff for Levenshtein similarity calculation
+        """
+        # Detailed line counting
+        added_lines, removed_lines, modified_lines, report = self.count_diff_lines(diff_data, verbose=verbose)
+        
+        self.logger.info("="*80)
+        self.logger.info(" "*20 + "FINAL SUMMARY")
+        self.logger.info("="*80)
+        self.logger.info(f"Overall Line Counts:")
+        self.logger.info(f"  Added lines:    {added_lines:>8,}")
+        self.logger.info(f"  Removed lines:  {removed_lines:>8,}")
+        self.logger.info(f"  Modified lines: {modified_lines:>8,}")
+        self.logger.info(f"  {'-'*40}")
+        self.logger.info(f"  Total changes:  {added_lines + removed_lines + modified_lines:>8,}")
+        
+        # Show breakdown by resource type
+        self.logger.info(f"{'-'*80}")
+        self.logger.info("Breakdown by Resource Type:")
+        self.logger.info(f"{'-'*80}")
+        
+        all_resources = set()
+        all_resources.update(report['additions']['by_resource'].keys())
+        all_resources.update(report['removals']['by_resource'].keys())
+        all_resources.update(report['modifications']['by_resource'].keys())
+        
+        for resource in sorted(all_resources):
+            adds = report['additions']['by_resource'].get(resource, 0)
+            removes = report['removals']['by_resource'].get(resource, 0)
+            mods = report['modifications']['by_resource'].get(resource, 0)
+            total = adds + removes + mods
+            
+            if total > 0:
+                self.logger.info(f"[{resource}]")
+                if adds > 0:
+                    self.logger.info(f"  + Added:    {adds:>6,} lines")
+                if removes > 0:
+                    self.logger.info(f"  - Removed:  {removes:>6,} lines")
+                if mods > 0:
+                    self.logger.info(f"  ~ Modified: {mods:>6,} lines")
+                self.logger.info(f"  = Total:    {total:>6,} lines")
+                
+        # For Levenshtein distance calculation
+        total_operations = added_lines + removed_lines + modified_lines
+        
+        return {
+            'added_lines': added_lines,
+            'removed_lines': removed_lines, 
+            'modified_lines': modified_lines,
+            'total_operations': total_operations,
+            'detailed_report': report,
+            'resources_affected': len(all_resources)
+        }
+
+    def export_diff_report(self, diff_data, levenshtein_similarity, output_file='diff_report.json'):
+        """Export the detailed diff report to a JSON file for further analysis"""
+        self.logger.info(f"Exporting detailed diff report to {output_file}")
+        result = self.analyze_diff_for_levenshtein(diff_data, verbose=False)
+        result["levenshtein_similarity"] = levenshtein_similarity
+        with open(output_file, 'w') as f:
+            json.dump(result, f, indent=2)
+        
+        self.logger.info(f"Detailed report successfully exported to: {output_file}")
+        return output_file
+
+    def _generate_cluster_for_levenshtein(self, manifests_path: str) -> Dict[str, Any]:
         """Generate a cluster object from the manifests."""
         if not os.path.isdir(manifests_path):
             raise NotADirectoryError(
                 f"Manifests path is not a directory: {manifests_path}"
             )
-
         cluster = {}
-        supporting_resources = {}
-
-        # First pass: collect all resources
         for root, dir, files in os.walk(manifests_path):
             for file in files:
                 if file.endswith(".yaml") or file.endswith(".yml"):
+                    if "skaffold" in file or "kustomization" in file:
+                        continue  # Skip skaffold files
                     with open(os.path.join(root, file), "r") as f:
                         try:
                             documents = yaml.safe_load_all(
@@ -49,44 +367,17 @@ class ManifestsValidator:
                             for resource in documents:
                                 if resource and isinstance(resource, dict):
                                     resource_type = resource.get("kind", "").lower()
-                                    resource_name = resource.get("metadata", {}).get(
-                                        "name", "unknown"
-                                    )
-
+                                
                                     # Get microservice name from labels or resource name
                                     microservice_name = self._get_microservice_name(
                                         resource
                                     )
 
-                                    if resource_type in [
-                                        "deployment",
-                                        "statefulset",
-                                        "pod",
-                                        "job",
-                                        "daemonset",
-                                        "service",
-                                        "ingress",
-                                        "persistentvolumeclaim",
-                                        "persistentvolume",
-                                        "serviceaccount",
-                                    ]:
-                                        cluster.setdefault(microservice_name, {})
-
-                                        # Store resource by type
-                                        cluster[microservice_name][
-                                            resource_type
-                                        ] = resource
-
-                                    elif resource_type in ["configmap", "secret"]:
-                                        # Supporting resources - store separately for merging
-                                        supporting_resources[resource_name] = resource
+                                    cluster.setdefault(microservice_name, {})
+                                    # Store resource by type
+                                    cluster[microservice_name][resource_type] = resource
                         except yaml.YAMLError as e:
                             raise ValueError(f"Error parsing YAML file {file}: {e}")
-
-        # Second pass: merge supporting resources into primary resources
-        for microservice_name, resources in cluster.items():
-            for resource_name, resource in resources.items():
-                self._merge_supporting_resources(resource, supporting_resources)
         self._sort_lists(cluster)
         return cluster
 
@@ -184,7 +475,7 @@ class ManifestsValidator:
                 elif "env" in resource:
                     resource["env"].sort(key=lambda x: x.get("name", ""))
 
-    def _validate_microservices(
+    def _structure_diff(
         self, analyzed_cluster: Dict[str, Dict], reference_cluster: Dict[str, Dict]
     ) -> Dict[str, Any]:
         """Validate microservices by comparing a target manifests with a reference."""
@@ -258,7 +549,10 @@ class ManifestsValidator:
                 if isinstance(value, dict):
                     for sub_key, sub_value in value.items():
                         summary["resources_extra"][microservice].append(
-                            {"path": f"{path}//{sub_key}", "value": {sub_key: sub_value}}
+                            {
+                                "path": f"{path}//{sub_key}",
+                                "value": sub_value  # Changed: Remove wrapping in dict
+                            }
                         )
                 elif isinstance(value, list):
                     for item in value:
@@ -278,21 +572,24 @@ class ManifestsValidator:
             elif key is symbols.delete:
                 # Analyzed cluster is missing fields that reference has
                 for diff_key in value:
-                    content = self._get_manifest_value(reference_cluster, path.split("//")[:], diff_key)
-                
+                    content = self._get_manifest_value(
+                        reference_cluster, path.split("//")[:], diff_key
+                    )
+
                     summary["resources_missing"][microservice].append(
                         {
                             "path": f"{path}//{diff_key}",
-                            "value": content,
-                        } 
+                            "value": content,  # This is already a dict with {key: value}
+                        }
                     )
 
             elif key is symbols.update:
                 # Both have the field but with different values/structure
                 if isinstance(value, dict):
                     self.logger.debug(f"Analyzing update key {value}")
-
-                    self._process_diff(microservice, value, summary, path, reference_cluster)
+                    self._process_diff(
+                        microservice, value, summary, path, reference_cluster
+                    )
                 else:
                     self.logger.warning(f"Update non processed {value}")
 
@@ -304,13 +601,15 @@ class ManifestsValidator:
                         microservice, value, summary, current_path, reference_cluster
                     )
                 else:
+                    # Store the actual changed value, not just the analyzed value
                     summary["resource_differences"][microservice].append(
                         {
                             "path": current_path,
+                            "value": value,  # Changed: Store just the value for counting
                             "reference_value": self._get_value_by_path(
                                 reference_cluster, current_path.split("//")[:]
                             ),
-                            "analyzed": value,
+                            "analyzed_value": value,
                         }
                     )
 
@@ -325,10 +624,10 @@ class ManifestsValidator:
                     current = current[int(key)]  # type: ignore
                 elif key in current:
                     index = current.index(key)
-                    current = current[index] # type: ignore
+                    current = current[index]  # type: ignore
         self.logger.debug(f"Retrieved value by path {path}: {current}")
         return current
-    
+
     def get_key_by_path(self, data: Dict[str, Any], path: List[str]) -> Any:
         """Retrieve a key from a nested dictionary using a list of keys as the path."""
         current = data
@@ -340,114 +639,22 @@ class ManifestsValidator:
                     current = current[int(key)]  # type: ignore
                 elif key in current:
                     index = current.index(key)
-                    current = current[index] # type: ignore
+                    current = current[index]  # type: ignore
         self.logger.debug(f"Retrieved key by path {path}: {current}")
-        return list(current.keys())[0] if isinstance(current, dict) and current else None
-    
+        return (
+            list(current.keys())[0] if isinstance(current, dict) and current else None
+        )
+
     def _get_manifest_value(
         self, cluster: Dict[str, Any], path: List[str], diff_key: str | int
     ) -> Any:
-        """Retrieve the list of elements deleted on the original manifest using the keys provided by the diff_keys parameter. 
+        """Retrieve the list of elements deleted on the original manifest using the keys provided by the diff_keys parameter.
         We compose a list of dicts with the shape {key: manifest_value} and return it
         """
-        diff = {diff_key: self._get_value_by_path(cluster, path)[diff_key]} 
-               
+        diff = {diff_key: self._get_value_by_path(cluster, path)[diff_key]}
+
         self.logger.debug(f"path {path}, diff_key: {diff_key}, diff: {diff}")
         return diff
-
-
-    def evaluate_issue_severity(self, analysis: Dict[str, Any], reference_manifests_path: str) -> Dict[str, Any]:
-        """Determine the severity with enhanced nuanced analysis."""
-
-        reference_cluster = self._generate_cluster(reference_manifests_path)
-
-        if not analysis:
-            return {
-                "low": [
-                    {
-                        "severity": "LOW",
-                        "description": "No differences found between manifests.",
-                    }
-                ]
-            }
-
-        # Check for missing resources with nuanced analysis
-        if analysis.get("resources_missing"):
-            for microservice, resources in analysis["resources_missing"].items():
-                if (
-                    isinstance(resources, dict)
-                    and resources.get("path") == microservice
-                ):
-                    self.logger.critical(f"Entire microservice missing: {microservice}")
-                    resources.setdefault(
-                        "severity",
-                        Severity(
-                            "CRITICAL", f"Missing entire microservice {microservice}."
-                        ),
-                    )
-                    continue
-
-                if isinstance(resources, list):
-                    for resource in resources:
-                        path = resource.get("path", "")
-                        component = self._extract_component_from_path(path)
-                        # Determine if this is a missing component or missing attribute
-                        issue_type, sub_issue_type = get_issue_type(
-                            path, resource.get("value", "")
-                        )
-                        reference_value = self.get_key_by_path(reference_cluster, path.split("//")[:])
-                        severity_level = analyze_component_severity(
-                            component, issue_type, sub_issue_type, reference_value
-                        )
-                        resource.setdefault("severity", severity_level)
-
-        # Check for extra resources with nuanced analysis
-        if analysis.get("resources_extra"):
-            for microservice, resources in analysis["resources_extra"].items():
-                for resource in resources:
-                    path = resource.get("path", "")
-                    component = self._extract_component_from_path(path)
-
-                    issue_type = "extra"
-                    reference_value = self.get_key_by_path(reference_cluster, path.split("//")[:])
-
-                    severity_level = analyze_component_severity(component, issue_type, path.split("//")[-1])
-                    resource.setdefault("severity", severity_level)
-
-        # Check for value differences with nuanced analysis
-        if analysis.get("resource_differences"):
-            for microservice, differences in analysis["resource_differences"].items():
-                for diff in differences:
-                    path = diff.get("path", "")
-                    component = self._extract_component_from_path(path)
-                    issue_type = "value_difference"
-                    severity_level = analyze_component_severity(component, issue_type)
-
-                    # Slightly reduce severity for value differences vs missing
-                    if severity_level.level == "CRITICAL":
-                        adjusted_severity = Severity(
-                            "HIGH", f"Value difference in {path} for {microservice}"
-                        )
-                    else:
-                        adjusted_severity = severity_level
-
-                    diff.setdefault("severity", adjusted_severity)
-
-        return self._serialize_severity_objects(analysis)
-
-    def _serialize_severity_objects(self, obj) -> Any:
-        """Recursively convert all Severity objects to dictionaries for JSON serialization."""
-        if isinstance(obj, Severity):
-            return obj.to_dict()
-        elif isinstance(obj, dict):
-            return {
-                key: self._serialize_severity_objects(value)
-                for key, value in obj.items()
-            }
-        elif isinstance(obj, list):
-            return [self._serialize_severity_objects(item) for item in obj]
-        else:
-            return obj
 
     def _extract_component_from_path(self, path: str) -> str:
         """Extract the main component name from a path."""
@@ -496,7 +703,7 @@ class ManifestsValidator:
 
         if len(path_parts) == 2 and path_parts[-1].lower() in resource_list:
             return path_parts[-1]
-        
+
         # Look for known components in the path
         for part in reversed(path_parts):
             for value in component_map:
@@ -507,85 +714,12 @@ class ManifestsValidator:
 
         return "configuration"
 
-    def save_analysis(self, analysis: Dict[str, Any], file_path: str) -> None:
-        """Save the analysis to a file."""
-        save_json(analysis, file_path)
-        self.logger.info(f"Analysis saved to {file_path}")
+    def manifest_similarity(self, candidate: str, reference: str) -> float:
+        """
+        Normalized Levenshtein ratio between canonicalized manifests.
+        Returns a float in [0, 1] where 1 = identical.
+        """
 
-    def save_as_csv(self, analysis: Dict[str, Any], file_path: str) -> None:
-        """Convert the analysis to a CSV format."""
-        header_row = [
-            "Stage",
-            "Microservice",
-            "Issue Type",
-            "Path",
-            "Reference Value",
-            "Analyzed Value",
-            "Severity Level",
-            "Severity Description",
-            "Reviewed Level",
-            "Comments",
-        ]
-
-        csv_lines = [",".join(header_row)]
-        stage = analysis.get("stage", "N/A")
-        for microservice, resources in analysis.get("resources_missing", {}).items():
-            if isinstance(resources, dict) and resources.get("path") == microservice:
-                severity: Severity = Severity.from_dict(
-                    resources.get(
-                        "severity",
-                        {
-                            "severity": "CRITICAL",
-                            "description": f"Missing entire microservice {microservice}.",
-                        },
-                    )
-                )
-
-                csv_lines.append(
-                    f"{stage},{microservice},{severity.issue_type},{microservice},N/A,N/A,{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
-                )
-                continue
-
-            if isinstance(resources, list):
-                for resource in resources:
-                    path = resource.get("path", "")
-                    severity = Severity.from_dict(
-                        resource.get(
-                            "severity",
-                            {"severity": "HIGH", "description": "Missing component."},
-                        )
-                    )
-
-                    csv_lines.append(
-                        f"{stage},{microservice},{severity.issue_type},{path},\"{resource.get('value', '')}\",N/A,{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
-                    )
-
-        for microservice, resources in analysis.get("resources_extra", {}).items():
-            for resource in resources:
-                path = resource.get("path", "")
-                severity = Severity.from_dict(
-                    resource.get(
-                        "severity",
-                        {"severity": "LOW", "description": "Extra component."},
-                    )
-                )
-                csv_lines.append(
-                    f"{stage},{microservice},{severity.issue_type},{path},N/A,\"{resource.get('value', '')}\",{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
-                )
-        for microservice, differences in analysis.get(
-            "resource_differences", {}
-        ).items():
-            for diff in differences:
-                path = diff.get("path", "")
-                severity = Severity.from_dict(
-                    diff.get(
-                        "severity",
-                        {"severity": "MEDIUM", "description": "Value difference."},
-                    )
-                )
-                csv_lines.append(
-                    f"{stage},{microservice},{severity.issue_type},{path},\"{diff.get('reference_value', '')}\",\"{diff.get('analyzed', '')}\",{severity.level},{severity.description},{severity.reviewed_level},{severity.comments or 'N/A'}"
-                )
-
-        save_csv(csv_lines, file_path)
-
+        if not candidate or not reference:
+            return 0.0
+        return Levenshtein.ratio(candidate, reference)

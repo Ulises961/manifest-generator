@@ -13,7 +13,7 @@ class Overrider:
     A class to override the default behavior of a class.
     """
 
-    def __init__(self, config_path: str):
+    def __init__(self):
         """
         Initialize the Overrider with a validator for configuration overrides.
 
@@ -21,7 +21,16 @@ class Overrider:
         """
         self.overrides_validator = OverridesValidator()
         self.logger = logging.getLogger(__name__)
-        self.override_config = self.get_config(config_path)
+
+    @property
+    def config_path(self) -> str:
+        return self._config_path
+
+    @config_path.setter
+    def config_path(self, value: str):
+        self.logger.info(f"Setting config_path to: {value}")
+        self._config_path = value
+        self.override_config = self.get_config(value) or {}
 
     def get_config(self, config_path: str) -> Optional[Dict[str, Any]]:
         """Load and validate the configuration overrides from a YAML file."""
@@ -43,10 +52,10 @@ class Overrider:
                     )
                     return None
         except FileNotFoundError:
-            self.logger.exception(
+            self.logger.warning(
                 f"Configuration file not found: {config_path}. Ignoring overrides.",
-                exc_info=True,
-                stack_info=True,
+                exc_info=False,
+                stack_info=False,
             )
             return None
 
@@ -54,7 +63,7 @@ class Overrider:
     def get_microservice_overrides(self, microservice_name: str) -> Dict[str,Any]:
         """Get the overrides applied to a specific template."""
         overrides = {}
-        if not self.override_config:
+        if not self.get_config(self.config_path):
             self.logger.warning(
                 "No override configuration loaded. Returning empty overrides."
             )
@@ -72,5 +81,18 @@ class Overrider:
 
         return cast(Dict[str, Any], overrides)
 
+    def get_extra_manifests(self) -> List[Dict[str, Any]]:
+        """Get the extra manifests defined in the overrides configuration."""
+        if not self.get_config(self.config_path):
+            self.logger.warning(
+                "No override configuration loaded. Returning empty extra manifests."
+            )
+            return []
 
+        extra_manifests = [{"name": name, **manifest} for name, manifest in self.override_config.get("customManifests", {}).items()]
+
+        self.logger.info(
+                f"Returning extra manifests: {extra_manifests}"
+            )
+        return cast(List[Dict[str, Any]], extra_manifests)
  
