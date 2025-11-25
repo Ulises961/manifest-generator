@@ -1,4 +1,5 @@
 
+import re
 from typing import Any, Dict
 
 
@@ -70,8 +71,11 @@ def run_analyze_metrics():
             "with-overrides",
             os.getenv("RESULTS", "results"),
         )
+        ## Repositories without overrides take the results from with-ir
+        data["with_overrides"][repo] = {**data["with_ir"][repo]}
+        data["with_overrides_corrected"][repo] = {**data["with_ir_corrected"][repo]}
+
         if os.path.exists(overrides_results):
-            data.setdefault("with_overrides", {})
             data["with_overrides"][repo] = collect_data(overrides_results)
 
         overrides_corrected_results = os.path.join(
@@ -80,6 +84,7 @@ def run_analyze_metrics():
             "with-overrides-corrected",
             os.getenv("RESULTS", "results"),
         )
+        
         if os.path.exists(overrides_corrected_results):
             data.setdefault("with_overrides_corrected", {})
             data["with_overrides_corrected"][repo] = collect_data(overrides_corrected_results)
@@ -128,23 +133,24 @@ def collect_data(path:str) -> Dict[str, Any]:
                 "modified_lines":  diff.get("detailed_report", {}).get("modifications", 0),
                 "items": diff.get("details", []),
                 "total_operations":  diff.get("total_operations", 0),
-                "resources_affected":  diff.get("resources_affected", 0)
+                "resources_affected":  diff.get("resources_affected", 0),
+                "cluster_lines": diff.get("cluster_lines", 0)
             }
-            if "with-ir" in path:
-                data["human_effort_ir"] = human_effort
+            if "corrected" in path:
+                data["human_effort"] = human_effort
 
     app = 0
     manual_review_path = os.path.join(os.getenv("ANALYSIS_REPOSITORY", ""), "results", "manually reviewed apps.csv")
     manual_review = load_csv_file(manual_review_path)
 
     without_ir_deploys = 1  # First "Deploys" column
-    without_ir_behavior = 2  # First "Expected Behaviour" column
+    without_ir_behaviour = 2  # First "Expected Behaviour" column
     
     with_ir_deploys = 3     # Second "Deploys" column  
-    with_ir_behavior = 4    # Second "Expected Behaviour" column
+    with_ir_behaviour = 4    # Second "Expected Behaviour" column
     
     with_ir_corrected_deploys = 5     # Third "Deploys" column
-    with_ir_corrected_behavior = 6    # Third "Expected Behaviour" column
+    with_ir_corrected_behaviour = 6    # Third "Expected Behaviour" column
 
     with_overrides_deploys = 7
     with_overrides_behaviour = 8
@@ -154,36 +160,37 @@ def collect_data(path:str) -> Dict[str, Any]:
 
 
     for row in manual_review[2:]:
-        if "with-ir" in path and row[app] in path:
+        if "with-ir-corrected" in path and row[app].lower() in path.lower():
+            data["manual_review"] = {
+                "deploys": row[with_ir_corrected_deploys] == "TRUE",
+                "expected_behaviour": row[with_ir_corrected_behaviour] == "TRUE",
+            }
+        elif "with-ir" in path and row[app].lower() in path.lower():
             # Only add manual review if deployment was successful
                 data["manual_review"] = {
                     "deploys": row[with_ir_deploys] == "TRUE",
-                    "expected_behaviour": row[with_ir_behavior] == "TRUE",
+                    "expected_behaviour": row[with_ir_behaviour] == "TRUE",
                 }
             
         # Manual reviews were made for every app after corrections were applied
-        elif "with-ir-corrected" in path and row[app] in path:
-            data["manual_review"] = {
-                "deploys": row[with_ir_corrected_deploys] == "TRUE",
-                "expected_behaviour": row[with_ir_corrected_behavior] == "TRUE",
-            }
-        elif "without-ir" in path and row[app] in path:
+        elif "without-ir" in path and row[app].lower() in path.lower():
             data["manual_review"] = {
                 "deploys": row[without_ir_deploys] == "TRUE",
-                "expected_behaviour": row[without_ir_behavior] == "TRUE",
+                "expected_behaviour": row[without_ir_behaviour] == "TRUE",
             }
-        elif "with_overrides" in path and row[app] in path:
-            data["manual_review"] = {
-                "deploys": row[with_overrides_deploys] == "TRUE",
-                "expected_behaviour": row[with_overrides_behaviour] == "TRUE",
-            }
-        elif "with_overrides_corrected" in path and row[app] in path:
+        elif "with-overrides-corrected" in path and row[app].lower() in path.lower():
             data["manual_review"] = {
                 "deploys": row[with_overrides_corrected_deploys] == "TRUE",
                 "expected_behaviour": row[with_overrides_corrected_behaviour] == "TRUE"
             }
-
+        elif "with-overrides" in path and row[app].lower() in path.lower():
+            data["manual_review"] = {
+                "deploys": row[with_overrides_deploys] == "TRUE",
+                "expected_behaviour": row[with_overrides_behaviour] == "TRUE",
+            }
+    logger.info(f"Collected data from {path}: {data}")
     return data
+
 def analyze_kubescape_results( kubescape_results: list[list[str]]) -> Dict[str, int]:
     """
     Count the issues in the kubescape results and return a summary.
@@ -209,3 +216,7 @@ def analyze_kubescape_results( kubescape_results: list[list[str]]) -> Dict[str, 
         summary["low"] += int(resource[low])
         summary["total_controls"] += int(resource[total_controls_per_manifests])
     return summary
+
+def check_not_empty(path: str) -> bool:
+    """Check if the script is being run directly."""
+    return True

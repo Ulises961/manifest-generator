@@ -105,15 +105,18 @@ def run_generation():
         repository_tree, collected_files = tree_builder.build(
             os.path.join(target_repository, repo)
         )
+        
         tree_builder.print_tree(repository_tree)  # Print the tree structure
+        
         overrider.config_path = os.path.join(
-            target_repository, repo, os.getenv("OVERRIDES_FILE", "overrides.yaml")
+            target_repository, repo, os.getenv("OVERRIDES_FILE", "")
         )
+
         stages = [
-            # "without-ir",
-            #  "with-ir",            
+            "without-ir",
+             "with-ir",            
             ]
-        if overrider.config_path and overrider.config_path != "":
+        if overrider.config_path and os.path.exists(overrider.config_path):
             stages.append("with-overrides")
 
         ### Phase 2: Generate manifests ###
@@ -256,9 +259,9 @@ def validate_output(
         feedback_loop.prepare_for_execution(
             microservices, corrected_manifests_path
         )
-    # if os.getenv("DRY_RUN", "false").lower() == "true":
-    #     logger.info("Dry run enabled, skipping validation.")
-    #     return
+    if os.getenv("DRY_RUN", "false").lower() == "true":
+        logger.info("Dry run enabled, skipping validation.")
+        return
 
     ## DYNAMIC VALIDATION WITH SKAFFOLD
     skaffold_validator = SkaffoldValidator()
@@ -268,6 +271,7 @@ def validate_output(
         skaffold_results,
         os.path.join(validation_results_path, "skaffold_validation_results.json"),
     )
+
     if os.getenv("DRY_RUN", "false").lower() == "true":
         logger.info("Dry run enabled, skipping validation.")
         return

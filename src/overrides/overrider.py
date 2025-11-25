@@ -1,6 +1,7 @@
 from calendar import c
 from enum import Enum
 import logging
+import os
 import traceback
 from typing import Any, Dict, List, Optional, Tuple, cast, override
 import yaml
@@ -34,7 +35,7 @@ class Overrider:
 
     def get_config(self, config_path: str) -> Optional[Dict[str, Any]]:
         """Load and validate the configuration overrides from a YAML file."""
-        if config_path == "":
+        if os.path.basename(config_path) == "":
             self.logger.info("No overrides file provided. Skipping overrides.")
             return None
         try:

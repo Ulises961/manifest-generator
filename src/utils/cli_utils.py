@@ -68,7 +68,7 @@ def set_environment_variables(config: Dict[str, str]):
     ### Optional variables ###
     os.environ["LLM_MODEL"] = config.get("llm_model", "claude-3-5-haiku-latest")
     os.environ["LLM_API_KEY"] = config.get("llm_token", "")
-    os.environ["OVERRIDES_PATH"] = config.get("overrides_file", "")
+    os.environ["OVERRIDES_FILE"] = config.get("overrides_file", "")
     os.environ["DRY_RUN"] = str(config.get("dry_run", "false"))
 
     os.environ["VERBOSE"] = str(config.get("verbose", "false"))

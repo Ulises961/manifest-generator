@@ -289,11 +289,7 @@ class MicroservicesTree:
         microservice: Dict[str, Any] = {"name": node.name}
         microservice.setdefault("labels", {"app": node.name})
         microservice.setdefault(
-            "metadata", {
-                "dockerfile_path": node.metadata.get("dockerfile_path", ""), 
-                "dockerfile": node.metadata.get("dockerfile", ""),
-                "target": node.metadata.get("target", None)  # Add this line
-            }
+            "metadata", node.metadata if node.metadata is not None else {}
         )
         microservice.setdefault("image", node.name.lower())
         microservice.setdefault("env", [])

@@ -9,6 +9,7 @@ import yaml
 
 from utils.file_utils import save_json
 import Levenshtein
+from validation.severity import analyze_component_severity, get_issue_type
 
 
 class ManifestsValidator:
@@ -24,12 +25,14 @@ class ManifestsValidator:
         reference_cluster = self._generate_cluster_for_levenshtein(
             reference_cluster_path
         )
-        
+        total_lines_reference = self.count_cluster_lines(reference_cluster)
+
+
         diff = self._structure_diff(analyzed_cluster, reference_cluster)
         levenshtein_similarity = self.manifest_similarity(json.dumps(analyzed_cluster, sort_keys=True), json.dumps(reference_cluster, sort_keys=True))
         report_path = os.path.join(reference_cluster_path, "..", "results","diff_report.json")
-        self.export_diff_report(diff, levenshtein_similarity, report_path)
-        
+        self.export_diff_report(diff, levenshtein_similarity, total_lines_reference, report_path)
+
     def count_value_lines(self, value, is_removed=False, details=None, path_prefix=""):
         """
         Recursively count lines in a value, handling different data types.
@@ -122,12 +125,25 @@ class ManifestsValidator:
                         added_lines += lines
                         resource_added += lines
                         
+                        # Extract component and analyze severity
+                        path = resource.get('path', 'N/A')
+                        component = self._extract_component_from_path(path)
+                        issue_type = "extra"  # This is an addition
+                        
+                        severity = analyze_component_severity(
+                            component=component,
+                            issue_type=issue_type,
+                            attribute=None,
+                            reference_value=None
+                        )
+                        
                         report['additions']['details'].append({
                             'resource': resource_type,
-                            'path': resource.get('path', 'N/A'),
+                            'path': path,
                             'lines': lines,
                             'breakdown': {k: v for k, v in details.items() if k != 'items'},
-                            'items': details['items']
+                            'items': details['items'],
+                            'severity': severity.to_dict()
                         })
                         
         
@@ -165,13 +181,26 @@ class ManifestsValidator:
                 removed_lines += lines
                 resource_removed += lines
                 
+                # Extract component and analyze severity
+                path = resources_data.get('path', 'N/A')
+                component = self._extract_component_from_path(path)
+                issue_type, attribute = get_issue_type(path, resources_data.get('value'))
+                
+                severity = analyze_component_severity(
+                    component=component,
+                    issue_type=issue_type,
+                    attribute=attribute,
+                    reference_value=None
+                )
+                
                 report['removals']['details'].append({
                     'resource': resource_type,
-                    'path': resources_data.get('path', 'N/A'),
+                    'path': path,
                     'lines': lines,
                     'type': 'complete_resource',
                     'breakdown': {k: v for k, v in details.items() if k != 'items'},
-                    'items': details['items']
+                    'items': details['items'],
+                    'severity': severity.to_dict()
                 })
                 
 
@@ -204,14 +233,27 @@ class ManifestsValidator:
                             removed_lines += lines
                             resource_removed += lines
                             
+                            # Extract component and analyze severity
+                            path = resource.get('path', 'N/A')
+                            component = self._extract_component_from_path(path)
+                            issue_type, attribute = get_issue_type(path, actual_value)
+                            
+                            severity = analyze_component_severity(
+                                component=component,
+                                issue_type=issue_type,
+                                attribute=attribute,
+                                reference_value=None
+                            )
+                            
                             report['removals']['details'].append({
                                 'resource': resource_type,
-                                'path': resource.get('path', 'N/A'),
+                                'path': path,
                                 'index': idx,
                                 'lines': lines,
                                 'type': 'indexed_item',
                                 'breakdown': {k: v for k, v in details.items() if k != 'items'},
-                                'items': details['items']
+                                'items': details['items'],
+                                'severity': severity.to_dict()
                             })
                             
             
@@ -251,12 +293,30 @@ class ManifestsValidator:
                         modified_lines += lines
                         resource_modified += lines
                         
+                        # Extract component and analyze severity
+                        path = diff.get('path', 'N/A')
+                        component = self._extract_component_from_path(path)
+                        issue_type, attribute = get_issue_type(path, diff.get('value'))
+                        
+                        # Get reference value if available
+                        reference_value = None
+                        if 'value' in diff and isinstance(diff['value'], dict):
+                            reference_value = list(diff['value'].keys())[0] if diff['value'] else None
+                        
+                        severity = analyze_component_severity(
+                            component=component,
+                            issue_type=issue_type,
+                            attribute=attribute,
+                            reference_value=reference_value
+                        )
+                        
                         report['modifications']['details'].append({
                             'resource': resource_type,
-                            'path': diff.get('path', 'N/A'),
+                            'path': path,
                             'lines': lines,
                             'breakdown': {k: v for k, v in details.items() if k != 'items'},
-                            'items': details['items'][:5]
+                            'items': details['items'][:5],
+                            'severity': severity.to_dict()
                         })
                         
         
@@ -336,11 +396,12 @@ class ManifestsValidator:
             'resources_affected': len(all_resources)
         }
 
-    def export_diff_report(self, diff_data, levenshtein_similarity, output_file='diff_report.json'):
+    def export_diff_report(self, diff_data, levenshtein_similarity,cluster_total_lines, output_file='diff_report.json'):
         """Export the detailed diff report to a JSON file for further analysis"""
         self.logger.info(f"Exporting detailed diff report to {output_file}")
         result = self.analyze_diff_for_levenshtein(diff_data, verbose=False)
         result["levenshtein_similarity"] = levenshtein_similarity
+        result["cluster_lines"] = cluster_total_lines
         with open(output_file, 'w') as f:
             json.dump(result, f, indent=2)
         
@@ -723,3 +784,41 @@ class ManifestsValidator:
         if not candidate or not reference:
             return 0.0
         return Levenshtein.ratio(candidate, reference)
+
+    def count_cluster_lines(self, cluster: Dict[str, Any]) -> int:
+        """
+        Count total lines in a cluster produced by _generate_cluster_for_levenshtein.
+
+        Returns a summary dict:
+          - total_lines: int
+          - microservices_count: int
+          - by_microservice: { ms_name: { total_lines, by_resource: {rtype: {...} } } }
+        """
+        total = 0
+        by_microservice: Dict[str, Any] = {}
+
+        for ms_name, resources in (cluster or {}).items():
+            ms_total = 0
+
+            if not isinstance(resources, dict):
+                # unexpected shape: treat whole object as one resource
+                details = {
+                    'dict_keys': 0, 'list_items': 0,
+                    'string_lines': 0, 'multiline_strings': 0,
+                    'primitive_values': 0, 'items': []
+                }
+                lines = self.count_value_lines(resources, details=details, path_prefix=str(ms_name))
+                ms_total += lines
+            else:
+                for rtype, resource in resources.items():
+                    details = {
+                        'dict_keys': 0, 'list_items': 0,
+                        'string_lines': 0, 'multiline_strings': 0,
+                        'primitive_values': 0, 'items': []
+                    }
+                    lines = self.count_value_lines(resource, details=details, path_prefix=f"{ms_name}//{rtype}")
+                    ms_total += lines
+            
+            total += ms_total
+
+        return total
