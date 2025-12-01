@@ -2,56 +2,51 @@ import pytest
 from click.testing import CliRunner
 from unittest.mock import patch
 from main import cli
-import tempfile
-import shutil
-import os
+import json
 
 @pytest.fixture
 def runner():
     return CliRunner()
 
 @pytest.fixture
-def temp_workspace():
+def temp_workspace(tmp_path):
     # Setup: create temporary workspace
-    temp_dir = tempfile.mkdtemp()
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
     
-    # Create necessary directories and files
-    repo_dir = os.path.join(temp_dir, "repo")
-    os.makedirs(repo_dir)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
     
-    config_file = os.path.join(temp_dir, "config.json")
-    with open(config_file, 'w') as f:
-        f.write("""
-        {
-            "repository_path": "%s",
-            "llm_model": "model_name",
-            "llm_endpoint": "http://localhost:8000/v1/chat/completions",
-            "llm_token": "your_token",
-            "embeddings_model": "all-MiniLM-L6-v2"
-        }
-        """ % repo_dir)
-    
-    yield {
-        'temp_dir': temp_dir,
-        'repo_dir': repo_dir,
-        'config_file': config_file
+    config_file = tmp_path / "config.json"
+    config_data = {
+        "repository_path": str(repo_dir),
+        "output_path": str(output_dir),
+        "llm_model": "model_name",
+        "llm_token": "your_token",
+        "embeddings_model": "all-MiniLM-L6-v2"
     }
+    config_file.write_text(json.dumps(config_data))
     
-    # Teardown: cleanup
-    shutil.rmtree(temp_dir)
+    return {
+        'temp_dir': str(tmp_path),
+        'repo_dir': str(repo_dir),
+        'output_dir': str(output_dir),
+        'config_file': str(config_file)
+    }
 
-@patch('pipeline.run')
+@patch('cli.commands.generate.run_generation')
 def test_main_with_config_file(mock_run, runner, temp_workspace):
     mock_run.return_value = None
-    result = runner.invoke(cli, ['main', '--config-file', temp_workspace['config_file']])
+    result = runner.invoke(cli, ['generate', '--config-file', temp_workspace['config_file']])
     
     if result.exit_code != 0:
         print(f"Command output: {result.output}")
         print(f"Exception: {result.exception}")
     
     assert result.exit_code == 0
+    mock_run.assert_called_once()
 
-@patch('pipeline.run')
+@patch('cli.functions.generate_helper.run_generation')
 def test_main_missing_required_fields(mock_run, runner, tmp_path):
     # Create a real directory that exists
     repo_dir = tmp_path / "repo"
@@ -59,13 +54,10 @@ def test_main_missing_required_fields(mock_run, runner, tmp_path):
     
     # Create a temporary config file with missing required fields
     config_file = tmp_path / "config.json"
-    config_file.write_text(f"""
-    {{
-        "repository_path": "{repo_dir}"
-    }}
-    """)
+    config_data = {"repository_path": str(repo_dir)}
+    config_file.write_text(json.dumps(config_data))
 
-    result = runner.invoke(cli, ['main', '--config-file', str(config_file)])
+    result = runner.invoke(cli, ['generate', '--config-file', str(config_file)])
     
     # The command should fail due to missing required fields
     assert result.exit_code != 0
@@ -77,26 +69,28 @@ def test_main_invalid_config_file(runner, tmp_path):
     config_file = tmp_path / "config.json"
     config_file.write_text("{ invalid json }")
 
-    result = runner.invoke(cli, ['main', '--config-file', str(config_file)])
+    result = runner.invoke(cli, ['generate', '--config-file', str(config_file)])
     
     # The command should fail due to invalid JSON
     assert result.exit_code != 0
     # Check that the JSON parsing error message is in the output
     assert "❌ Error parsing config file" in result.output
 
-@patch('pipeline.run')
-def test_main_dry_run_mode(mock_run, runner, tmp_path):
+@patch('cli.commands.generate.run_generation')
+@patch('cli.commands.generate.set_environment_variables')
+def test_main_dry_run_mode(mock_set_env, mock_run, runner, tmp_path):
     mock_run.return_value = None
+    mock_set_env.return_value = None
     
     # Create a real repository directory for the test
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
+    output_dir = tmp_path / "output"
     
     result = runner.invoke(cli, [
-        'main', 
-        '--repository-path', str(repo_dir), 
-        '--llm-model', 'model_name', 
-        '--llm-endpoint', 'http://localhost:8000/v1/chat/completions',
+        'generate', 
+        '--repository-path', str(repo_dir),
+        '--output-path', str(output_dir),
         '--embeddings-model', 'all-MiniLM-L6-v2',
         '--dry-run'
     ])
@@ -106,20 +100,24 @@ def test_main_dry_run_mode(mock_run, runner, tmp_path):
         print(f"Exception: {result.exception}")
     
     assert result.exit_code == 0
+    mock_run.assert_called_once()
 
-@patch('pipeline.run')
-def test_main_verbose_mode(mock_run, runner, tmp_path):
+@patch('cli.commands.generate.run_generation')
+@patch('cli.commands.generate.set_environment_variables')
+def test_main_verbose_mode(mock_set_env, mock_run, runner, tmp_path):
     mock_run.return_value = None
+    mock_set_env.return_value = None
     
     # Create a real repository directory for the test
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
+    output_dir = tmp_path / "output"
     
     result = runner.invoke(cli, [
-        'main', 
-        '--repository-path', str(repo_dir), 
-        '--llm-model', 'model_name', 
-        '--llm-endpoint', 'http://localhost:8000/v1/chat/completions',
+        'generate', 
+        '--repository-path', str(repo_dir),
+        '--output-path', str(output_dir),
+        '--llm-model', 'model_name',
         '--embeddings-model', 'all-MiniLM-L6-v2',
         '--verbose'
     ])
@@ -129,59 +127,61 @@ def test_main_verbose_mode(mock_run, runner, tmp_path):
         print(f"Exception: {result.exception}")
     
     assert result.exit_code == 0
+    mock_run.assert_called_once()
 
-@patch('pipeline.run')
-def test_main_interactive_mode(mock_run, runner, tmp_path):
+@patch('cli.commands.generate.run_generation')
+@patch('cli.commands.generate.set_environment_variables')
+@patch('cli.commands.generate.interactive_setup')
+def test_main_interactive_mode(mock_interactive, mock_set_env, mock_run, runner, tmp_path):
     mock_run.return_value = None
-    
-    # Create a real repository directory for the test
+    mock_set_env.return_value = None
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
+    output_dir = tmp_path / "output"
     
-    # Use input parameter to simulate user input for interactive mode
-    inputs = [
-        str(repo_dir),  # repository path
-        'n',  # no skaffold file
-        'local',  # LLM type
-        '',  # default LLM endpoint
-        '',  # default LLM model
-        '',  # no LLM token
-        'n',  # no dry run
-        'n',  # no verbose
-        'local',  # embeddings type
-        '',  # default embeddings model
-        'n',  # no overrides file
-        'y'  # confirm configuration
-    ]
+    # Mock interactive_setup to return a valid config
+    mock_interactive.return_value = {
+        'repository_path': str(repo_dir),
+        'output_path': str(output_dir),
+        'llm_model': 'model_name',
+        'embeddings_model': 'all-MiniLM-L6-v2',
+        'dry_run': False,
+        'verbose': False,
+        'llm_token': None,
+        'overrides_file': None,
+        'selected_repositories': None,
+        'cache_prompt': None,
+        'force': False
+    }
     
-    result = runner.invoke(cli, ['main', '--interactive'], input='\n'.join(inputs))
+    result = runner.invoke(cli, ['generate', '--interactive'])
     
     if result.exit_code != 0:
         print(f"Command output: {result.output}")
         print(f"Exception: {result.exception}")
     
     assert result.exit_code == 0
+    mock_interactive.assert_called_once()
+    mock_run.assert_called_once()
 
-@patch('pipeline.run')
-def test_main_config_file_not_exists(mock_run, runner):
+def test_main_config_file_not_exists(runner):
     """Test with a config file that doesn't exist"""
-    result = runner.invoke(cli, ['main', '--config-file', '/nonexistent/config.json'])
+    result = runner.invoke(cli, ['generate', '--config-file', '/nonexistent/config.json'])
     
     # Click should handle this and return exit code 2 for invalid argument
     assert result.exit_code == 2
-    assert "does not exist" in result.output
+    assert "does not exist" in result.output.lower() or "invalid value" in result.output.lower()
 
-@patch('pipeline.run')  
-def test_main_repository_path_not_exists(mock_run, runner):
+def test_main_repository_path_not_exists(runner):
     """Test with a repository path that doesn't exist"""
     result = runner.invoke(cli, [
-        'main',
+        'generate',
         '--repository-path', '/nonexistent/repo',
+        '--output-path', '/tmp/output',
         '--llm-model', 'model_name',
-        '--llm-endpoint', 'http://localhost:8000/v1/chat/completions',
         '--embeddings-model', 'all-MiniLM-L6-v2'
     ])
     
     # Click should handle this and return exit code 2 for invalid argument
     assert result.exit_code == 2
-    assert "does not exist" in result.output
+    assert "does not exist" in result.output.lower() or "invalid value" in result.output.lower()

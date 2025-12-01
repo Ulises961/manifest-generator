@@ -8,8 +8,8 @@ def builder():
 
 def test_build_template(builder):
     microservices = [
-        {"name": "service1", "metadata": {"dockerfile": "path/to/service1"}},
-        {"name": "service2", "metadata": {"dockerfile": "path/to/service2"}}
+        {"name": "service1", "metadata": {"dockerfile": "path/to/service1/Dockerfile", "dockerfile_path": "path/to/service1"}},
+        {"name": "service2", "metadata": {"dockerfile": "path/to/service2/Dockerfile", "dockerfile_path": "path/to/service2"}}
     ]
     manifests_path = "path/to/manifests"
     result = builder.build_template(microservices, manifests_path)

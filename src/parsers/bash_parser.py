@@ -185,10 +185,13 @@ class BashScriptParser:
 
     def _parse_env_var(self, line: str) -> Optional[Node]:
         """Parse environment variable declarations."""
+        # Simple export VAR=VALUE parsing
         if line.startswith("export"):
             parts = line.split("=", 1)
+            # Expecting exactly two parts: VAR and VALUE
             if len(parts) == 2:
                 name = parts[0].replace("export", "").strip()
+                # Remove surrounding quotes from value if present
                 value = parts[1].strip().strip("\"'")
                 return self.env_parser.create_env_node(name, value)
         return None
@@ -196,6 +199,7 @@ class BashScriptParser:
     def _parse_mount(self, line: str) -> Optional[Node]:
         """Parse mount commands and volume definitions."""
         match = re.match(self.patterns["mount"], line)
+        # Expecting mount commands like: mount /path/to/volume
         if match:
             _, mount_path = match.groups()
             return Node(
@@ -209,12 +213,15 @@ class BashScriptParser:
         self, line: str, parent: Node
     ) -> Tuple[Optional[Node], Optional[Node]]:
         """Parse command declarations."""
+        # Commands are structured as arrays after exec
         normalized = normalize_command_field(line)
         if not normalized:
             return None, None
 
+        # Split the normalized command into the command and its arguments
         command, args = self._split_command_and_args(normalized)
 
+        # Determine if the command forwards arguments from CMD 
         forwards_args = any(token in ["$@", '"$@"', "'$@'", "${@}"] for token in args)
 
         entrypoint_node = Node(
