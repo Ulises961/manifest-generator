@@ -18,6 +18,8 @@ class Severity:
         issue_type: str = "",
         reviewed_level: str = "",
         comments: str = "",
+        reference_value: Optional[Any] = None,
+        analyzed_value: Optional[Any] = None,
     ):
         self.level = level
         self.description = description
@@ -27,6 +29,8 @@ class Severity:
         )
         self.reviewed_level = reviewed_level
         self.comments = comments
+        self.reference_value = reference_value
+        self.analyzed_value = analyzed_value
 
     def __str__(self):
         return self.level
@@ -51,6 +55,8 @@ class Severity:
             "issue_type": self.issue_type,
             "reviewed_level": self.reviewed_level,
             "comments": self.comments,
+            "reference_value": self.reference_value,
+            "analyzed_value": self.analyzed_value,
         }
     
     @staticmethod
@@ -63,11 +69,13 @@ class Severity:
             issue_type=data.get("issue_type", ""),
             reviewed_level=data.get("reviewed_level", ""),
             comments=data.get("comments", ""),
+            reference_value=data.get("reference_value", None),
+            analyzed_value=data.get("analyzed_value", None),
         )
 
 # Enhanced severity analysis function
 def analyze_component_severity(
-    component: str, issue_type: str, attribute: Optional[str] = None, reference_value: Optional[str] = None
+    component: str, issue_type: str, attribute: Optional[str] = None, reference_value: Optional[str] = None, analyzed_value: Optional[str] = None, path: str = ""
 ) -> Severity:
     """
     Analyze severity with nuanced classification based on component and issue type.
@@ -89,7 +97,7 @@ def analyze_component_severity(
     severity_rules = severity_config["severity_rules"]
 
     if not severity_rules:
-        return DefaultRules.get(component, issue_type, attribute)
+        return DefaultRules.get(component, issue_type, attribute, reference_value, analyzed_value=analyzed_value)
 
     attr_rules = severity_rules.get(component, {})
     if issue_type == "missing_attribute":
@@ -98,19 +106,19 @@ def analyze_component_severity(
             if attribute == "app":
                     if reference_value in ["app", "app.kubernetes.io/name"]:
                         # If the 'app' label follows a standard naming convention, lower severity
-                        return Severity(missing_attributes[attribute]["level"], missing_attributes[attribute]["description"], component, f"missing_attribute:{attribute}", "INFO", "The 'app' label uses a standard naming convention.")
-            return Severity(missing_attributes[attribute]["level"], missing_attributes[attribute]["description"], component, f"missing_attribute:{attribute}")
-        return DefaultRules.get(component, issue_type, attribute)
+                        return Severity(missing_attributes[attribute]["level"], missing_attributes[attribute]["description"], component, f"missing_attribute:{attribute}", "INFO", "The 'app' label uses a standard naming convention.", reference_value=reference_value, analyzed_value=analyzed_value)
+            return Severity(missing_attributes[attribute]["level"], missing_attributes[attribute]["description"], component, f"missing_attribute:{attribute}", reference_value=reference_value, analyzed_value=analyzed_value)
+        return DefaultRules.get(component, issue_type, attribute, reference_value, analyzed_value=analyzed_value)
     rule = attr_rules.get(issue_type)
   
     if rule:
         if component == "selector" or component == "matchLabels" or component == "labels":
             if reference_value in ["app", "app.kubernetes.io/name"]:
                     # If the selector uses a standard naming convention, lower severity
-                    return Severity(rule["level"], rule["description"], component, issue_type, "INFO", "The selector uses a standard naming convention.")
-        return Severity(rule["level"], rule["description"], component, issue_type)
+                    return Severity(rule["level"], rule["description"], component, issue_type, "INFO", "The selector uses a standard naming convention.", reference_value=reference_value, analyzed_value=analyzed_value)
+        return Severity(rule["level"], rule["description"], component, issue_type, reference_value=reference_value, analyzed_value=analyzed_value)
 
-    return DefaultRules.get(component, issue_type, attribute)
+    return DefaultRules.get(component, issue_type, attribute, reference_value=reference_value, analyzed_value=analyzed_value)
 
 
 def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
@@ -161,6 +169,10 @@ def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
                     return "missing_attribute", "protocol"
                 if "targetPort" in missing_keys:
                     return "missing_attribute", "targetPort"
+                if "nodePort" in missing_keys:
+                    return "missing_attribute", "nodePort"
+                if "type" in missing_keys:
+                    return "missing_attribute", "type"
             if part in missing_keys:
                 return "missing", part
 
@@ -357,9 +369,9 @@ class DefaultRules:
 
     @staticmethod
     def get(
-        component: str, issue_type: str, attribute: Optional[str] = None
+        component: str, issue_type: str, attribute: Optional[str] = None, reference_value: Optional[str] = None, analyzed_value: Optional[str] = None
     ) -> Severity:
         desc = f"{issue_type.replace('_', ' ').capitalize()} in {component}"
         level = DefaultRules.default_rules.get(issue_type, "MEDIUM")
         issue_key = f"{issue_type}:{attribute}" if attribute else issue_type
-        return Severity(level, desc, component, issue_key)
+        return Severity(level, desc, component, issue_key, reference_value=reference_value, analyzed_value=analyzed_value)

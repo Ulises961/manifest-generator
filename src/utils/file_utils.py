@@ -1,3 +1,4 @@
+from calendar import c
 import json
 import os
 import re
@@ -37,9 +38,11 @@ def _get_model_paths(model_env_var: str, default_model: str) -> Tuple[str, str]:
     model_path = os.path.join(models_dir, model_name)
     return model_name, model_path
 
-def save_csv(csv_lines:List[str], file_path: str):
+def save_csv(csv_lines: List[List[str]], file_path: str):
     with open(file_path, 'w') as file:
-        file.write("\n".join(csv_lines))
+        csv_writer = csv.writer(file)
+        csv_writer.writerow(csv_lines[0])
+        csv_writer.writerows(csv_lines[1:])
 
 def load_csv_file(path: str) -> List[List[str]]:
     """Load a CSV file and return its contents as a list of rows."""

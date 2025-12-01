@@ -18,7 +18,7 @@ from tree.node import Node
 logger = logging.getLogger(__name__)
 
 
-def run_review_manifests():
+def run_review_manifests_with_reference():
     """Review the generated manifests using the LLM for best practices, security, and correctness."""
     # Set up logging
     setup_logging(
@@ -81,7 +81,7 @@ def run_review_manifests():
             os.path.join(no_ir_results, "collected_files.json")
         )
 
-        for stage in ["with-ir", "with-overrides"]:
+        for stage in ["without-ir"]:
             logging.info(f"Reviewing manifests for stage... {stage}")
             try:
                 manifests_root = os.path.join(
@@ -95,54 +95,40 @@ def run_review_manifests():
                     )
                     continue
 
-                reviewed_manifests_root = os.path.join(
-                    target_repository,
-                    repo,
-                    f"{stage}-corrected",
-                )
-
+                
+                reference_manifests_path = os.getenv("REFERENCE_MANIFESTS_PATH", "")
+                
                 manifests_path = os.path.join(
                     manifests_root,
                     os.getenv("MANIFESTS_PATH", "manifests"),
                 )
 
-                validation_results_path__reviewed = os.path.join(
-                    reviewed_manifests_root, os.getenv("RESULTS", "results")
-                )
+            
 
                 validation_results_path__not_reviewed = os.path.join(
                     manifests_root, os.getenv("RESULTS", "results")
                 )
 
-                os.makedirs(validation_results_path__reviewed, exist_ok=True)
                 os.makedirs(validation_results_path__not_reviewed, exist_ok=True)
 
-                reviewed_manifests_path = os.path.join(
-                    reviewed_manifests_root, os.getenv("MANIFESTS_PATH", "manifests")
-                )
 
                 ## When reference manifests path is set, use it over corrected manifests
-                if os.getenv("USE_REFERENCE_MANIFESTS", ""):
-                    if (
-                        reference_manifests_path := os.getenv(
-                            "REFERENCE_MANIFESTS_PATH", ""
-                        )
-                    ) != "":
-                        logger.info(
-                            f"Using reference manifests path from environment: {reference_manifests_path}"
-                        )
-                        reviewed_manifests_path = os.path.join(
-                            reference_manifests_path, repo, "kubernetes-manifests"
-                        )
+              
+                logger.info(
+                    f"Using reference manifests path from environment: {reference_manifests_path}"
+                )
+                reviewed_manifests_path = os.path.join(
+                    reference_manifests_path, repo, "kubernetes-manifests"
+                )
 
-                        validation_results_path__reviewed = os.path.join(
-                            target_repository, repo, stage, os.getenv("RESULTS", "results")
-                        )
-                        
-                        os.makedirs(validation_results_path__reviewed, exist_ok=True)
-                        logger.info(
-                            f"Using reference manifests from {reviewed_manifests_path} for repository {repo}"
-                        )
+                validation_results_path__reviewed = os.path.join(
+                    target_repository, repo, stage, os.getenv("RESULTS", "results")
+                )
+                
+                os.makedirs(validation_results_path__reviewed, exist_ok=True)
+                logger.info(
+                    f"Using reference manifests from {reviewed_manifests_path} for repository {repo}"
+                )
 
                 # ## Kubescape
                 # feedback_loop.review_manifests_hardening(

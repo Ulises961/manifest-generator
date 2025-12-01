@@ -15,8 +15,9 @@ def set_environment_variables(config: Dict[str, str]):
     load_environment()
     ### Required variables ###
     os.environ["TARGET_REPOSITORY"] = os.path.expanduser(
-        os.path.expandvars(config["repository_path"])
+        os.path.expandvars(config.get("repository_path", ""))
     )
+    
     os.environ["OUTPUT_DIR"] = (
         f"{os.path.expanduser(os.path.expandvars(config.get("output_path", "output")))}"
     )
@@ -78,6 +79,10 @@ def set_environment_variables(config: Dict[str, str]):
         "severity_config", "resources/validation/severity_config.yaml"
     )
 
+    if config.get("use_reference_manifests", False):
+        os.environ["REFERENCE_MANIFESTS_PATH"] = config.get(
+            "repository_path", "")
+        os.environ["USE_REFERENCE_MANIFESTS"] = "true"
     os.environ["SELECTED_REPOSITORIES"] = str(config.get("selected_repositories", []))
     os.environ["ANALYSIS_REPOSITORY"] = config.get("analysis_repository", "")
     logger.debug("Environment values: {os.environ}")

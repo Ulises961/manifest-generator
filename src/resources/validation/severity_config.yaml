@@ -59,6 +59,12 @@ severity_rules:
       containerPort:
         level: LOW
         description: containerPort is optional; traffic can still reach the process
+      nodePort:
+        level: HIGH
+        description: Missing nodePort in NodePort services prevents external access
+      type:
+        level: HIGH
+        description: Missing service type defaults to ClusterIP. May affect accessibility
     value_difference:
       level: MEDIUM
       description: Port value differences may affect routing

@@ -1,13 +1,15 @@
+from email import header
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List
 
 import jsondiff
 from jsondiff import symbols
 import yaml
 
-from utils.file_utils import save_json
+from utils.file_utils import save_csv, save_json
 import Levenshtein
 from validation.severity import analyze_component_severity, get_issue_type
 
@@ -30,8 +32,22 @@ class ManifestsValidator:
 
         diff = self._structure_diff(analyzed_cluster, reference_cluster)
         levenshtein_similarity = self.manifest_similarity(json.dumps(analyzed_cluster, sort_keys=True), json.dumps(reference_cluster, sort_keys=True))
-        report_path = os.path.join(reference_cluster_path, "..", "results","diff_report.json")
-        self.export_diff_report(diff, levenshtein_similarity, total_lines_reference, report_path)
+        
+        report_path = os.path.join(reference_cluster_path, "..", "results") 
+        os.makedirs(report_path, exist_ok=True)
+
+        result = self.analyze_diff_for_levenshtein(diff, verbose=False)
+
+        if os.getenv("USE_REFERENCE_MANIFESTS", "false").lower() == "true":
+            analyzed_repo_path = os.path.join(analyzed_cluster_path, "..","results")
+            os.makedirs(analyzed_repo_path, exist_ok=True)
+        
+            severity_report_path = os.path.join(analyzed_repo_path, "diff_report_with_reference.csv")
+            self.generate_severity_report(result, severity_report_path)
+            
+        else:
+            self.export_diff_report(result, levenshtein_similarity, total_lines_reference, os.path.join(report_path, "diff_report.json"))
+
 
     def count_value_lines(self, value, is_removed=False, details=None, path_prefix=""):
         """
@@ -134,7 +150,8 @@ class ManifestsValidator:
                             component=component,
                             issue_type=issue_type,
                             attribute=None,
-                            reference_value=None
+                            reference_value= None,
+                            analyzed_value= resource["value"]
                         )
                         
                         report['additions']['details'].append({
@@ -151,12 +168,12 @@ class ManifestsValidator:
                         self.logger.debug(f"Path: {resource.get('path', 'N/A')}")
                         self.logger.debug(f"Total lines added: {lines}")
                         if details['items']:
-                            self.logger.info(f"Items:")
+                            self.logger.debug(f"Items:")
                             for item in details['items']:
                                 if item['type'] == 'string':
-                                    self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                                    self.logger.debug(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
                                 else:
-                                    self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+                                    self.logger.debug(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
             
             if resource_added > 0:
                 report['additions']['by_resource'][resource_type] = resource_added
@@ -190,7 +207,8 @@ class ManifestsValidator:
                     component=component,
                     issue_type=issue_type,
                     attribute=attribute,
-                    reference_value=None
+                    reference_value=resources_data.get('value'),
+                    analyzed_value=None
                 )
                 
                 report['removals']['details'].append({
@@ -209,12 +227,12 @@ class ManifestsValidator:
                 self.logger.debug(f"  Total lines removed: {lines}")
 
                 if details['items']:
-                    self.logger.info(f"Items:")
+                    self.logger.debug(f"Items:")
                     for item in details['items']:
                         if item['type'] == 'string':
-                            self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                            self.logger.debug(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
                         else:
-                            self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+                            self.logger.debug(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
                     
             elif isinstance(resources_data, list):
                 # This is a list of missing items
@@ -242,7 +260,8 @@ class ManifestsValidator:
                                 component=component,
                                 issue_type=issue_type,
                                 attribute=attribute,
-                                reference_value=None
+                                reference_value=actual_value,
+                                analyzed_value= None
                             )
                             
                             report['removals']['details'].append({
@@ -263,12 +282,12 @@ class ManifestsValidator:
                             self.logger.debug(f"  Total lines removed: {lines}")
 
                             if details['items']:
-                                self.logger.info(f"Items:")
+                                self.logger.debug(f"Items:")
                                 for item in details['items']:
                                     if item['type'] == 'string':
-                                        self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                                        self.logger.debug(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
                                     else:
-                                        self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+                                        self.logger.debug(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
         
             if resource_removed > 0:
                 report['removals']['by_resource'][resource_type] = resource_removed
@@ -296,18 +315,17 @@ class ManifestsValidator:
                         # Extract component and analyze severity
                         path = diff.get('path', 'N/A')
                         component = self._extract_component_from_path(path)
-                        issue_type, attribute = get_issue_type(path, diff.get('value'))
+                        issue_type = "value_difference"
                         
                         # Get reference value if available
-                        reference_value = None
-                        if 'value' in diff and isinstance(diff['value'], dict):
-                            reference_value = list(diff['value'].keys())[0] if diff['value'] else None
+                        reference_value = diff.get('reference_value', None)
                         
                         severity = analyze_component_severity(
                             component=component,
                             issue_type=issue_type,
-                            attribute=attribute,
-                            reference_value=reference_value
+                            attribute=None,
+                            reference_value=reference_value,
+                            analyzed_value=diff.get("analyzed_value", None)
                         )
                         
                         report['modifications']['details'].append({
@@ -324,12 +342,12 @@ class ManifestsValidator:
                         self.logger.debug(f"  Path: {diff.get('path', 'N/A')}")
                         self.logger.debug(f"  Total lines modified: {lines}")                            
                         if details['items']:
-                            self.logger.info(f"Items:")
+                            self.logger.debug(f"Items:")
                             for item in details['items']:
                                 if item['type'] == 'string':
-                                    self.logger.info(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
+                                    self.logger.debug(f"• {item['path']}: \"{item['value']}\" ({item['lines']} lines)")
                                 else:
-                                    self.logger.info(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
+                                    self.logger.debug(f"• {item['path']}: {item.get('value', item.get('key', 'N/A'))} ({item['lines']} lines)")
 
             if resource_modified > 0:
                 report['modifications']['by_resource'][resource_type] = resource_modified
@@ -341,7 +359,7 @@ class ManifestsValidator:
         
         return added_lines, removed_lines, modified_lines, report
 
-    def analyze_diff_for_levenshtein(self, diff_data, verbose=True):
+    def analyze_diff_for_levenshtein(self, diff_data, verbose=True) -> Dict[str, Any]:
         """
         Comprehensive analysis of the diff for Levenshtein similarity calculation
         """
@@ -359,9 +377,9 @@ class ManifestsValidator:
         self.logger.info(f"  Total changes:  {added_lines + removed_lines + modified_lines:>8,}")
         
         # Show breakdown by resource type
-        self.logger.info(f"{'-'*80}")
-        self.logger.info("Breakdown by Resource Type:")
-        self.logger.info(f"{'-'*80}")
+        self.logger.debug(f"{'-'*80}")
+        self.logger.debug("Breakdown by Resource Type:")
+        self.logger.debug(f"{'-'*80}")
         
         all_resources = set()
         all_resources.update(report['additions']['by_resource'].keys())
@@ -375,14 +393,14 @@ class ManifestsValidator:
             total = adds + removes + mods
             
             if total > 0:
-                self.logger.info(f"[{resource}]")
+                self.logger.debug(f"[{resource}]")
                 if adds > 0:
-                    self.logger.info(f"  + Added:    {adds:>6,} lines")
+                    self.logger.debug(f"  + Added:    {adds:>6,} lines")
                 if removes > 0:
-                    self.logger.info(f"  - Removed:  {removes:>6,} lines")
+                    self.logger.debug(f"  - Removed:  {removes:>6,} lines")
                 if mods > 0:
-                    self.logger.info(f"  ~ Modified: {mods:>6,} lines")
-                self.logger.info(f"  = Total:    {total:>6,} lines")
+                    self.logger.debug(f"  ~ Modified: {mods:>6,} lines")
+                self.logger.debug(f"  = Total:    {total:>6,} lines")
                 
         # For Levenshtein distance calculation
         total_operations = added_lines + removed_lines + modified_lines
@@ -396,17 +414,14 @@ class ManifestsValidator:
             'resources_affected': len(all_resources)
         }
 
-    def export_diff_report(self, diff_data, levenshtein_similarity,cluster_total_lines, output_file='diff_report.json'):
+    def export_diff_report(self, result, levenshtein_similarity,cluster_total_lines, output_file='diff_report.json'):
         """Export the detailed diff report to a JSON file for further analysis"""
-        self.logger.info(f"Exporting detailed diff report to {output_file}")
-        result = self.analyze_diff_for_levenshtein(diff_data, verbose=False)
         result["levenshtein_similarity"] = levenshtein_similarity
         result["cluster_lines"] = cluster_total_lines
         with open(output_file, 'w') as f:
             json.dump(result, f, indent=2)
         
         self.logger.info(f"Detailed report successfully exported to: {output_file}")
-        return output_file
 
     def _generate_cluster_for_levenshtein(self, manifests_path: str) -> Dict[str, Any]:
         """Generate a cluster object from the manifests."""
@@ -712,7 +727,25 @@ class ManifestsValidator:
         """Retrieve the list of elements deleted on the original manifest using the keys provided by the diff_keys parameter.
         We compose a list of dicts with the shape {key: manifest_value} and return it
         """
-        diff = {diff_key: self._get_value_by_path(cluster, path)[diff_key]}
+        value_at_path = self._get_value_by_path(cluster, path)
+        
+        # Handle case where value_at_path is a list
+        if isinstance(value_at_path, list):
+            # If diff_key is an integer or numeric string, use it as an index
+            if isinstance(diff_key, int):
+                diff = {diff_key: value_at_path[diff_key] if diff_key < len(value_at_path) else None}
+            elif isinstance(diff_key, str) and diff_key.isdigit():
+                idx = int(diff_key)
+                diff = {diff_key: value_at_path[idx] if idx < len(value_at_path) else None}
+            else:
+                # If diff_key is not numeric, return the whole list item that matches
+                diff = {diff_key: value_at_path}
+        elif isinstance(value_at_path, dict):
+            # Original behavior for dicts
+            diff = {diff_key: value_at_path.get(diff_key)}
+        else:
+            # For other types, just return as-is
+            diff = {diff_key: value_at_path}
 
         self.logger.debug(f"path {path}, diff_key: {diff_key}, diff: {diff}")
         return diff
@@ -822,3 +855,29 @@ class ManifestsValidator:
             total += ms_total
 
         return total
+
+    def generate_severity_report(self, diff_report: dict, path: str = ""):
+        report: dict  = diff_report.get("detailed_report", {})
+        header = ["Stage", "Microservice", "Issue Type", "Path", "Reference Value", "Analyzed Value", "Severity Level", "Severity Description", "Reviewed Level", "Comments"]
+        
+        rows = []
+        
+        for change_type in ["additions", "removals", "modifications"]:
+            for detail in report.get(change_type, {}).get("details", []):
+                severity_info = detail.get("severity", {})
+                rows.append([
+                    change_type[:-1].capitalize(),
+                    detail.get("resource", "N/A"),
+                    severity_info.get("issue_type", "N/A"),
+                    detail.get("path", "N/A"),
+                    severity_info.get("reference_value", "N/A"),
+                    severity_info.get("analyzed_value", "N/A"),
+                    severity_info.get("severity", "N/A"),
+                    severity_info.get("description", "N/A"),
+                    severity_info.get("reviewed_level", "N/A"),
+                    severity_info.get("comments", "N/A"),
+                ])
+
+        csv_lines = [header] + rows
+        
+        save_csv(csv_lines, path)
