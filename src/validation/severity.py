@@ -1,11 +1,11 @@
-import json
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
-
-import yaml
-
 from utils.file_utils import load_yaml_file
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 class Severity:
     """Enhanced severity class with nuanced classification support."""
@@ -16,6 +16,10 @@ class Severity:
         description: str = "",
         component: str = "",
         issue_type: str = "",
+        reviewed_level: str = "",
+        comments: str = "",
+        reference_value: Optional[Any] = None,
+        analyzed_value: Optional[Any] = None,
     ):
         self.level = level
         self.description = description
@@ -23,6 +27,10 @@ class Severity:
         self.issue_type = (
             issue_type  # e.g., "missing", "incorrect_value", "missing_attribute"
         )
+        self.reviewed_level = reviewed_level
+        self.comments = comments
+        self.reference_value = reference_value
+        self.analyzed_value = analyzed_value
 
     def __str__(self):
         return self.level
@@ -45,12 +53,29 @@ class Severity:
             "description": self.description,
             "component": self.component,
             "issue_type": self.issue_type,
+            "reviewed_level": self.reviewed_level,
+            "comments": self.comments,
+            "reference_value": self.reference_value,
+            "analyzed_value": self.analyzed_value,
         }
-
+    
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "Severity":
+        """Create Severity object from dictionary."""
+        return Severity(
+            level=data.get("severity", "MEDIUM"),
+            description=data.get("description", ""),
+            component=data.get("component", ""),
+            issue_type=data.get("issue_type", ""),
+            reviewed_level=data.get("reviewed_level", ""),
+            comments=data.get("comments", ""),
+            reference_value=data.get("reference_value", None),
+            analyzed_value=data.get("analyzed_value", None),
+        )
 
 # Enhanced severity analysis function
 def analyze_component_severity(
-    component: str, issue_type: str, attribute: Optional[str] = None
+    component: str, issue_type: str, attribute: Optional[str] = None, reference_value: Optional[str] = None, analyzed_value: Optional[str] = None, path: str = ""
 ) -> Severity:
     """
     Analyze severity with nuanced classification based on component and issue type.
@@ -72,21 +97,28 @@ def analyze_component_severity(
     severity_rules = severity_config["severity_rules"]
 
     if not severity_rules:
-        return DefaultRules.get(component, issue_type, attribute)
+        return DefaultRules.get(component, issue_type, attribute, reference_value, analyzed_value=analyzed_value)
 
+    attr_rules = severity_rules.get(component, {})
     if issue_type == "missing_attribute":
-        attr_rules = severity_rules.get("missing_attribute", {})
-        if attribute and attribute in attr_rules:
-            level, desc = attr_rules[attribute]
-            return Severity(level, desc, component, f"missing_attribute:{attribute}")
-        return DefaultRules.get(component, issue_type, attribute)
-
-    rule = severity_rules.get(issue_type)
+        missing_attributes = attr_rules.get("missing_attribute", {})
+        if attribute and attribute in missing_attributes.keys():
+            if attribute == "app":
+                    if reference_value in ["app", "app.kubernetes.io/name"]:
+                        # If the 'app' label follows a standard naming convention, lower severity
+                        return Severity(missing_attributes[attribute]["level"], missing_attributes[attribute]["description"], component, f"missing_attribute:{attribute}", "INFO", "The 'app' label uses a standard naming convention.", reference_value=reference_value, analyzed_value=analyzed_value)
+            return Severity(missing_attributes[attribute]["level"], missing_attributes[attribute]["description"], component, f"missing_attribute:{attribute}", reference_value=reference_value, analyzed_value=analyzed_value)
+        return DefaultRules.get(component, issue_type, attribute, reference_value, analyzed_value=analyzed_value)
+    rule = attr_rules.get(issue_type)
+  
     if rule:
-        level, desc = rule
-        return Severity(level, desc, component, issue_type)
+        if component == "selector" or component == "matchLabels" or component == "labels":
+            if reference_value in ["app", "app.kubernetes.io/name"]:
+                    # If the selector uses a standard naming convention, lower severity
+                    return Severity(rule["level"], rule["description"], component, issue_type, "INFO", "The selector uses a standard naming convention.", reference_value=reference_value, analyzed_value=analyzed_value)
+        return Severity(rule["level"], rule["description"], component, issue_type, reference_value=reference_value, analyzed_value=analyzed_value)
 
-    return DefaultRules.get(component, issue_type, attribute)
+    return DefaultRules.get(component, issue_type, attribute, reference_value=reference_value, analyzed_value=analyzed_value)
 
 
 def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
@@ -100,7 +132,7 @@ def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
     Returns:
         Tuple of (issue_type, specific_attribute)
     """
-    path_parts = path.split("//")
+    path_parts = reversed(path.split("//"))
 
     # Convert issues to a flat structure for analysis
     missing_keys = _extract_missing_keys(issues)
@@ -114,133 +146,178 @@ def get_issue_type(path: str, issues: Any) -> Tuple[str, Optional[str]]:
             if isinstance(issues, list):
                 # Missing entire env array
                 return "missing", None
-            elif isinstance(issues, dict):
+            if isinstance(issues, dict):
                 # Check what env attributes are missing
                 if "name" in missing_keys:
                     return "missing_attribute", "name"
-                elif "value" in missing_keys and "valueFrom" not in missing_keys:
+                if "value" in missing_keys and "valueFrom" not in missing_keys:
                     return "missing_attribute", "value"
-                elif "valueFrom" in missing_keys:
+                if "valueFrom" in missing_keys:
                     return "missing_attribute", "valueFrom"
-            return "missing", None
 
         # Ports configuration
-        elif part_lower == "ports":
+        if part_lower == "ports":
             if isinstance(issues, list):
                 return "missing", None
-            elif isinstance(issues, dict) or missing_keys:
+            if isinstance(issues, dict) or missing_keys:
                 # Check specific port attributes
                 if "containerPort" in missing_keys:
                     return "missing_attribute", "containerPort"
-                elif "name" in missing_keys:
+                if "name" in missing_keys:
                     return "missing_attribute", "name"
-                elif "protocol" in missing_keys:
+                if "protocol" in missing_keys:
                     return "missing_attribute", "protocol"
-                elif "targetPort" in missing_keys:
+                if "targetPort" in missing_keys:
                     return "missing_attribute", "targetPort"
-            return "missing", None
+                if "nodePort" in missing_keys:
+                    return "missing_attribute", "nodePort"
+                if "type" in missing_keys:
+                    return "missing_attribute", "type"
+            if part in missing_keys:
+                return "missing", part
 
         # Image
-        elif part_lower == "image":
+        if part_lower == "image":
             return "missing", None
 
         # Resources
-        elif part_lower == "resources":
+        if part_lower == "resources":
             if "limits" in missing_keys:
                 return "missing_attribute", "limits"
-            elif "requests" in missing_keys:
+            if "requests" in missing_keys:
                 return "missing_attribute", "requests"
-            elif "memory" in missing_keys:
+            if "memory" in missing_keys:
                 return "missing_attribute", "memory"
-            elif "cpu" in missing_keys:
+            if "cpu" in missing_keys:
                 return "missing_attribute", "cpu"
+            if part in missing_keys:
+                return "missing", part
             return "missing", None
 
         # Volume Mounts
-        elif part_lower == "volumemounts":
+        if part_lower == "volumemounts":
             if "mountPath" in missing_keys:
                 return "missing_attribute", "mountPath"
-            elif "name" in missing_keys:
+            if "name" in missing_keys:
                 return "missing_attribute", "name"
-            elif "readOnly" in missing_keys:
+            if "readOnly" in missing_keys:
                 return "missing_attribute", "readOnly"
+            if part in missing_keys:
+                return "missing", part
             return "missing", None
+
 
         # Security Context
-        elif part_lower == "securitycontext":
+        if part_lower == "securitycontext":
+            if part in missing_keys:
+                return "missing", part
             if "runAsUser" in missing_keys:
                 return "missing_attribute", "runAsUser"
-            elif "runAsNonRoot" in missing_keys:
+            if "runAsNonRoot" in missing_keys:
                 return "missing_attribute", "runAsNonRoot"
-            elif "allowPrivilegeEscalation" in missing_keys:
+            if "allowPrivilegeEscalation" in missing_keys:
                 return "missing_attribute", "allowPrivilegeEscalation"
             return "missing", None
-
+        
         # Probes
-        elif part_lower in ["readinessprobe", "livenessprobe"]:
-            probe_type = (
-                "readinessProbe" if "readiness" in part_lower else "livenessProbe"
-            )
+        if part_lower in ["readinessprobe", "livenessprobe"]:
             if "httpGet" in missing_keys:
                 return "missing_attribute", "httpGet"
-            elif "initialDelaySeconds" in missing_keys:
+            if "initialDelaySeconds" in missing_keys:
                 return "missing_attribute", "initialDelaySeconds"
-            elif "periodSeconds" in missing_keys:
+            if "periodSeconds" in missing_keys:
                 return "missing_attribute", "periodSeconds"
-            elif "timeoutSeconds" in missing_keys:
+            if "timeoutSeconds" in missing_keys:
                 return "missing_attribute", "timeoutSeconds"
+            if part in missing_keys:
+                return "missing", part
             return "missing", None
 
         # Labels
-        elif part_lower == "labels":
+        if part_lower == "labels":
             if "app" in missing_keys or "app.kubernetes.io/name" in missing_keys:
                 return "missing_attribute", "app"
-            elif "version" in missing_keys:
+            if "version" in missing_keys:
                 return "missing_attribute", "version"
-            return "missing", None
-
-        # Service Account
-        elif part_lower == "serviceaccount":
-            return "missing", None
-
-        # Command/Args
-        elif part_lower in ["command", "args"]:
-            return "missing", None
-
-        # Working Directory
-        elif part_lower == "workingdir":
-            return "missing", None
-
-        # Init Containers
-        elif part_lower == "initcontainers":
+            if part in missing_keys:
+                return "missing", part
             return "missing", None
 
         # Volumes
-        elif part_lower == "volumes":
+        if part_lower == "volumes":
             if "name" in missing_keys:
                 return "missing_attribute", "name"
-            elif "persistentVolumeClaim" in missing_keys:
+            if "persistentVolumeClaim" in missing_keys:
                 return "missing_attribute", "persistentVolumeClaim"
+            if part in missing_keys:
+                return "missing", part
             return "missing", None
 
+        # Service Account
+        if part_lower == "serviceaccount":
+            return "missing", part
+
+        if part_lower == "serviceaccountname":
+            return "missing", part
+        
+        # Command/Args
+        if part_lower in ["command", "args"]:
+            return "missing", part
+
+        # Working Directory
+        if part_lower == "workingdir":
+            return "missing", part
+
+        # Init Containers
+        if part_lower == "initcontainers":
+            return "missing", part
+
+        
         # Annotations
-        elif part_lower == "annotations":
-            return "missing", None
+        if part_lower == "annotations":
+            return "missing", part
 
         # Affinity
-        elif part_lower == "affinity":
-            return "missing", None
+        if part_lower == "affinity":
+            return "missing", part
 
         # Node Selector
-        elif part_lower == "nodeselector":
-            return "missing", None
+        if part_lower == "nodeselector":
+            return "missing", part
 
         # Tolerations
-        elif part_lower == "tolerations":
-            return "missing", None
+        if part_lower == "tolerations":
+            return "missing", part
 
+        if part_lower == "terminationgraceperiodseconds":
+            return "missing", part
+        
+        if part_lower == "restartpolicy":
+            return "missing", part
+        
+        # Match Labels
+        if part_lower == "matchlabels":
+            if "app" in missing_keys in missing_keys:
+                return "missing", "app"
+            if "app.kubernetes.io/name" in missing_keys:
+                return "missing", "app.kubernetes.io/name"
+            if "version" in missing_keys:
+                return "missing_attribute", "version"
+            return "missing", part
+        
+        if part_lower in [
+            "deployment",
+            "service",
+            "configmap",
+            "secret",
+            "statefulset",
+            "persistentvolumeclaim",
+            "pod"
+        ]:
+            return "missing", part
     # Default fallback
     return "missing", None
+    
 
 
 def _extract_missing_keys(issues: Any) -> List[str]:
@@ -275,42 +352,6 @@ def _extract_missing_keys(issues: Any) -> List[str]:
     return missing_keys
 
 
-def _determine_component_from_path(path: str) -> str:
-    """Determine the main component from the path for better attribute detection."""
-    path_parts = path.split("//")
-
-    # Component hierarchy mapping
-    component_hierarchy = [
-        "env",
-        "ports",
-        "resources",
-        "volumemounts",
-        "securitycontext",
-        "readinessprobe",
-        "livenessprobe",
-        "labels",
-        "annotations",
-        "volumes",
-        "initcontainers",
-        "command",
-        "args",
-        "image",
-    ]
-
-    # Find the most specific component in the path
-    for part in reversed(path_parts):
-        part_lower = part.lower()
-        if part_lower in component_hierarchy:
-            return part_lower
-
-        # Handle compound names
-        for component in component_hierarchy:
-            if component in part_lower:
-                return component
-
-    return "unknown"
-
-
 __all__ = ["Severity", "analyze_component_severity"]
 
 
@@ -328,9 +369,9 @@ class DefaultRules:
 
     @staticmethod
     def get(
-        component: str, issue_type: str, attribute: Optional[str] = None
+        component: str, issue_type: str, attribute: Optional[str] = None, reference_value: Optional[str] = None, analyzed_value: Optional[str] = None
     ) -> Severity:
         desc = f"{issue_type.replace('_', ' ').capitalize()} in {component}"
         level = DefaultRules.default_rules.get(issue_type, "MEDIUM")
         issue_key = f"{issue_type}:{attribute}" if attribute else issue_type
-        return Severity(level, desc, component, issue_key)
+        return Severity(level, desc, component, issue_key, reference_value=reference_value, analyzed_value=analyzed_value)

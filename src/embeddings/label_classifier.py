@@ -18,10 +18,12 @@ class LabelClassifier:
         label_similarities = {
             k: self._engine.compute_similarity(key_embedding, v) for k, v in self._label_embeddings['labels'].items()
         }
+        # Compute cosine similarity with known annotations
         annotation_similarities = {
             k: self._engine.compute_similarity(key_embedding, v) for k, v in self._label_embeddings['annotations'].items()
         }
 
+        # Filter by threshold
         label_similarities = {
             k: v for k, v in label_similarities.items() if v >= threshold
         }
@@ -32,14 +34,19 @@ class LabelClassifier:
 
 
         # Find best match
+        # Decide between label and annotation based on highest similarity
         if len(label_similarities) == 0 and len(annotation_similarities) == 0:
             return None
+        # Labels have not been recognized
         elif len(label_similarities) == 0:
             best_label = None
+            # Select the best annotation based on similarity if above threshold
             best_annotation = max(annotation_similarities.items(), key=lambda x: x[1])[0]
             return "annotation" if annotation_similarities[best_annotation] >= threshold else None
         else:
+            # Annotations have not been recognized
             best_annotation = None
+            # Select the best label based on similarity if above threshold
             best_label = max(label_similarities.items(), key=lambda x: x[1])[0]
             return "label" if label_similarities[best_label] >= threshold else None
       
@@ -50,7 +57,7 @@ class LabelClassifier:
         labels_path = os.path.join(
             os.path.dirname(__file__),
             "..",
-            os.getenv("LABELS_PATH", "resources/knowledge_base/docker_labels.json")
+            os.getenv("LABELS_PATH", "resources/knowledge_base/labels.json")
         )
         
         labels: Dict[str, Dict[str, str]] = load_json_file(labels_path)

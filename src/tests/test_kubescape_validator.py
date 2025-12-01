@@ -12,28 +12,45 @@ def mock_subprocess_run_success(*args, **kwargs):
     mock = MagicMock()
     mock.returncode = 0
     mock.stdout = json.dumps({
-        "summary": {"complianceScore": 85},
-        "controls": [
-            {
-                "name": "Control1",
-                "description": "desc1",
-                "status": {"status": "failed"},
-                "baseScore": "critical",
-                "controlID": "id1"
+        "summaryDetails": {
+            "complianceScore": 85,
+            "controls": {
+                "id1": {
+                    "name": "Control1",
+                    "statusInfo": {"status": "failed"}
+                },
+                "id2": {
+                    "name": "Control2",
+                    "statusInfo": {"status": "passed"}
+                },
+                "id3": {
+                    "name": "Control3",
+                    "statusInfo": {"status": "failed"}
+                }
             },
+            "controlsSeverityCounters": {
+                "criticalSeverity": 1,
+                "highSeverity": 0,
+                "mediumSeverity": 1,
+                "lowSeverity": 0
+            }
+        },
+        "results": [
             {
-                "name": "Control2",
-                "description": "desc2",
-                "status": {"status": "passed"},
-                "baseScore": "high",
-                "controlID": "id2"
-            },
-            {
-                "name": "Control3",
-                "description": "desc3",
-                "status": {"status": "failed"},
-                "baseScore": "medium",
-                "controlID": "id3"
+                "controls": [
+                    {
+                        "name": "Control1",
+                        "controlID": "id1",
+                        "status": {"status": "failed"},
+                        "rules": []
+                    },
+                    {
+                        "name": "Control3",
+                        "controlID": "id3",
+                        "status": {"status": "failed"},
+                        "rules": []
+                    }
+                ]
             }
         ]
     })
@@ -41,13 +58,13 @@ def mock_subprocess_run_success(*args, **kwargs):
     return mock
 
 def test_kubescape_validator():
-    """Test the KubescapeValidator class"""
+    """Test the KubescapeValidator class initialization"""
     validator = KubescapeValidator(kubescape_path="kubescape")
-    #test a real file
     assert validator.kubescape_path == "kubescape"
-    output = validator.validate_file("/home/ulises/Documents/UniTn/2nd Year/2 semester/Tirocinio/Tool/output/manifests/llm/v0/k8s/deployment/adservice.yaml")
-    print(output)
-    assert False
+    
+    # Test with custom path
+    custom_validator = KubescapeValidator(kubescape_path="/usr/local/bin/kubescape")
+    assert custom_validator.kubescape_path == "/usr/local/bin/kubescape"
 
 
 def mock_subprocess_run_failure(*args, **kwargs):
@@ -80,8 +97,9 @@ def test_validate_file_success(validator):
         assert metrics["severity_counts"]["medium"] == 1
         assert metrics["severity_counts"]["high"] == 0
         assert metrics["severity_counts"]["low"] == 0
-        assert metrics["severity_counts"]["info"] == 0
-        assert len(metrics["failed_controls"]) == 2
+        assert metrics["passed_controls"] == 1
+        assert metrics["failed_controls"] == 2
+        assert len(metrics["failed_controls_details"]) == 2
 
 def test_validate_file_failure(validator):
     with patch("subprocess.run", side_effect=mock_subprocess_run_failure):
@@ -108,25 +126,29 @@ def test_validate_file_badjson(validator):
         assert "Failed to parse Kubescape output as JSON" in str(excinfo.value)
 
 def test_save_metrics_to_csv(tmp_path, validator):
-    metrics_list = [
-        {
+    metrics_dict = {
+        "service1": {
             "file": "manifest.yaml",
+            "resource_type": "deployment",
             "compliance_score": 90,
+            "calculated_compliance_score": 90,
+            "relevant_controls": 5,
+            "irrelevant_controls": 0,
+            "passed_controls": 2,
+            "failed_controls": 3,
+            "total_controls": 5,
             "severity_counts": {
                 "critical": 1,
                 "high": 2,
                 "medium": 0,
                 "low": 0,
-                "info": 0,
             },
-            "total_controls": 5,
-            "failed_controls": [{"name": "c1"}, {"name": "c2"}, {"name": "c3"}],
+            "failed_controls_details": [{"name": "c1"}, {"name": "c2"}, {"name": "c3"}],
         }
-    ]
+    }
     output_file = tmp_path / "results.csv"
-    validator.save_metrics_to_csv(metrics_list, str(output_file))
+    validator.save_metrics_to_csv(metrics_dict, str(output_file))
     content = output_file.read_text()
     assert "manifest.yaml" in content
-    assert "critical" in content
-    assert "failed_count" in content
-    assert "3" in content
+    assert "deployment" in content
+    assert "3" in content  # failed_controls count

@@ -61,7 +61,7 @@ def test_generate_expose_node(command_mapper):
     expose = {"instruction": "EXPOSE", "value": "80"}
     nodes = command_mapper._generate_expose_nodes(expose, None)
     node = nodes[0]
-    assert node.type == NodeType.PORT
+    assert node.type == NodeType.CONTAINER_PORT
     assert node.value == "80"
 
 @patch("embeddings.label_classifier.LabelClassifier.classify_label")
@@ -187,7 +187,7 @@ def test_generate_volume_node(mock_embeddings_engine):
     # Assertions
     assert len(nodes) == 1
     node = nodes[0]
-    assert node.name == "VOLUME"
-    assert node.type == NodeType.VOLUME
+    assert node.name == "VOLUME_MOUNT"  # Changed: implementation creates VOLUME_MOUNT nodes
+    assert node.type == NodeType.VOLUME_MOUNT  # Changed: to match VOLUME_MOUNT type
     assert node.value == "test_volume"
     assert node.is_persistent is True

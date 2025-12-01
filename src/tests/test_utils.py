@@ -60,14 +60,16 @@ def test_normalize_command_field_empty():
 def test_normalize_command_field_list():
     assert normalize_command_field(["echo", "hello"]) == ["echo", "hello"]
     assert normalize_command_field(["ls", "-l"]) == ["ls", "-l"]
-    assert normalize_command_field(["echo $HOME"]) == ["/bin/sh -c", "echo $HOME"]
+    # When shell parsing is needed, returns shell wrapper as separate args
+    assert normalize_command_field(["echo $HOME"]) == ["/bin/sh", "-c", "echo $HOME"]
 
 
 def test_normalize_command_field_str():
     assert normalize_command_field("echo hello") == ["echo", "hello"]
     assert normalize_command_field("ls -l") == ["ls", "-l"]
     assert normalize_command_field('["echo", "hello"]') == ["echo", "hello"]
-    assert normalize_command_field("echo $HOME") == ["/bin/sh -c", "echo $HOME"]
+    # When shell parsing is needed, returns shell wrapper as separate args
+    assert normalize_command_field("echo $HOME") == ["/bin/sh", "-c", "echo $HOME"]
 
 
 def test_normalize_command_field_invalid_json():

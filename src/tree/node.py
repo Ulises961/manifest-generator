@@ -13,6 +13,8 @@ class Node:
         parent: Optional["Node"] = None,
         metadata: Dict[str, Any] = {},
         is_persistent: bool = False,
+        is_directory: bool = False,
+        is_file: bool = False,
 
     ):
         """
@@ -30,6 +32,8 @@ class Node:
         self.children: List[Node] = []
         self.is_persistent: bool = is_persistent
         self._metadata: Dict[str, Any] = metadata
+        self.is_directory: bool = is_directory
+        self.is_file: bool = is_file
 
     def add_child(self, child: "Node") -> None:
         self.children.append(child)
@@ -108,7 +112,7 @@ class Node:
     def get_children_by_type(
         self, type: NodeType, must_be_active: Optional[bool] = False
     ) -> List["Node"]:
-        """Get a child node by name."""
+        """Get a child node by type."""
         return [
             child
             for child in self.children

@@ -21,7 +21,8 @@ setup(
         'sentence-transformers>=2.2.0',
         'anthropic',
         'jsonschema',
-        'gnureadline'
+        'gnureadline',
+        'pandas',
     ],
     author="Ulises E. Sosa",
     description="A tool for analyzing Docker configurations",

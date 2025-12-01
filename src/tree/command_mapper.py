@@ -156,7 +156,7 @@ class CommandMapper:
         for port in ports:
             nodes.append(
                 self._create_node(
-                    {"instruction": "PORT", "value": port}, NodeType.PORT, parent
+                    {"instruction": "PORT", "value": port}, NodeType.CONTAINER_PORT, parent
                 )
             )
         return nodes
@@ -173,8 +173,8 @@ class CommandMapper:
             is_persistent = self._volumes_classifier.decide_volume_persistence(volume_path)
             nodes.append(
                 self._create_node(
-                    {"instruction": "VOLUME", "value": volume_path},
-                    NodeType.VOLUME,
+                    {"instruction": "VOLUME_MOUNT", "value": volume_path},
+                    NodeType.VOLUME_MOUNT,
                     parent,
                     is_persistent=is_persistent,
                 )
