@@ -33,11 +33,6 @@ class SkaffoldConfigBuilder:
             context_path = f"{metadata['dockerfile_path']}"
 
             artifact = {"image": service_name, "context": context_path}
-            
-            # Add target if specified
-            # target = metadata.get("target", None)
-            # if target:
-            #     artifact["docker"] = {"target": target}
 
             skaffold_config["build"]["artifacts"].append(artifact)
 

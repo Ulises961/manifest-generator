@@ -67,7 +67,7 @@ class ManifestFeedbackLoop:
             "**No other output is allowed. Do not explain, do not reason, do not output markdown or comments.**\n"
             "**Immediately output only valid Kubernetes YAML for the service.**\n"
         )
-
+        ## Iterate over microservices to collect IR and generate manifests
         for microservice in microservices:
             self.logger.info(
                 f"Generating manifests for child... {microservice['name']}"
@@ -80,6 +80,7 @@ class ManifestFeedbackLoop:
                 if key != "manifests" and key != "metadata" and key != "overrides":
                     prompt += f"  {key}: {value}\n"
 
+            ## Consider overrides if present
             if microservice.get("overrides", None):
                 prompt += f"Consider the following overrides:\n{microservice['overrides']}\n and use them in the generation.\n"
 

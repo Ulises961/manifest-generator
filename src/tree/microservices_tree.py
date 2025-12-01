@@ -465,6 +465,7 @@ class MicroservicesTree:
             # Only use ontology ports if not set in the container configuration
             if microservice["ports"] == []:
                 container_ports = [int(port) for port in service_extra_info["ports"]]
+                microservice["ports"] = container_ports
 
                 # Set service ports fallback to the container ports
                 microservice["service-ports"] = service_extra_info.get(
@@ -498,7 +499,15 @@ class MicroservicesTree:
         return microservice
 
     def print_tree(self, node: Node, level: int = 0) -> None:
-        """Recursively print the tree structure."""
+        """Recursively print the tree structure.
+        Example:\n
+            root (ROOT)
+            |-- microservice1 
+            |    |-- ENV_VAR value (ENV)
+            |    |-- CMD value (CMD)
+            |-- microservice2
+                |-- LABEL version=1.0 (LABEL)   
+        """
         if level == 0:
             indent = ""
             print(f"{indent}{node.name} ({node.type})")
@@ -578,6 +587,7 @@ class MicroservicesTree:
                     node.add_children(config_nodes)
                 else:
                     try:
+                        # Context files are added to the collected files only if below size limit
                         file_size_kb = os.path.getsize(file_path) / 1024
                         if file_size_kb > max_file_size_kb:
                             self.logger.warning(
@@ -587,6 +597,7 @@ class MicroservicesTree:
                         with open(file_path, "r") as f:
                             content = f.read()
                         if collected_files is not None:
+                            # Add the contextual file to the collected files
                             collected_files.update({file_name: {"name": file_name, "type": "contextual", "content": content, "metadata": {"path": file_path}}})
                         self.logger.debug(
                             f"Added contextual file node: {file_name} of type {file_type} to microservice {node.name}"
@@ -598,7 +609,7 @@ class MicroservicesTree:
                 
 
     def prepare_network_policy(self, node: Node) -> Dict[str, Any]:
-        """Generate manifests for the given network policy node."""
+        """Generate manifests for the given network policy node. Currently not used but placeholder for future extensions."""
         network_policy: Dict[str, Any] = {
             "type": "NetworkPolicy",
             "name": node.name,

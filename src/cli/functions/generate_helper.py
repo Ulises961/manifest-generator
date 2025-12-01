@@ -85,11 +85,15 @@ def run_generation():
         volumes_classifier,
         composer_mapper,
     )
+
+    ## Filter repositories if SELECTED_REPOSITORIES is set
     selected_repos = (
         [r.strip() for r in os.getenv("SELECTED_REPOSITORIES", "").split(",")]
         if os.getenv("SELECTED_REPOSITORIES", "") != ""
         else []
     )
+    
+    ## Iterate over all repositories in the directory containing the repositories to be scraped and from which the manifests will be generated
     repositories = [
         repo
         for repo in os.listdir(target_repository)
@@ -98,16 +102,22 @@ def run_generation():
             and (repo in selected_repos if len(selected_repos) > 0 else True)
         )
     ]
+
+    ## Sort repositories for consistent processing order
     repositories.sort()
+    
     logger.info(f"Found {len(repositories)} repositories: {repositories}")
 
     for repo in repositories:
+
+        ### Build the microservices tree for the repository
         repository_tree, collected_files = tree_builder.build(
             os.path.join(target_repository, repo)
         )
         
         tree_builder.print_tree(repository_tree)  # Print the tree structure
-        
+
+        ## If an overrides file is specified, set it in the overrider
         overrider.config_path = os.path.join(
             target_repository, repo, os.getenv("OVERRIDES_FILE", "")
         )
@@ -115,7 +125,9 @@ def run_generation():
         stages = [
             "without-ir",
              "with-ir",            
-            ]
+        ]
+
+        ## If overrides file exists, add the with-overrides stage
         if overrider.config_path and os.path.exists(overrider.config_path):
             stages.append("with-overrides")
 
@@ -134,7 +146,7 @@ def run_generation():
             corrected_manifests_path = None
             
             if stage != "without-ir":
-                ## Create corrected manifests path
+                ## Create corrected manifests path on which the manual corrections will be applied if the deployment fails
                 corrected_manifests_path = os.path.join(
                     os.getenv("OUTPUT_DIR", "output"),
                     repo,
@@ -155,6 +167,7 @@ def run_generation():
             ## Generate manifests based on the stage
             if stage == "without-ir":
                 logger.info("Generating manifests based on collected files only.")
+                ## Generate manifests without IR. This process is different from the others. The LLM considers only collected files during the tree building phase
                 generate_without_ir(feedback_loop, validation_results_path, manifests_path, collected_files)
 
             else:
@@ -183,8 +196,13 @@ def generate_with_ir(
     corrected_manifests_path: Optional[str] = None,
     collected_files: Optional[Dict[str, Any]] = None,
 ):
+    ## Enriched services are those microservices enriched with IR data and Knowledge Base information
     enriched_services: List[Dict[str, Any]] = []
+
+    ## If overrides has extra manifests, add them first
     enriched_services_with_overrides: List[Dict[str, Any]] = overrider.get_extra_manifests()
+
+    ## Iterate over all microservices in the tree
     for child in repository_tree.children:
         # Then prepare microservices, which might depend on the previous resources
         if child.type == NodeType.MICROSERVICE:
@@ -192,6 +210,7 @@ def generate_with_ir(
             microservice = tree_builder.prepare_microservice(child)
             enriched_services.append(microservice)
 
+            ## Overrides are applied only on the with-overrides stage
             if apply_overrides:
                 microservice_with_overrides = deepcopy(microservice)
                 microservice_with_overrides["overrides"] = overrider.get_microservice_overrides(
@@ -199,6 +218,7 @@ def generate_with_ir(
                 )
                 enriched_services_with_overrides.append(microservice_with_overrides)
     
+    ## Use a different set of IR-enriched services in base of the generate stage: with or without overrides
     if apply_overrides:
         feedback_loop.generate_manifests(
             enriched_services_with_overrides, manifests_path, corrected_manifests_path
@@ -208,6 +228,7 @@ def generate_with_ir(
             enriched_services, manifests_path, corrected_manifests_path
         )
     
+    ## Validate output
     validate_output(
         feedback_loop,
         enriched_services,
@@ -226,8 +247,10 @@ def generate_without_ir(
     manifests_path: str,
     collected_files: Dict[str, Any],
 ):
-
+    ## The LLM considers only collected files during the tree building phase
     feedback_loop.generate_manifests_blindly(collected_files, manifests_path)
+
+    ## Validate output
     validate_output(
         feedback_loop,
         list(collected_files.values()),
@@ -254,8 +277,10 @@ def validate_output(
     corrected_manifests_path: Optional[str] = None,
     collected_files: Optional[Dict[str, Any]] = None,
 ):
+    ## Generate Skaffold and Kustomize files for deployment validation
     feedback_loop.prepare_for_execution(microservices, manifests_path)
     if corrected_manifests_path:
+        ## Generate Skaffold and Kustomize files for deployment validation on corrected manifests too
         feedback_loop.prepare_for_execution(
             microservices, corrected_manifests_path
         )

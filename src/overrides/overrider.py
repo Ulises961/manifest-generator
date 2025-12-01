@@ -1,9 +1,6 @@
-from calendar import c
-from enum import Enum
 import logging
 import os
-import traceback
-from typing import Any, Dict, List, Optional, Tuple, cast, override
+from typing import Any, Dict, List, Optional, cast
 import yaml
 
 from overrides.overrides_validator import OverridesValidator
@@ -70,6 +67,7 @@ class Overrider:
             )
             return overrides
         
+        # Collect overrides for the specified microservice excluding global keys and custom manifests
         for key, value in self.override_config.items():
             if key not in ["version","project","extraManifests"]:
                 for microservice, config in value.items():
@@ -89,7 +87,7 @@ class Overrider:
                 "No override configuration loaded. Returning empty extra manifests."
             )
             return []
-
+        
         extra_manifests = [{"name": name, **manifest} for name, manifest in self.override_config.get("customManifests", {}).items()]
 
         self.logger.info(

@@ -29,22 +29,30 @@ def run_analyze_diffs():
     logger.info("Starting review of generated manifests")
 
     target_repository = os.getenv("OUTPUT_DIR", "")
+
+    ## Filter repositories if SELECTED_REPOSITORIES is set
     selected_repositories = [repo.strip() for repo in os.getenv("SELECTED_REPOSITORIES", "").split(",")]
     
+    ## Iterate over all repositories in the output directory of the pipeline generated manifests
     repositories = [
         repo
         for repo in os.listdir(target_repository)
         if (os.path.isdir(os.path.join(target_repository, repo)))
         and (repo in selected_repositories)
     ]
+    ## Sort repositories for consistent processing order
     repositories.sort()
     logger.info(f"Found {len(repositories)} repositories")
+
+    ## Data structure to hold all collected data
     data = {"without_ir": {}, "with_ir": {}, "with_overrides": {}, }
 
     for repo in repositories:
         logging.info(f"Reviewing manifests for repository... {repo}")
         for stage in ["without-ir", "with-ir",  "with-overrides"]:
             logging.info(f"  Stage: {stage}")
+
+            ## Collect data for <repo>/<stage>/results
             stage_results = os.path.join(
                 target_repository,
                 repo,
