@@ -188,6 +188,7 @@ def interactive_setup(
         )
     
     config = {}
+    config["selected_repositories"] = selected_repositories or []
     
     # Repository path with enhanced input
     while True:

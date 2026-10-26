@@ -1,11 +1,9 @@
 import click
-from cli.commands import (
-    analyze_especial_csvs,
-    generate,
-    analyze_metrics,
-    review_manifests,
-    review_manifests_with_reference,
-)
+from cli.commands.analyze_especial_csvs import analyze_especial_csvs
+from cli.commands.generate import generate
+from cli.commands.analyze_metrics import analyze_metrics
+from cli.commands.review_manifests import review_manifests
+from cli.commands.review_manifests_with_reference import review_manifests_with_reference
 
 from utils.cli_utils import setup_readline
 
